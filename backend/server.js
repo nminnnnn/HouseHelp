@@ -1725,49 +1725,56 @@ app.post('/api/quick-booking/find-matches', (req, res) => {
   });
 
   // Build query to find matching housekeepers
+  // Sử dụng cột h.services trực tiếp thay vì JOIN với bảng housekeeper_services
   let sql = `
     SELECT h.*, u.fullName, u.email, u.phone, u.isVerified, u.isApproved,
            COALESCE(AVG(r.rating), 4.0) as avgRating,
            COUNT(r.id) as reviewCount,
-           GROUP_CONCAT(s.name) as services
+           h.services as services
     FROM housekeepers h
     JOIN users u ON h.userId = u.id
     LEFT JOIN reviews r ON h.id = r.housekeeperId
-    LEFT JOIN housekeeper_services hs ON h.id = hs.housekeeperId
-    LEFT JOIN services s ON hs.serviceId = s.id
     WHERE u.isApproved = 1 AND u.isVerified = 1
       AND h.price <= ?
   `;
 
   const params = [maxPrice];
 
-  // Add service filter if specified
+  // Add service filter if specified - tìm trong cột h.services
   if (service) {
-    sql += ` AND s.name LIKE ?`;
+    sql += ` AND h.services LIKE ?`;
     params.push(`%${service}%`);
   }
 
   sql += `
     GROUP BY h.id, u.id
-    HAVING avgRating >= 3.0
+    HAVING COALESCE(AVG(r.rating), 4.0) >= 3.0
     ORDER BY 
       CASE 
-        WHEN ? = 'asap' THEN (avgRating * 0.3 + (5 - h.price/20) * 0.4 + reviewCount/10 * 0.3)
-        WHEN ? = 'urgent' THEN (avgRating * 0.4 + (5 - h.price/20) * 0.3 + reviewCount/10 * 0.3)
-        ELSE (avgRating * 0.5 + (5 - h.price/20) * 0.2 + reviewCount/10 * 0.3)
+        WHEN ? = 'asap' THEN (COALESCE(AVG(r.rating), 4.0) * 0.3 + (5 - h.price/20) * 0.4 + COUNT(r.id)/10 * 0.3)
+        WHEN ? = 'urgent' THEN (COALESCE(AVG(r.rating), 4.0) * 0.4 + (5 - h.price/20) * 0.3 + COUNT(r.id)/10 * 0.3)
+        ELSE (COALESCE(AVG(r.rating), 4.0) * 0.5 + (5 - h.price/20) * 0.2 + COUNT(r.id)/10 * 0.3)
       END DESC
     LIMIT 10
   `;
 
   params.push(urgency, urgency);
 
+  console.log('📝 SQL Query:', sql);
+  console.log('📝 Params:', params);
+
   db.query(sql, params, (err, results) => {
     if (err) {
       console.error('Error finding matching housekeepers:', err);
+      console.error('SQL was:', sql);
+      console.error('Params were:', params);
       return res.status(500).json({ error: 'Failed to find matches' });
     }
 
     console.log(`✅ Found ${results.length} matching housekeepers`);
+    if (results.length > 0) {
+      console.log('First match:', results[0].fullName, '- Services:', results[0].services);
+    }
     
     // Calculate match scores and format results
     const matchedHousekeepers = results.map((hk, index) => {
@@ -2231,8 +2238,21 @@ app.get('/api/bookings/:id/status', (req, res) => {
 // API: Lấy lịch sử đặt lịch của user
 app.get('/api/bookings/user/:id', (req, res) => {
   const userId = req.params.id;
-  db.query('SELECT * FROM bookings WHERE customerId = ? OR housekeeperId = ?', [userId, userId], (err, results) => {
-    if (err) return res.status(500).json({ error: err });
+  
+  // Tìm housekeepers.id tương ứng với users.id (để hỗ trợ cả 2 trường hợp)
+  const sql = `
+    SELECT b.* FROM bookings b
+    WHERE b.customerId = ?
+    OR b.housekeeperId = ?
+    OR b.housekeeperId IN (SELECT h.id FROM housekeepers h WHERE h.userId = ?)
+  `;
+  
+  db.query(sql, [userId, userId, userId], (err, results) => {
+    if (err) {
+      console.error('Error fetching bookings for user:', err);
+      return res.status(500).json({ error: err });
+    }
+    console.log(`📋 Found ${results.length} bookings for user ${userId}`);
     res.json(results);
   });
 });
@@ -3399,6 +3419,44 @@ app.put('/api/admin/housekeepers/:userId/availability', (req, res) => {
       success: true, 
       message: `Housekeeper availability updated to ${available ? 'available' : 'unavailable'}` 
     });
+  });
+});
+
+// API: Debug - Kiểm tra bảng housekeeper_services
+app.get('/api/debug/housekeeper-services', (req, res) => {
+  const sql = `
+    SELECT 
+      hs.housekeeperId,
+      h.price,
+      u.fullName,
+      s.id as serviceId,
+      s.name as serviceName
+    FROM housekeeper_services hs
+    JOIN housekeepers h ON hs.housekeeperId = h.id
+    JOIN users u ON h.userId = u.id
+    JOIN services s ON hs.serviceId = s.id
+    ORDER BY u.fullName, s.name
+  `;
+  
+  db.query(sql, (err, results) => {
+    if (err) {
+      return res.status(500).json({ error: err.message });
+    }
+    
+    // Group by housekeeper
+    const grouped = {};
+    results.forEach(row => {
+      if (!grouped[row.fullName]) {
+        grouped[row.fullName] = {
+          housekeeperId: row.housekeeperId,
+          price: row.price,
+          services: []
+        };
+      }
+      grouped[row.fullName].services.push(row.serviceName);
+    });
+    
+    res.json({ raw: results, grouped });
   });
 });
 

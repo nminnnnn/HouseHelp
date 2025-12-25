@@ -120,27 +120,44 @@ export default function HousekeeperDashboard() {
       
       try {
         setLoading(true);
+        
+        // Lấy housekeepers.id từ users.id trước
+        let housekeeperTableId = user.id;
+        try {
+          const hkResponse = await fetch(`http://localhost:5000/api/housekeepers`);
+          if (hkResponse.ok) {
+            const housekeepers = await hkResponse.json();
+            const currentHk = housekeepers.find(hk => hk.userId === user.id || hk.id === user.id);
+            if (currentHk) {
+              housekeeperTableId = currentHk.id;
+              console.log(`🔍 Found housekeepers.id = ${housekeeperTableId} for users.id = ${user.id}`);
+            }
+          }
+        } catch (e) {
+          console.error('Error fetching housekeeper id:', e);
+        }
+        
         const response = await fetch(`http://localhost:5000/api/bookings/user/${user.id}`);
         if (response.ok) {
           const allBookings = await response.json();
           
-              // Lọc bookings cho housekeeper
-              const housekeeperBookings = allBookings.filter(booking =>
-                booking.housekeeperId === user.id
-              );
+          // Lọc bookings cho housekeeper - so sánh với cả user.id và housekeepers.id
+          const housekeeperBookings = allBookings.filter(booking =>
+            booking.housekeeperId === user.id || booking.housekeeperId === housekeeperTableId
+          );
 
-              // Phân loại theo status
-              const pending = housekeeperBookings.filter(booking => booking.status === 'pending');
-              const confirmed = housekeeperBookings.filter(booking => booking.status === 'confirmed');
+          // Phân loại theo status
+          const pending = housekeeperBookings.filter(booking => booking.status === 'pending');
+          const confirmed = housekeeperBookings.filter(booking => booking.status === 'confirmed');
 
-              // Sắp xếp theo thời gian tạo mới nhất lên đầu
-              const sortedPending = pending.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-              const sortedConfirmed = confirmed.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+          // Sắp xếp theo thời gian tạo mới nhất lên đầu
+          const sortedPending = pending.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+          const sortedConfirmed = confirmed.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-              console.log('Pending bookings:', sortedPending);
-              console.log('Confirmed bookings:', sortedConfirmed);
-              setPendingBookings(sortedPending);
-              setConfirmedBookings(sortedConfirmed);
+          console.log('Pending bookings:', sortedPending);
+          console.log('Confirmed bookings:', sortedConfirmed);
+          setPendingBookings(sortedPending);
+          setConfirmedBookings(sortedConfirmed);
         }
       } catch (error) {
         console.error('Error fetching housekeeper bookings:', error);

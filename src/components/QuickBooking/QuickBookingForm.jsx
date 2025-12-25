@@ -31,7 +31,7 @@ export default function QuickBookingForm({ onSubmit, loading = false }) {
         console.error('❌ Error loading services:', error);
         // Fallback to hardcoded services
         setServices([
-          "Dọn dẹp nhà cửa",
+          "Vệ sinh nhà cửa",
           "Giặt ủi quần áo", 
           "Nấu ăn",
           "Chăm sóc trẻ em",

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useLanguage } from "../contexts/LanguageContext";
 import { useAuth } from "../hooks/useAuth";
 import { useBooking } from "../contexts/BookingContext";
@@ -11,6 +11,7 @@ import "./BookingDetailPage.css";
 export default function BookingDetailPage() {
   const { housekeeperId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { language } = useLanguage();
   const { isAuthenticated, requireAuth } = useAuth();
   const {
@@ -26,6 +27,33 @@ export default function BookingDetailPage() {
 
   const [loading, setLoading] = useState(true);
   const [localHousekeeper, setLocalHousekeeper] = useState(null);
+  
+  // Đọc quickBookingData từ navigation state hoặc localStorage
+  const [quickBookingData, setQuickBookingData] = useState(null);
+  
+  useEffect(() => {
+    // Kiểm tra nếu có dữ liệu từ Quick Booking
+    let data = location.state?.quickBookingData;
+    
+    // Nếu không có trong state, thử đọc từ localStorage
+    if (!data) {
+      try {
+        const storedData = localStorage.getItem('quickBookingData');
+        if (storedData) {
+          data = JSON.parse(storedData);
+          // Xóa sau khi đọc để không ảnh hưởng lần sau
+          localStorage.removeItem('quickBookingData');
+        }
+      } catch (e) {
+        console.error('Error reading quickBookingData from localStorage:', e);
+      }
+    }
+    
+    if (data) {
+      console.log('📋 Quick Booking data loaded:', data);
+      setQuickBookingData(data);
+    }
+  }, [location.state]);
 
   useEffect(() => {
     if (!requireAuth()) return;
@@ -169,6 +197,7 @@ export default function BookingDetailPage() {
 
   // Show booking detail
   console.log("Rendering BookingDetailView with housekeeper:", displayHousekeeper.fullName);
+  console.log("Quick booking data to prefill:", quickBookingData);
   return (
     <div className="booking-detail-page">
       <BookingDetailView
@@ -178,6 +207,7 @@ export default function BookingDetailPage() {
         onBookingSubmit={handleBookingSubmit}
         onBack={handleBackToHome}
         calculateTotalPrice={(details) => calculateTotalPrice(details, displayHousekeeper)}
+        prefillData={quickBookingData}
       />
     </div>
   );

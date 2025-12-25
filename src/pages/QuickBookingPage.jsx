@@ -48,6 +48,33 @@ export default function QuickBookingPage() {
 
       console.log('✅ Found matches:', matches);
       
+      // Nếu tìm được ít nhất 1 người giúp việc phù hợp, tự động chuyển sang trang booking
+      if (matches && matches.length > 0) {
+        const bestMatch = matches[0]; // Lấy người phù hợp nhất
+        console.log('🚀 Auto-redirecting to booking page for:', bestMatch.fullName);
+        
+        // Lưu thông tin đã điền vào localStorage để trang booking có thể đọc
+        const quickBookingData = {
+          service: formData.service,
+          date: formData.date,
+          time: formData.time,
+          duration: formData.duration,
+          location: formData.location,
+          notes: formData.notes || '',
+          maxPrice: formData.maxPrice,
+          urgency: formData.urgency,
+          isQuickBooking: true
+        };
+        localStorage.setItem('quickBookingData', JSON.stringify(quickBookingData));
+        
+        // Navigate đến trang booking của housekeeper được chọn
+        navigate(`/booking/${bestMatch.id}`, {
+          state: { quickBookingData }
+        });
+        return;
+      }
+      
+      // Nếu không tìm được ai, hiện kết quả trống
       setMatchedHousekeepers(matches);
       setCurrentStep("results");
       

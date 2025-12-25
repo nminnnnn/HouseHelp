@@ -1,11 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useLanguage } from "../../contexts/LanguageContext";
 import { useAuth } from "../../hooks/useAuth";
 import translations from "../../locales/translations";
 import CouponInput from "../../components/Booking/CouponInput";
 import "./BookingForm.css";
 
-export default function BookingForm({ housekeeper, onSubmit, calculateTotalPrice }) {
+export default function BookingForm({ housekeeper, onSubmit, calculateTotalPrice, prefillData = null }) {
   const { language } = useLanguage();
   const { user } = useAuth();
   const t = translations[language];
@@ -21,6 +21,22 @@ export default function BookingForm({ housekeeper, onSubmit, calculateTotalPrice
 
   const [errors, setErrors] = useState({});
   const [appliedCoupon, setAppliedCoupon] = useState(null);
+
+  // Điền sẵn form nếu có prefillData từ Quick Booking
+  useEffect(() => {
+    if (prefillData) {
+      console.log('📝 Prefilling form with Quick Booking data:', prefillData);
+      setFormData(prev => ({
+        ...prev,
+        service: prefillData.service || prev.service,
+        date: prefillData.date || prev.date,
+        time: prefillData.time || prev.time,
+        duration: prefillData.duration || prev.duration,
+        location: prefillData.location || prev.location,
+        notes: prefillData.notes || prev.notes
+      }));
+    }
+  }, [prefillData]);
 
   const timeSlots = [
     "08:00", "09:00", "10:00", "11:00", "12:00",

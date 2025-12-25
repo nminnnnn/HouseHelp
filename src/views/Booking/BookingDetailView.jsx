@@ -14,7 +14,8 @@ export default function BookingDetailView({
   bookingStage,
   onBookingSubmit,
   onBack,
-  calculateTotalPrice
+  calculateTotalPrice,
+  prefillData = null
 }) {
   const { language } = useLanguage();
   const t = translations[language];
@@ -112,6 +113,7 @@ export default function BookingDetailView({
               housekeeper={housekeeper}
               onSubmit={onBookingSubmit}
               calculateTotalPrice={calculateTotalPrice}
+              prefillData={prefillData}
             />
           </div>
         );
