@@ -1,0 +1,48 @@
+# Chỉ MySQL (+ phpMyAdmin). Dùng khi dev local: sửa code không cần `docker compose build`.
+#
+# Luồng làm việc:
+#   1) Tắt stack đầy đủ (tránh trùng tên container):  docker compose down
+#   2) Bật DB:  npm run docker:db   (hoặc: docker compose -f docker-compose.db-only.yml up -d)
+#   3) Terminal A:  cd backend && npm run dev
+#   4) Terminal B:  npm run dev   (thư mục gốc dự án)
+#   backend/.env: DB_HOST=127.0.0.1, DB_PORT khớp MYSQL_PORT trong .env gốc (vd 3306 hoặc 3307), DB_PASSWORD khớp MYSQL_ROOT_PASSWORD
+#
+# Dừng DB: npm run docker:db:down
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: househelp-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-househelp_secret}
+      MYSQL_DATABASE: househelp
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/docker-init/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./database/docker-init/02_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: househelp-phpmyadmin
+    restart: unless-stopped
+    ports:
+      - "${PMA_PORT:-8081}:80"
+    environment:
+      PMA_HOST: mysql
+      PMA_USER: root
+      PMA_PASSWORD: ${MYSQL_ROOT_PASSWORD:-househelp_secret}
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+volumes:
+  mysql_data:

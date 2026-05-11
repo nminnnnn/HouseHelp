@@ -9,9 +9,10 @@ import VerificationStatus from '../components/VerificationStatus';
 import ResubmitVerificationForm from '../components/ResubmitVerificationForm';
 import InitialVerificationForm from '../components/InitialVerificationForm';
 import './HousekeeperDashboard.css';
+import { authHeaders } from '../api/userApi';
 
 export default function HousekeeperDashboard() {
-  const { user } = useAuth();
+  const { user, checkAuthState } = useAuth();
   const { notifications, markAsRead } = useNotifications();
   const { language } = useLanguage();
   const navigate = useNavigate();
@@ -38,42 +39,46 @@ export default function HousekeeperDashboard() {
       
       try {
         console.log('🔍 Checking verification status for user:', user.id);
-        
-        // Check verification status
-        const statusResponse = await fetch(`http://localhost:5000/api/admin/housekeepers/status`);
-        if (statusResponse.ok) {
-          const housekeepers = await statusResponse.json();
-          let currentHousekeeper = housekeepers.find(hk => hk.id === user.id);
-          if (!currentHousekeeper) {
-            currentHousekeeper = housekeepers.find(hk => hk.email === user.email);
-          }
-          
-          if (currentHousekeeper) {
-            const newStatus = {
-              isVerified: Boolean(currentHousekeeper.isVerified),
-              isApproved: Boolean(currentHousekeeper.isApproved)
-            };
-            console.log('✅ Setting verification status:', newStatus);
-            setVerificationStatus(newStatus);
-          }
-        }
 
-        // Check for verification request status
-        const requestResponse = await fetch(`http://localhost:5000/api/verification/status/${user.id}`);
+        const requestResponse = await fetch(
+          `http://localhost:5000/api/verification/status/${user.id}`,
+          { headers: authHeaders() }
+        );
         if (requestResponse.ok) {
           const requestData = await requestResponse.json();
           console.log('📋 Verification request data:', requestData);
-          
+
+          setVerificationStatus({
+            isVerified: Boolean(requestData.isVerified),
+            isApproved: Boolean(requestData.isApproved)
+          });
+
+          try {
+            const raw = localStorage.getItem('househelp_user');
+            if (raw && raw !== 'null') {
+              const parsed = JSON.parse(raw);
+              const next = {
+                ...parsed,
+                isVerified: Boolean(requestData.isVerified),
+                isApproved: Boolean(requestData.isApproved)
+              };
+              localStorage.setItem('househelp_user', JSON.stringify(next));
+              checkAuthState();
+            }
+          } catch (e) {
+            console.warn('Could not sync user flags to localStorage', e);
+          }
+
           if (requestData.hasRequest && requestData.request) {
             setVerificationRequest(requestData.request);
-            
-            // If admin requested more info, show resubmit form
             if (requestData.request.status === 'requires_more_info') {
               setShowResubmitForm(true);
             }
+          } else {
+            setVerificationRequest(null);
           }
         }
-        
+
         setForceUpdate(prev => prev + 1);
       } catch (error) {
         console.error('Error checking verification status:', error);
@@ -81,7 +86,7 @@ export default function HousekeeperDashboard() {
     };
 
     checkVerificationStatus();
-  }, [user?.id, refreshTrigger]);
+  }, [user?.id, refreshTrigger, checkAuthState]);
 
   // Listen for WebSocket updates from admin
   useEffect(() => {
@@ -90,13 +95,29 @@ export default function HousekeeperDashboard() {
       
       socket.on('housekeeper_status_updated', (data) => {
         console.log('🔔 Received status update:', data);
-        if (data.userId === user?.id) {
+        if (Number(data.userId) === Number(user?.id)) {
           console.log('🎯 Status update for current user, refreshing...');
           setVerificationStatus({
             isVerified: Boolean(data.isVerified),
             isApproved: Boolean(data.isApproved)
           });
-          // Also trigger a full refresh
+          try {
+            const raw = localStorage.getItem('househelp_user');
+            if (raw && raw !== 'null') {
+              const parsed = JSON.parse(raw);
+              localStorage.setItem(
+                'househelp_user',
+                JSON.stringify({
+                  ...parsed,
+                  isVerified: Boolean(data.isVerified),
+                  isApproved: Boolean(data.isApproved)
+                })
+              );
+              checkAuthState();
+            }
+          } catch (e) {
+            /* ignore */
+          }
           setRefreshTrigger(prev => prev + 1);
         }
       });
@@ -105,7 +126,7 @@ export default function HousekeeperDashboard() {
         socket.disconnect();
       };
     }
-  }, [user?.id]);
+  }, [user?.id, checkAuthState]);
 
   // Force re-render when verification status changes
   useEffect(() => {

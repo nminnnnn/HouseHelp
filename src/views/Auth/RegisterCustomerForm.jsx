@@ -126,7 +126,7 @@ export default function RegisterCustomerForm() {
         
         // Auto login after successful registration
         if (data.user) {
-          login(data.user);
+          login({ user: data.user, accessToken: data.accessToken });
           window.location.href = '/'; // Redirect to home page
         }
       } else {
@@ -165,7 +165,7 @@ export default function RegisterCustomerForm() {
         alert(data.message || "Đăng nhập Google thành công!");
         
         if (data.user) {
-          login(data.user);
+          login({ user: data.user, accessToken: data.accessToken });
           window.location.href = '/'; // Redirect to home page
         }
       } else {

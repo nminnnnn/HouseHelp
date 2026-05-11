@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { authHeaders } from '../api/userApi';
 
 const InitialVerificationForm = ({ onClose, onSuccess }) => {
   const { user } = useAuth();
@@ -19,11 +20,12 @@ const InitialVerificationForm = ({ onClose, onSuccess }) => {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('userId', user.id);
-      formData.append('fileType', getFileType(file.name));
+      formData.append('fileType', getFileUploadStorageType(file.name));
 
       try {
         const response = await fetch('http://localhost:5000/api/upload', {
           method: 'POST',
+          headers: authHeaders(),
           body: formData
         });
 
@@ -31,7 +33,7 @@ const InitialVerificationForm = ({ onClose, onSuccess }) => {
           const result = await response.json();
           console.log('Upload result:', result);
           return {
-            type: getFileType(file.name),
+            type: getVerificationDocumentType(file.name),
             path: result.file?.path || result.filePath || result.path,
             originalName: file.name
           };
@@ -65,7 +67,8 @@ const InitialVerificationForm = ({ onClose, onSuccess }) => {
     }
   };
 
-  const getFileType = (filename) => {
+  /** Loại hiển thị / lưu verification_documents (ENUM riêng) */
+  const getVerificationDocumentType = (filename) => {
     const name = filename.toLowerCase();
     if (name.includes('id') || name.includes('cmnd') || name.includes('cccd')) {
       return name.includes('back') || name.includes('sau') ? 'id_card_back' : 'id_card_front';
@@ -74,6 +77,13 @@ const InitialVerificationForm = ({ onClose, onSuccess }) => {
       return 'certificate';
     }
     return 'other';
+  };
+
+  /** Loại lưu bảng file_uploads (chỉ avatar | id_card_* | profile_image | document) */
+  const getFileUploadStorageType = (filename) => {
+    const v = getVerificationDocumentType(filename);
+    if (v === 'id_card_front' || v === 'id_card_back') return v;
+    return 'document';
   };
 
   const handleSubmit = async (e) => {
@@ -107,9 +117,7 @@ const InitialVerificationForm = ({ onClose, onSuccess }) => {
       
       const response = await fetch('http://localhost:5000/api/verification/submit', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(submitData)
       });
 

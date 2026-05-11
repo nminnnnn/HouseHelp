@@ -5,6 +5,7 @@ import Checkbox from "../Common/Checkbox";
 import GoogleAuthButton from "../Common/GoogleAuthButton";
 import UploadBox from "../Common/UploadBox";
 import { useAuth } from "../../hooks/useAuth";
+import { authHeaders } from "../../api/userApi";
 
 export default function RegisterHousekeeperForm() {
   const { login } = useAuth();
@@ -28,10 +29,24 @@ export default function RegisterHousekeeperForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [availableServices, setAvailableServices] = useState([]);
-  const [uploadingFiles, setUploadingFiles] = useState({
-    idFront: false,
-    idBack: false
-  });
+  const uploadIdCard = async (userId, field, file) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("fileType", field === "idFront" ? "id_card_front" : "id_card_back");
+    fd.append("userId", String(userId));
+    const response = await fetch("http://localhost:5000/api/upload", {
+      method: "POST",
+      headers: authHeaders(),
+      body: fd,
+    });
+    let data = {};
+    try {
+      data = await response.json();
+    } catch {
+      /* ignore */
+    }
+    return { ok: response.ok, data };
+  };
 
   // Fetch available services
   useEffect(() => {
@@ -64,35 +79,9 @@ export default function RegisterHousekeeperForm() {
     }));
   };
 
-  const handleFileUpload = async (field, file) => {
-    if (!file) return;
-
-    setUploadingFiles(prev => ({ ...prev, [field]: true }));
-    
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('fileType', field === 'idFront' ? 'id_card_front' : 'id_card_back');
-      formData.append('userId', 'temp'); // Will be updated after user creation
-
-      const response = await fetch('http://localhost:5000/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.success) {
-        setForm(f => ({ ...f, [field]: data.file.path }));
-      } else {
-        setError(data.message || `Lỗi upload ${field === 'idFront' ? 'CMND mặt trước' : 'CMND mặt sau'}`);
-      }
-    } catch (error) {
-      console.error('Upload error:', error);
-      setError(`Có lỗi xảy ra khi upload ${field === 'idFront' ? 'CMND mặt trước' : 'CMND mặt sau'}`);
-    } finally {
-      setUploadingFiles(prev => ({ ...prev, [field]: false }));
-    }
+  const handleIdFileSelected = (field, file) => {
+    setForm((f) => ({ ...f, [field]: file }));
+    if (error) setError("");
   };
 
   const validateForm = () => {
@@ -137,6 +126,11 @@ export default function RegisterHousekeeperForm() {
       return false;
     }
 
+    if (!(form.idFront instanceof File) || !(form.idBack instanceof File)) {
+      setError("Vui lòng tải lên CMND/CCCD mặt trước và mặt sau");
+      return false;
+    }
+
     return true;
   };
 
@@ -173,20 +167,51 @@ export default function RegisterHousekeeperForm() {
           dateOfBirth: form.dateOfBirth || null,
           gender: form.gender || null,
           services: selectedServiceNames,
-          idCardFront: form.idFront,
-          idCardBack: form.idBack
+          idCardFront: null,
+          idCardBack: null
         }),
       });
 
       const data = await response.json();
 
       if (response.ok && data.success) {
-        alert(data.message || "Đăng ký thành công! Tài khoản của bạn đang chờ xét duyệt.");
-        
-        // Auto login after successful registration
-        if (data.user) {
-          login(data.user);
-          window.location.href = '/housekeeper/dashboard'; // Redirect to housekeeper dashboard
+        if (data.user && data.accessToken) {
+          login({ user: data.user, accessToken: data.accessToken });
+
+          const front = form.idFront instanceof File ? form.idFront : null;
+          const back = form.idBack instanceof File ? form.idBack : null;
+          const parts = [];
+
+          if (front) {
+            const r = await uploadIdCard(data.user.id, "idFront", front);
+            if (!r.ok) {
+              parts.push(
+                `Mặt trước: ${r.data?.message || r.data?.error || "upload thất bại"}`
+              );
+            }
+          }
+          if (back) {
+            const r = await uploadIdCard(data.user.id, "idBack", back);
+            if (!r.ok) {
+              parts.push(
+                `Mặt sau: ${r.data?.message || r.data?.error || "upload thất bại"}`
+              );
+            }
+          }
+
+          const baseMsg =
+            data.message ||
+            "Đăng ký thành công! Tài khoản của bạn đang chờ xét duyệt.";
+          const extra =
+            parts.length > 0
+              ? `\n\nLưu ý: upload CMND chưa hoàn tất — ${parts.join(
+                  "; "
+                )}. Bạn có thể bổ sung trong hồ sơ sau khi đăng nhập.`
+              : "";
+          alert(baseMsg + extra);
+          window.location.href = "/housekeeper/dashboard";
+        } else {
+          alert(data.message || "Đăng ký thành công! Tài khoản của bạn đang chờ xét duyệt.");
         }
       } else {
         setError(data.message || data.error || "Đăng ký thất bại");
@@ -224,7 +249,7 @@ export default function RegisterHousekeeperForm() {
         alert(data.message || "Đăng nhập Google thành công!");
         
         if (data.user) {
-          login(data.user);
+          login({ user: data.user, accessToken: data.accessToken });
           window.location.href = '/housekeeper/dashboard'; // Redirect to housekeeper dashboard
         }
       } else {
@@ -399,28 +424,24 @@ export default function RegisterHousekeeperForm() {
           <UploadBox 
             label="CMND/CCCD mặt trước *" 
             file={form.idFront} 
-            onChange={f => handleFileUpload("idFront", f)}
+            onChange={(f) => handleIdFileSelected("idFront", f)}
             accept=".png,.jpg,.jpeg"
           />
-          {uploadingFiles.idFront && (
-            <div style={{ fontSize: '12px', color: '#007bff', marginTop: '4px' }}>
-              Đang upload...
-            </div>
-          )}
+          <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>
+            Ảnh sẽ được tải lên máy chủ sau khi tạo tài khoản thành công.
+          </div>
         </div>
         
         <div>
           <UploadBox 
             label="CMND/CCCD mặt sau *" 
             file={form.idBack} 
-            onChange={f => handleFileUpload("idBack", f)}
+            onChange={(f) => handleIdFileSelected("idBack", f)}
             accept=".png,.jpg,.jpeg"
           />
-          {uploadingFiles.idBack && (
-            <div style={{ fontSize: '12px', color: '#007bff', marginTop: '4px' }}>
-              Đang upload...
-            </div>
-          )}
+          <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>
+            Ảnh sẽ được tải lên máy chủ sau khi tạo tài khoản thành công.
+          </div>
         </div>
       </div>
       
@@ -438,7 +459,7 @@ export default function RegisterHousekeeperForm() {
         required 
       />
       
-      <Button type="submit" fullWidth disabled={loading || uploadingFiles.idFront || uploadingFiles.idBack}>
+      <Button type="submit" fullWidth disabled={loading}>
         {loading ? "Đang đăng ký..." : "Tạo tài khoản"}
       </Button>
       

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { authHeaders } from '../api/userApi';
 
 // Component để hiển thị document với error handling
 const DocumentViewer = ({ doc, index }) => {
@@ -141,7 +142,9 @@ const AdminVerificationPanel = () => {
       if (filters.status) params.append('status', filters.status);
       if (filters.priority) params.append('priority', filters.priority);
 
-      const response = await fetch(`http://localhost:5000/api/admin/verification/pending?${params}`);
+      const response = await fetch(`http://localhost:5000/api/admin/verification/pending?${params}`, {
+        headers: authHeaders(),
+      });
       
       if (response.ok) {
         const data = await response.json();
@@ -150,7 +153,10 @@ const AdminVerificationPanel = () => {
         const requestsWithDocuments = await Promise.all(
           data.map(async (request) => {
             try {
-              const docResponse = await fetch(`http://localhost:5000/api/admin/verification/${request.id}/documents`);
+              const docResponse = await fetch(
+                `http://localhost:5000/api/admin/verification/${request.id}/documents`,
+                { headers: authHeaders() }
+              );
               if (docResponse.ok) {
                 const documents = await docResponse.json();
                 console.log(`📄 Fetched ${documents.length} documents for user ${request.userId}`);
@@ -186,9 +192,7 @@ const AdminVerificationPanel = () => {
       
       const response = await fetch(`http://localhost:5000/api/admin/verification/${selectedRequest.id}/review`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           adminId: user.id,
           action: reviewForm.action,

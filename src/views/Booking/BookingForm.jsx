@@ -105,6 +105,7 @@ export default function BookingForm({ housekeeper, onSubmit, calculateTotalPrice
       // Include customer information in the booking data
       const bookingDataWithCustomer = {
         ...formData,
+        customerId: user?.id,
         customerName: user?.fullName || (user?.firstName + " " + user?.lastName) || "Customer",
         customerEmail: user?.email || "",
         customerPhone: user?.phoneNumber || user?.phone || "",

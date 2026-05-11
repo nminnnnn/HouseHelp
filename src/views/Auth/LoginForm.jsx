@@ -46,7 +46,7 @@ export default function LoginForm() {
         console.log('👤 User data:', userData);
         console.log('🎭 User role:', userData.role);
         
-        login(userData); // Use useAuth login method
+        login({ user: userData, accessToken: res.accessToken }); // Use useAuth login method
         
         // Redirect based on user role
         if (userData.role === 'admin') {

@@ -169,15 +169,18 @@ export async function submitBookingReview(bookingId, rating, comment) {
 
 // Helper function to get auth token
 function getAuthToken() {
+  const tokenFromStorage = localStorage.getItem("househelp_access_token");
+  if (tokenFromStorage) return tokenFromStorage;
+
   try {
     const userData = localStorage.getItem("househelp_user");
     if (userData && userData !== "null" && userData !== "undefined") {
       const user = JSON.parse(userData);
-      return user.token || "";
+      return user.accessToken || user.token || "";
     }
-    return "";
   } catch (error) {
     console.error("Error getting auth token:", error);
-    return "";
   }
+
+  return "";
 } 

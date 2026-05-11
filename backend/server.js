@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -7,13 +8,15 @@ const socketIo = require('socket.io');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const ChatbotService = require('./services/chatbotService');
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: ["http://localhost:3000", "http://localhost:5174"],
+    origin: ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174"],
     methods: ["GET", "POST"]
   }
 });
@@ -104,17 +107,172 @@ const upload = multer({
   }
 });
 
-// Kết nối MySQL
+/** Cột file_uploads.fileType là ENUM cố định; map mọi giá trị khác → document */
+function normalizeFileUploadType(fileType) {
+  const allowed = new Set(['avatar', 'id_card_front', 'id_card_back', 'profile_image', 'document']);
+  const t = fileType != null ? String(fileType) : '';
+  if (allowed.has(t)) return t;
+  return 'document';
+}
+
+// Kết nối MySQL (Docker Compose: DB_HOST=mysql; chạy local: localhost trong backend/.env)
 const db = mysql.createConnection({
-  host: 'localhost',
-  user: 'root',         // đổi thành user của bạn nếu khác
-  password: '',         // đổi thành password của bạn nếu có
-  database: 'househelp' // đúng tên database bạn đã tạo
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD !== undefined ? process.env.DB_PASSWORD : '',
+  database: process.env.DB_NAME || 'househelp',
+  port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306
 });
 
 db.connect(err => {
   if (err) throw err;
   console.log('MySQL Connected!');
+});
+
+const JWT_SECRET = process.env.JWT_SECRET || 'househelp_dev_secret_change_me';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+
+const ACCESS_POLICIES = [
+  { methods: ['POST'], pattern: /^\/api\/register$/, public: true },
+  { methods: ['POST'], pattern: /^\/api\/login$/, public: true },
+  { methods: ['POST'], pattern: /^\/api\/auth\/google$/, public: true },
+  { methods: ['GET'], pattern: /^\/api\/housekeepers$/, public: true },
+  { methods: ['GET'], pattern: /^\/api\/housekeepers\/\d+$/, public: true },
+  { methods: ['GET'], pattern: /^\/api\/reviews\/housekeeper\/\d+$/, public: true },
+  { methods: ['GET'], pattern: /^\/api\/housekeepers\/\d+\/reviews$/, public: true },
+  { methods: ['GET'], pattern: /^\/api\/filters\//, public: true },
+
+  { methods: ['*'], pattern: /^\/api\/admin(\/|$)/, roles: ['admin'] },
+  { methods: ['*'], pattern: /^\/api\/debug(\/|$)/, roles: ['admin'] },
+
+  { methods: ['POST'], pattern: /^\/api\/quick-booking\/create$/, roles: ['customer'] },
+  { methods: ['POST'], pattern: /^\/api\/bookings$/, roles: ['customer'] },
+  { methods: ['POST'], pattern: /^\/api\/reviews$/, roles: ['customer'] },
+  { methods: ['POST'], pattern: /^\/api\/reports$/, roles: ['customer'] },
+  { methods: ['POST'], pattern: /^\/api\/coupons\/use$/, roles: ['customer'] },
+  { methods: ['POST'], pattern: /^\/api\/coupons\/validate$/, roles: ['customer'] },
+
+  { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/confirm$/, roles: ['housekeeper'] },
+  { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/reject$/, roles: ['housekeeper'] },
+  { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/complete$/, roles: ['housekeeper'] },
+  { methods: ['POST'], pattern: /^\/api\/verification\/submit$/, roles: ['housekeeper'] },
+
+  { methods: ['GET'], pattern: /^\/api\/users$/, roles: ['admin'] },
+  { methods: ['GET'], pattern: /^\/api\/reports$/, roles: ['admin'] },
+  { methods: ['PUT'], pattern: /^\/api\/reports\/\d+$/, roles: ['admin'] },
+  { methods: ['POST'], pattern: /^\/api\/warnings$/, roles: ['admin'] },
+  { methods: ['GET'], pattern: /^\/api\/warnings$/, roles: ['admin'] },
+  { methods: ['PUT'], pattern: /^\/api\/warnings\/\d+\/read$/, roles: ['admin', 'housekeeper'] },
+];
+
+const signAccessToken = (user) => jwt.sign(
+  { id: user.id, role: user.role, email: user.email },
+  JWT_SECRET,
+  { expiresIn: JWT_EXPIRES_IN }
+);
+
+const extractToken = (req) => {
+  const authHeader = req.headers.authorization || '';
+  if (!authHeader.startsWith('Bearer ')) return null;
+  return authHeader.slice(7).trim();
+};
+
+const findPolicy = (method, pathname) => ACCESS_POLICIES.find((policy) => {
+  const methodMatch = policy.methods.includes('*') || policy.methods.includes(method);
+  return methodMatch && policy.pattern.test(pathname);
+});
+
+const authenticateJWT = (req, res, next) => {
+  const token = extractToken(req);
+  if (!token) {
+    return res.status(401).json({
+      error: 'Unauthorized',
+      message: 'Thiếu access token'
+    });
+  }
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    req.user = payload;
+    return next();
+  } catch (error) {
+    return res.status(401).json({
+      error: 'Unauthorized',
+      message: 'Access token không hợp lệ hoặc đã hết hạn'
+    });
+  }
+};
+
+const sameUser = (value, currentUserId) => Number(value) === Number(currentUserId);
+
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/api/')) return next();
+
+  const policy = findPolicy(req.method, req.path);
+  if (policy?.public) return next();
+
+  return authenticateJWT(req, res, () => {
+    if (policy?.roles && !policy.roles.includes(req.user.role)) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Bạn không có quyền truy cập tài nguyên này'
+      });
+    }
+
+    // Owner-based guard cho user profile/files routes
+    const userScopedMatch = req.path.match(/^\/api\/users\/(\d+)(?:\/profile|\/files)?$/);
+    if (userScopedMatch && req.user.role !== 'admin') {
+      const targetUserId = userScopedMatch[1];
+      if (!sameUser(targetUserId, req.user.id)) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'Bạn chỉ có thể truy cập dữ liệu của chính mình'
+        });
+      }
+    }
+
+    const notificationMatch = req.path.match(/^\/api\/notifications\/(\d+)$/);
+    if (notificationMatch && req.user.role !== 'admin') {
+      if (!sameUser(notificationMatch[1], req.user.id)) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'Bạn chỉ có thể truy cập thông báo của chính mình'
+        });
+      }
+    }
+
+    const customerReportMatch = req.path.match(/^\/api\/reports\/customer\/(\d+)$/);
+    if (customerReportMatch && req.user.role !== 'admin') {
+      if (!sameUser(customerReportMatch[1], req.user.id)) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'Bạn chỉ có thể xem báo cáo của chính mình'
+        });
+      }
+    }
+
+    const bookingUserMatch = req.path.match(/^\/api\/bookings\/user\/(\d+)$/);
+    if (bookingUserMatch && req.user.role !== 'admin') {
+      if (!sameUser(bookingUserMatch[1], req.user.id)) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'Bạn chỉ có thể xem lịch sử booking của chính mình'
+        });
+      }
+    }
+
+    const conversationMatch = req.path.match(/^\/api\/users\/(\d+)\/(conversations|user-conversations)$/);
+    if (conversationMatch && req.user.role !== 'admin') {
+      if (!sameUser(conversationMatch[1], req.user.id)) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'Bạn chỉ có thể xem hội thoại của chính mình'
+        });
+      }
+    }
+
+    return next();
+  });
 });
 
 // Initialize Chatbot Service
@@ -337,10 +495,10 @@ app.post('/api/register', (req, res) => {
       });
     }
 
-    // Hash password (in production, use bcrypt)
-    // For now, we'll use simple hashing
-    const hashedPassword = require('crypto').createHash('sha256').update(password).digest('hex');
+    // bcrypt: mỗi lần hashSync cho cùng một mật khẩu cho chuỗi khác nhau (salt); kiểm tra luôn dùng compareSync
+    const hashedPassword = bcrypt.hashSync(password, 10);
 
+    const normalizedRole = role || 'customer';
     const sql = `INSERT INTO users 
       (fullName, email, password, phone, role, idCardFront, idCardBack, address, city, district, dateOfBirth, gender, authProvider) 
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'local')`;
@@ -350,7 +508,7 @@ app.post('/api/register', (req, res) => {
       email, 
       hashedPassword, 
       phone, 
-      role || 'customer', 
+      normalizedRole, 
       idCardFront, 
       idCardBack,
       address,
@@ -370,7 +528,7 @@ app.post('/api/register', (req, res) => {
       console.log('✅ User created with ID:', userId);
       
       // Nếu là housekeeper, tạo housekeeper record
-      if (role === 'housekeeper') {
+      if (normalizedRole === 'housekeeper') {
         const housekeeperSql = `INSERT INTO housekeepers 
           (userId, rating, services, price, available, description, experience) 
           VALUES (?, 0, ?, 50000, 1, 'Người giúp việc mới tham gia', 0)`;
@@ -420,12 +578,13 @@ app.post('/api/register', (req, res) => {
           res.status(201).json({ 
             success: true,
             message: 'Đăng ký thành công! Tài khoản của bạn đang chờ xét duyệt.',
+            accessToken: signAccessToken({ id: userId, role: normalizedRole, email }),
             user: { 
               id: userId, 
               fullName, 
               email, 
               phone, 
-              role,
+              role: normalizedRole,
               housekeeperId,
               isVerified: false,
               isApproved: false
@@ -437,12 +596,13 @@ app.post('/api/register', (req, res) => {
         res.status(201).json({ 
           success: true,
           message: 'Đăng ký thành công! Chào mừng bạn đến với HouseHelp.',
+          accessToken: signAccessToken({ id: userId, role: normalizedRole, email }),
           user: { 
             id: userId, 
             fullName, 
             email, 
             phone, 
-            role: role || 'customer',
+            role: normalizedRole,
             isVerified: false,
             isApproved: true // Customer auto-approved
           }
@@ -451,7 +611,7 @@ app.post('/api/register', (req, res) => {
 
       // Log registration activity
       db.query('INSERT INTO system_logs (userId, action, description, ipAddress) VALUES (?, ?, ?, ?)', 
-        [userId, 'USER_REGISTERED', `New ${role || 'customer'} registered: ${fullName}`, req.ip], 
+        [userId, 'USER_REGISTERED', `New ${normalizedRole} registered: ${fullName}`, req.ip], 
         (err) => {
           if (err) console.error('Error logging registration:', err);
         });
@@ -474,6 +634,7 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
     }
 
     const { userId, fileType } = req.body;
+    const uploadFileType = normalizeFileUploadType(fileType);
     
     if (!userId) {
       return res.status(400).json({ 
@@ -490,7 +651,8 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
       filename: file.filename,
       path: filePath,
       size: file.size,
-      type: fileType
+      type: uploadFileType,
+      requestedType: fileType
     });
 
     // Save file info to database
@@ -503,7 +665,7 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
       file.filename, 
       file.originalname, 
       filePath, 
-      fileType || 'general', 
+      uploadFileType, 
       file.mimetype, 
       file.size
     ], (err, result) => {
@@ -513,15 +675,15 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
       }
 
       // Update user's avatar or ID card fields if applicable
-      if (fileType === 'avatar') {
+      if (uploadFileType === 'avatar') {
         db.query('UPDATE users SET avatar = ? WHERE id = ?', [filePath, userId], (updateErr) => {
           if (updateErr) console.error('Error updating user avatar:', updateErr);
         });
-      } else if (fileType === 'id_card_front') {
+      } else if (uploadFileType === 'id_card_front') {
         db.query('UPDATE users SET idCardFront = ? WHERE id = ?', [filePath, userId], (updateErr) => {
           if (updateErr) console.error('Error updating ID card front:', updateErr);
         });
-      } else if (fileType === 'id_card_back') {
+      } else if (uploadFileType === 'id_card_back') {
         db.query('UPDATE users SET idCardBack = ? WHERE id = ?', [filePath, userId], (updateErr) => {
           if (updateErr) console.error('Error updating ID card back:', updateErr);
         });
@@ -537,7 +699,7 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
           path: filePath,
           url: `http://localhost:5000${filePath}`,
           size: file.size,
-          type: fileType || 'general'
+          type: uploadFileType
         }
       });
     });
@@ -562,6 +724,7 @@ app.post('/api/upload-multiple', upload.array('files', 5), (req, res) => {
     }
 
     const { userId, fileType } = req.body;
+    const uploadFileType = normalizeFileUploadType(fileType);
     
     if (!userId) {
       return res.status(400).json({ 
@@ -584,7 +747,7 @@ app.post('/api/upload-multiple', upload.array('files', 5), (req, res) => {
           file.filename, 
           file.originalname, 
           filePath, 
-          fileType || 'general', 
+          uploadFileType, 
           file.mimetype, 
           file.size
         ], (err, result) => {
@@ -598,7 +761,7 @@ app.post('/api/upload-multiple', upload.array('files', 5), (req, res) => {
               path: filePath,
               url: `http://localhost:5000${filePath}`,
               size: file.size,
-              type: fileType || 'general'
+              type: uploadFileType
             });
             resolve(result);
           }
@@ -714,23 +877,51 @@ app.post('/api/login', (req, res) => {
     });
   }
 
-  // Hash password to compare (same method as registration)
-  const hashedPassword = require('crypto').createHash('sha256').update(password).digest('hex');
-  
-  db.query('SELECT * FROM users WHERE email = ? AND password = ?', [email, hashedPassword], (err, results) => {
+  const crypto = require('crypto');
+
+  db.query('SELECT * FROM users WHERE email = ?', [email], (err, results) => {
     if (err) {
       console.error('Database error during login:', err);
       return res.status(500).json({ error: 'Lỗi hệ thống', message: 'Không thể đăng nhập' });
     }
-    
+
     if (results.length === 0) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         error: 'Thông tin đăng nhập không chính xác',
-        message: 'Email hoặc mật khẩu không đúng' 
+        message: 'Email hoặc mật khẩu không đúng'
       });
     }
-    
+
     const user = results[0];
+    const stored = user.password;
+    if (!stored) {
+      return res.status(401).json({
+        error: 'Thông tin đăng nhập không chính xác',
+        message: 'Email hoặc mật khẩu không đúng'
+      });
+    }
+
+    let passwordOk = false;
+    if (typeof stored === 'string' && stored.startsWith('$2')) {
+      // Không so sánh chuỗi hash thủ công giữa các lần hashSync — chỉ dùng compareSync với hash đã lưu trong DB
+      passwordOk = bcrypt.compareSync(password, stored);
+    } else {
+      const legacyHash = crypto.createHash('sha256').update(password).digest('hex');
+      passwordOk = legacyHash === stored;
+      if (passwordOk) {
+        const newHash = bcrypt.hashSync(password, 10);
+        db.query('UPDATE users SET password = ? WHERE id = ?', [newHash, user.id], (rehashErr) => {
+          if (rehashErr) console.error('Password rehash error:', rehashErr);
+        });
+      }
+    }
+
+    if (!passwordOk) {
+      return res.status(401).json({
+        error: 'Thông tin đăng nhập không chính xác',
+        message: 'Email hoặc mật khẩu không đúng'
+      });
+    }
     console.log('✅ Login successful for user:', user.id);
     
     // Update last active time
@@ -751,6 +942,7 @@ app.post('/api/login', (req, res) => {
     res.json({
       success: true,
       message: 'Đăng nhập thành công',
+      accessToken: signAccessToken(user),
       user: user
     });
   });
@@ -907,12 +1099,27 @@ app.get('/api/verification/status/:userId', (req, res) => {
     }
     
     if (results.length === 0) {
-      return res.json({
-        hasRequest: false,
-        isVerified: false,
-        isApproved: false,
-        message: 'Chưa có yêu cầu xác thực nào'
-      });
+      return db.query(
+        'SELECT isVerified, isApproved FROM users WHERE id = ? AND role = "housekeeper"',
+        [userId],
+        (uErr, uRows) => {
+          if (uErr || !uRows || uRows.length === 0) {
+            return res.json({
+              hasRequest: false,
+              isVerified: false,
+              isApproved: false,
+              message: 'Chưa có yêu cầu xác thực nào'
+            });
+          }
+          const u = uRows[0];
+          return res.json({
+            hasRequest: false,
+            isVerified: Boolean(u.isVerified === 1 || u.isVerified === true),
+            isApproved: Boolean(u.isApproved === 1 || u.isApproved === true),
+            message: 'Chưa có yêu cầu xác thực nào'
+          });
+        }
+      );
     }
     
     const request = results[0];
@@ -924,12 +1131,19 @@ app.get('/api/verification/status/:userId', (req, res) => {
           console.error('Error fetching verification documents:', docErr);
         }
         
+        const isVerified = Boolean(
+          request.isVerified === 1 || request.isVerified === true
+        );
+        const isApproved = Boolean(
+          request.isApproved === 1 || request.isApproved === true
+        );
+
         res.json({
           hasRequest: true,
           request: request,
           documents: documents || [],
-          isVerified: request.isVerified,
-          isApproved: request.isApproved
+          isVerified,
+          isApproved
         });
       });
   });
@@ -944,13 +1158,11 @@ app.get('/api/admin/verification/pending', (req, res) => {
       vr.*,
       u.fullName, u.email, u.phone, u.createdAt as userCreatedAt,
       h.experience, h.services,
-      COUNT(vd.id) as documentCount
+      (SELECT COUNT(*) FROM verification_documents vd WHERE vd.userId = vr.userId) AS documentCount
     FROM verification_requests vr
     JOIN users u ON vr.userId = u.id
     LEFT JOIN housekeepers h ON u.id = h.userId
-    LEFT JOIN verification_documents vd ON vr.userId = vd.userId
-    WHERE 1=1
-      AND (u.isVerified = 0 OR u.isApproved = 0)
+    WHERE u.role = 'housekeeper'
   `;
   
   const params = [];
@@ -965,8 +1177,7 @@ app.get('/api/admin/verification/pending', (req, res) => {
     params.push(priority);
   }
   
-  sql += ` GROUP BY vr.id 
-           ORDER BY 
+  sql += ` ORDER BY 
              FIELD(vr.priority, 'urgent', 'high', 'normal', 'low'),
              vr.submittedAt ASC
            LIMIT ? OFFSET ?`;
@@ -1067,6 +1278,14 @@ app.post('/api/admin/verification/:requestId/review', (req, res) => {
           [userVerified, userApproved, userVerified ? new Date() : null, userId], (userErr) => {
             if (userErr) {
               console.error('Error updating user verification status:', userErr);
+            } else {
+              io.emit('housekeeper_status_updated', {
+                userId: Number(userId),
+                isVerified: Boolean(userVerified),
+                isApproved: Boolean(userApproved),
+                source: 'verification_review',
+                timestamp: new Date().toISOString()
+              });
             }
           });
 
@@ -1232,6 +1451,7 @@ app.post('/api/auth/google', (req, res) => {
       return res.json({
         success: true,
         message: 'Đăng nhập Google thành công',
+        accessToken: signAccessToken(user),
         user: user,
         isNewUser: false
       });
@@ -1271,6 +1491,7 @@ app.post('/api/auth/google', (req, res) => {
             res.json({
               success: true,
               message: 'Liên kết tài khoản Google thành công',
+              accessToken: signAccessToken({ ...existingUser, role: existingUser.role, email: existingUser.email }),
               user: { ...existingUser, googleId, profilePicture: picture },
               isNewUser: false
             });
@@ -1320,6 +1541,7 @@ app.post('/api/auth/google', (req, res) => {
         res.status(201).json({ 
           success: true,
           message: 'Đăng ký Google thành công! Chào mừng bạn đến với HouseHelp.',
+          accessToken: signAccessToken({ id: userId, role, email }),
           user: { 
             id: userId, 
             fullName: name, 
@@ -1341,16 +1563,24 @@ app.post('/api/auth/google', (req, res) => {
 // API: Unlink Google account
 app.post('/api/auth/google/unlink', (req, res) => {
   const { userId } = req.body;
+  const effectiveUserId = userId || req.user?.id;
   
-  if (!userId) {
+  if (!effectiveUserId) {
     return res.status(400).json({ 
       error: 'Thiếu thông tin userId',
       message: 'Cần có userId để hủy liên kết Google' 
     });
   }
 
+  if (req.user && req.user.role !== 'admin' && Number(effectiveUserId) !== Number(req.user.id)) {
+    return res.status(403).json({
+      error: 'Forbidden',
+      message: 'Bạn chỉ có thể hủy liên kết tài khoản của chính mình'
+    });
+  }
+
   // Check if user has password (can't unlink if Google is only auth method)
-  db.query('SELECT password, authProvider FROM users WHERE id = ?', [userId], (err, results) => {
+  db.query('SELECT password, authProvider FROM users WHERE id = ?', [effectiveUserId], (err, results) => {
     if (err) {
       console.error('Database error checking user auth:', err);
       return res.status(500).json({ error: 'Lỗi hệ thống', message: 'Không thể kiểm tra thông tin xác thực' });
@@ -1371,13 +1601,13 @@ app.post('/api/auth/google/unlink', (req, res) => {
     
     // Unlink Google account
     db.query('UPDATE users SET googleId = NULL, profilePicture = NULL, authProvider = "local" WHERE id = ?', 
-      [userId], (unlinkErr) => {
+      [effectiveUserId], (unlinkErr) => {
         if (unlinkErr) {
           console.error('Error unlinking Google account:', unlinkErr);
           return res.status(500).json({ error: 'Lỗi hủy liên kết Google', message: unlinkErr.message });
         }
         
-        console.log('✅ Google account unlinked for user:', userId);
+        console.log('✅ Google account unlinked for user:', effectiveUserId);
         
         res.json({
           success: true,
@@ -1606,7 +1836,8 @@ app.get('/api/bookings', (req, res) => {
            s.name as serviceName
     FROM bookings b
     LEFT JOIN users u1 ON b.customerId = u1.id
-    LEFT JOIN users u2 ON b.housekeeperId = u2.id  
+    LEFT JOIN housekeepers hk_b ON b.housekeeperId = hk_b.id
+    LEFT JOIN users u2 ON hk_b.userId = u2.id
     LEFT JOIN services s ON b.serviceId = s.id
     WHERE 1=1
   `;
@@ -1912,14 +2143,21 @@ app.post('/api/quick-booking/create', (req, res) => {
       const housekeeperUserId = housekeeperResults[0].userId;
       console.log('📤 Sending quick booking notification to housekeeper userId:', housekeeperUserId);
 
-      // Store notification in database
+      // Store notification in database (cột read_status, không dùng isRead)
       const notificationSql = `INSERT INTO notifications 
-        (userId, type, title, message, bookingId, urgency, createdAt, isRead) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
-      
+        (userId, type, title, message, bookingId, urgency, data, createdAt, read_status) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
       const notificationValues = [
-        housekeeperUserId, 'quick_booking', notificationTitle, notificationMessage, 
-        bookingId, urgency, new Date(), false
+        housekeeperUserId,
+        'quick_booking',
+        notificationTitle,
+        notificationMessage,
+        bookingId,
+        urgency,
+        JSON.stringify(newBooking),
+        new Date(),
+        0
       ];
 
       db.query(notificationSql, notificationValues, (err) => {
@@ -1929,9 +2167,8 @@ app.post('/api/quick-booking/create', (req, res) => {
           console.log('✅ Quick booking notification saved to database');
         }
 
-        // Send real-time notification via WebSocket
         if (io) {
-          io.emit(`notification_${housekeeperUserId}`, notificationToHousekeeper);
+          sendNotificationToUser(housekeeperUserId, notificationToHousekeeper);
           console.log('📡 Quick booking notification sent via WebSocket');
         }
 
@@ -2080,8 +2317,14 @@ app.post('/api/bookings/:id/confirm', (req, res) => {
   const { housekeeperId } = req.body; // Lấy housekeeperId từ request body
   
   // Kiểm tra trạng thái xác minh và phê duyệt của housekeeper trước khi cho phép xác nhận
-  db.query('SELECT u.isVerified, u.isApproved FROM users u JOIN bookings b ON u.id = b.housekeeperId WHERE b.id = ?', 
-    [bookingId], (verifyErr, verifyResults) => {
+  db.query(
+    `SELECT u.isVerified, u.isApproved
+     FROM bookings b
+     JOIN housekeepers h ON b.housekeeperId = h.id
+     JOIN users u ON h.userId = u.id
+     WHERE b.id = ?`,
+    [bookingId],
+    (verifyErr, verifyResults) => {
     if (verifyErr) {
       console.error('Error checking housekeeper verification:', verifyErr);
       return res.status(500).json({ error: 'Lỗi kiểm tra trạng thái xác minh' });
@@ -2243,11 +2486,10 @@ app.get('/api/bookings/user/:id', (req, res) => {
   const sql = `
     SELECT b.* FROM bookings b
     WHERE b.customerId = ?
-    OR b.housekeeperId = ?
     OR b.housekeeperId IN (SELECT h.id FROM housekeepers h WHERE h.userId = ?)
   `;
-  
-  db.query(sql, [userId, userId, userId], (err, results) => {
+
+  db.query(sql, [userId, userId], (err, results) => {
     if (err) {
       console.error('Error fetching bookings for user:', err);
       return res.status(500).json({ error: err });
@@ -2334,9 +2576,22 @@ app.get('/api/notifications/:userId', (req, res) => {
         return res.status(500).json({ error: err });
       }
       
-      const notifications = results.map(notif => ({
+      const parseNotifData = (raw) => {
+        if (raw == null || raw === '') return null;
+        if (typeof raw === 'object') return raw; // mysql2 đã parse cột JSON
+        if (typeof raw === 'string') {
+          try {
+            return JSON.parse(raw);
+          } catch {
+            return raw;
+          }
+        }
+        return raw;
+      };
+
+      const notifications = results.map((notif) => ({
         ...notif,
-        data: notif.data ? JSON.parse(notif.data) : null,
+        data: parseNotifData(notif.data),
         read: notif.read_status === 1
       }));
       
@@ -3772,102 +4027,132 @@ app.put('/api/admin/housekeepers/:userId/status', (req, res) => {
 app.post('/api/bookings/:id/complete', (req, res) => {
   const bookingId = req.params.id;
   const { housekeeperId, completionNotes } = req.body;
-  
-  console.log(`🏁 Housekeeper ${housekeeperId} marking booking ${bookingId} as completed`);
-  
-  // Kiểm tra trạng thái xác minh và phê duyệt của housekeeper trước khi cho phép đánh dấu hoàn thành
-  db.query('SELECT isVerified, isApproved FROM users WHERE id = ?', [housekeeperId], (verifyErr, verifyResults) => {
-    if (verifyErr) {
-      console.error('Error checking housekeeper verification:', verifyErr);
-      return res.status(500).json({ error: 'Lỗi kiểm tra trạng thái xác minh' });
-    }
-    
-    if (verifyResults.length === 0) {
-      return res.status(404).json({ error: 'Không tìm thấy housekeeper' });
-    }
-    
-    const housekeeper = verifyResults[0];
-    if (!housekeeper.isVerified || !housekeeper.isApproved) {
-      return res.status(403).json({ 
-        error: 'Bạn cần được xác minh và phê duyệt bởi admin trước khi có thể đánh dấu công việc hoàn thành',
-        needsVerification: !housekeeper.isVerified,
-        needsApproval: !housekeeper.isApproved
-      });
-    }
-    
-    // Cập nhật booking status thành completed
-    db.query('UPDATE bookings SET status = ?, updatedAt = NOW() WHERE id = ? AND housekeeperId = ?', 
-      ['completed', bookingId, housekeeperId], (err, result) => {
-    if (err) {
-      console.error('Error completing booking:', err);
-      return res.status(500).json({ error: err.message });
-    }
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ error: 'Booking not found or unauthorized' });
-    }
+  console.log(`🏁 Complete booking ${bookingId}`, { housekeeperId });
 
-    // Lấy thông tin booking để gửi notification
-    db.query('SELECT * FROM bookings WHERE id = ?', [bookingId], (err, bookingResults) => {
-      if (err || bookingResults.length === 0) {
-        return res.status(500).json({ error: 'Error fetching booking details' });
+  db.query(
+    `SELECT b.*, h.id AS hkRowId, h.userId AS hkUserId
+     FROM bookings b
+     JOIN housekeepers h ON b.housekeeperId = h.id
+     WHERE b.id = ?`,
+    [bookingId],
+    (bkErr, bkRows) => {
+      if (bkErr) {
+        console.error('Error loading booking:', bkErr);
+        return res.status(500).json({ error: 'Lỗi hệ thống' });
+      }
+      if (!bkRows.length) {
+        return res.status(404).json({ error: 'Không tìm thấy booking' });
       }
 
-      const booking = bookingResults[0];
-      
-      // Cập nhật completedJobs cho housekeeper
-      db.query('UPDATE housekeepers SET completedJobs = completedJobs + 1 WHERE userId = ?', 
-        [housekeeperId], (err) => {
-        if (err) console.error('Error updating completed jobs:', err);
-      });
+      const row = bkRows[0];
+      const hkRowId = row.hkRowId;
+      const hkUserId = row.hkUserId;
+      const bodyHk = housekeeperId != null && housekeeperId !== '' ? Number(housekeeperId) : null;
+      const jwtUid = req.user ? Number(req.user.id) : NaN;
+      const matchesJwt = req.user && req.user.role === 'housekeeper' && jwtUid === Number(hkUserId);
+      const matchesBody =
+        bodyHk != null && !Number.isNaN(bodyHk) &&
+        (bodyHk === Number(hkRowId) || bodyHk === Number(hkUserId));
+      if (!matchesJwt && !matchesBody) {
+        return res.status(403).json({ error: 'Bạn không có quyền hoàn thành booking này' });
+      }
 
-      // Tạo payment record
-      const paymentSql = `INSERT INTO payments (bookingId, customerId, method, amount, status, createdAt) 
+      db.query('SELECT isVerified, isApproved FROM users WHERE id = ?', [hkUserId], (verifyErr, verifyResults) => {
+        if (verifyErr) {
+          console.error('Error checking housekeeper verification:', verifyErr);
+          return res.status(500).json({ error: 'Lỗi kiểm tra trạng thái xác minh' });
+        }
+
+        if (!verifyResults.length) {
+          return res.status(404).json({ error: 'Không tìm thấy housekeeper' });
+        }
+
+        const housekeeper = verifyResults[0];
+        if (!housekeeper.isVerified || !housekeeper.isApproved) {
+          return res.status(403).json({
+            error: 'Bạn cần được xác minh và phê duyệt bởi admin trước khi có thể đánh dấu công việc hoàn thành',
+            needsVerification: !housekeeper.isVerified,
+            needsApproval: !housekeeper.isApproved
+          });
+        }
+
+        db.query(
+          'UPDATE bookings SET status = ?, updatedAt = NOW() WHERE id = ? AND housekeeperId = ?',
+          ['completed', bookingId, hkRowId],
+          (err, result) => {
+            if (err) {
+              console.error('Error completing booking:', err);
+              return res.status(500).json({ error: err.message });
+            }
+
+            if (result.affectedRows === 0) {
+              return res.status(404).json({ error: 'Booking not found or unauthorized' });
+            }
+
+            const booking = { ...row };
+            delete booking.hkRowId;
+            delete booking.hkUserId;
+
+            db.query(
+              'UPDATE housekeepers SET completedJobs = completedJobs + 1 WHERE id = ?',
+              [hkRowId],
+              (cjErr) => {
+                if (cjErr) console.error('Error updating completed jobs:', cjErr);
+              }
+            );
+
+            const paymentSql = `INSERT INTO payments (bookingId, customerId, method, amount, status, createdAt) 
                          VALUES (?, ?, ?, ?, ?, NOW())`;
-      db.query(paymentSql, [bookingId, booking.customerId, 'pending', booking.totalPrice, 'pending'], 
-        (err, paymentResult) => {
-        if (err) console.error('Error creating payment record:', err);
-      });
+            db.query(
+              paymentSql,
+              [bookingId, booking.customerId, 'pending', booking.totalPrice, 'pending'],
+              (payErr) => {
+                if (payErr) console.error('Error creating payment record:', payErr);
+              }
+            );
 
-      // Gửi notification cho customer
-      const notificationToCustomer = {
-        id: Date.now(),
-        type: 'booking_completed',
-        title: 'Công việc đã hoàn thành',
-        message: `${booking.housekeeperName} đã hoàn thành công việc. Vui lòng xác nhận và thanh toán.`,
-        bookingId: bookingId,
-        booking: booking,
-        timestamp: new Date(),
-        read: false
-      };
+            const notificationToCustomer = {
+              id: Date.now(),
+              type: 'booking_completed',
+              title: 'Công việc đã hoàn thành',
+              message: `${booking.housekeeperName} đã hoàn thành công việc. Vui lòng xác nhận và thanh toán.`,
+              bookingId: bookingId,
+              booking: booking,
+              timestamp: new Date(),
+              read: false
+            };
 
-      console.log('✅ Sending completion notification to customer:', booking.customerId);
-      sendNotificationToUser(booking.customerId, notificationToCustomer);
-      
-      // Lưu notification vào database
-      const notifSql = `INSERT INTO notifications (userId, type, title, message, bookingId, data, createdAt, read_status) 
+            console.log('✅ Sending completion notification to customer:', booking.customerId);
+            sendNotificationToUser(booking.customerId, notificationToCustomer);
+
+            const notifSql = `INSERT INTO notifications (userId, type, title, message, bookingId, data, createdAt, read_status) 
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
-      db.query(notifSql, [
-        booking.customerId,
-        notificationToCustomer.type,
-        notificationToCustomer.title,
-        notificationToCustomer.message,
-        bookingId,
-        JSON.stringify({ ...booking, completionNotes }),
-        new Date(),
-        0
-      ], (notifErr) => {
-        if (notifErr) console.error('Error saving notification:', notifErr);
-      });
+            db.query(
+              notifSql,
+              [
+                booking.customerId,
+                notificationToCustomer.type,
+                notificationToCustomer.title,
+                notificationToCustomer.message,
+                bookingId,
+                JSON.stringify({ ...booking, completionNotes }),
+                new Date(),
+                0
+              ],
+              (notifErr) => {
+                if (notifErr) console.error('Error saving notification:', notifErr);
+              }
+            );
 
-      res.json({ 
-        message: 'Booking completed successfully', 
-        booking: booking,
-        paymentRequired: true
+            res.json({
+              message: 'Booking completed successfully',
+              booking: booking,
+              paymentRequired: true
+            });
+          });
       });
     });
-  });
-  });
 });
 
 // API: Customer xác nhận và thanh toán
@@ -5322,4 +5607,36 @@ app.post('/api/coupons/use', (req, res) => {
   });
 });
 
-server.listen(5000, () => console.log('Server running on port 5000 with WebSocket support'));
+const PORT = Number(process.env.PORT) || 5000;
+
+let shutdownStarted = false;
+function gracefulShutdown(reason) {
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  console.log(`Shutting down (${reason}), releasing port ${PORT} and MySQL connection...`);
+  try {
+    if (typeof io.disconnectSockets === 'function') {
+      io.disconnectSockets(true);
+    }
+  } catch (e) {
+    console.error('Socket.IO disconnect:', e);
+  }
+  server.close((closeErr) => {
+    if (closeErr) console.error('HTTP server.close:', closeErr);
+    db.end((dbErr) => {
+      if (dbErr) console.error('MySQL connection end:', dbErr);
+      process.exit(closeErr || dbErr ? 1 : 0);
+    });
+  });
+  setTimeout(() => {
+    console.error('Shutdown timeout, forcing exit');
+    process.exit(1);
+  }, 8000).unref();
+}
+
+process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.once('SIGINT', () => gracefulShutdown('SIGINT'));
+
+server.listen(PORT, () =>
+  console.log(`Server running on port ${PORT} with WebSocket support`)
+);

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 export const useAuth = () => {
@@ -12,7 +12,7 @@ export const useAuth = () => {
     checkAuthState();
   }, [refreshTrigger]); // Re-check when refreshTrigger changes
 
-  const checkAuthState = () => {
+  const checkAuthState = useCallback(() => {
     try {
       const userData = localStorage.getItem("househelp_user");
       if (userData && userData !== "null" && userData !== "undefined") {
@@ -30,20 +30,28 @@ export const useAuth = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   const login = (userData) => {
-    console.log('🔐 useAuth login called with:', userData);
-    localStorage.setItem("househelp_user", JSON.stringify(userData));
-    setUser(userData);
+    console.log(' useAuth login called with:', userData);
+    const payload = userData?.user ? userData.user : userData;
+    const accessToken = userData?.accessToken || payload?.accessToken || payload?.token || "";
+
+    if (accessToken) {
+      localStorage.setItem("househelp_access_token", accessToken);
+    }
+
+    localStorage.setItem("househelp_user", JSON.stringify(payload));
+    setUser(payload);
     setIsAuthenticated(true);
     setRefreshTrigger(prev => prev + 1); // Trigger refresh
-    console.log('✅ User logged in successfully, role:', userData.role);
+    console.log('✅ User logged in successfully, role:', payload?.role);
   };
 
   const logout = () => {
     console.log("Logout called - clearing localStorage and state");
     localStorage.removeItem("househelp_user");
+    localStorage.removeItem("househelp_access_token");
     setUser(null);
     setIsAuthenticated(false);
     setRefreshTrigger(prev => prev + 1); // Trigger refresh for all instances

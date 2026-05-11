@@ -1,7 +1,18 @@
 import React, { createContext, useContext, useState, useReducer, useEffect } from 'react';
-import { useAuth } from '../hooks/useAuth';
+import { authHeaders } from '../api/userApi';
 
 const BookingContext = createContext();
+
+/** BookingProvider nằm ngoài Router nên không dùng useAuth; đọc user từ localStorage */
+function getStoredUser() {
+  try {
+    const raw = localStorage.getItem('househelp_user');
+    if (!raw || raw === 'null' || raw === 'undefined') return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
 
 // Booking reducer để quản lý state
 const bookingReducer = (state, action) => {
@@ -221,13 +232,18 @@ export const BookingProvider = ({ children }) => {
           ? 'http://localhost:5000/api/quick-booking/create'
           : 'http://localhost:5000/api/bookings';
 
+        const storedUser = getStoredUser();
+        const customerId = bookingData.customerId ?? storedUser?.id;
+        if (!customerId) {
+          setError('Vui lòng đăng nhập để đặt lịch.');
+          throw new Error('Chưa đăng nhập');
+        }
+
         const response = await fetch(apiEndpoint, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
-            customerId: bookingData.customerId || 4, // Use provided customer ID or fallback
+            customerId,
             housekeeperId: state.selectedHousekeeper?.id,
             service: bookingData.service,
             date: bookingData.date,
@@ -251,9 +267,26 @@ export const BookingProvider = ({ children }) => {
           // Update with real API booking ID
           setBookingId(apiBooking.id);
           newBooking.id = apiBooking.id; // Update the local object too
+        } else {
+          const errText = await response.text().catch(() => '');
+          let msg = `Đặt lịch thất bại (${response.status})`;
+          try {
+            const j = JSON.parse(errText);
+            if (j.message) msg = j.message;
+            else if (j.error) msg = j.error;
+          } catch {
+            if (errText) msg = errText;
+          }
+          console.error('Booking API error:', msg, errText);
+          setError(msg);
+          throw new Error(msg);
         }
       } catch (apiError) {
-        console.error('API call failed, using local booking:', apiError);
+        console.error('API call failed:', apiError);
+        if (apiError.message && !apiError.message.includes('Chưa đăng nhập')) {
+          setError(apiError.message || 'Đặt lịch thất bại');
+        }
+        throw apiError;
       }
 
       // Update booking history
@@ -320,9 +353,7 @@ export const BookingProvider = ({ children }) => {
       
       const response = await fetch('http://localhost:5000/api/quick-booking/find-matches', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(searchCriteria)
       });
 

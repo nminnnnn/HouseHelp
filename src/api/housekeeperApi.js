@@ -1,10 +1,23 @@
+const API_BASE_URL = "http://localhost:5000/api";
+
+function getAccessToken() {
+  return localStorage.getItem("househelp_access_token") || "";
+}
+
+function authHeaders(extraHeaders = {}) {
+  const token = getAccessToken();
+  return token
+    ? { ...extraHeaders, Authorization: `Bearer ${token}` }
+    : extraHeaders;
+}
+
 export async function getAllHousekeepers() {
-  const res = await fetch("http://localhost:5000/api/housekeepers");
+  const res = await fetch(`${API_BASE_URL}/housekeepers`);
   return res.json();
 }
 
 export async function getHousekeeperById(id) {
-  const res = await fetch(`http://localhost:5000/api/housekeepers/${id}`);
+  const res = await fetch(`${API_BASE_URL}/housekeepers/${id}`);
   if (!res.ok) {
     throw new Error(`HTTP error! status: ${res.status}`);
   }
@@ -12,14 +25,16 @@ export async function getHousekeeperById(id) {
 }
 
 export async function getHousekeeperProfile(id) {
-  const res = await fetch(`http://localhost:5000/api/housekeepers/${id}/profile`);
+  const res = await fetch(`${API_BASE_URL}/housekeepers/${id}/profile`, {
+    headers: authHeaders()
+  });
   return res.json();
 }
 
 export async function updateHousekeeperProfile(id, profileData) {
-  const res = await fetch(`http://localhost:5000/api/housekeepers/${id}/profile`, {
+  const res = await fetch(`${API_BASE_URL}/housekeepers/${id}/profile`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(profileData)
   });
   return res.json();
@@ -31,41 +46,44 @@ export async function uploadPortfolioImages(id, images) {
     formData.append(`portfolioImage${index}`, image);
   });
   
-  const res = await fetch(`http://localhost:5000/api/housekeepers/${id}/portfolio`, {
+  const res = await fetch(`${API_BASE_URL}/housekeepers/${id}/portfolio`, {
     method: "POST",
+    headers: authHeaders(),
     body: formData
   });
   return res.json();
 }
 
 export async function updateAvailability(id, isAvailable) {
-  const res = await fetch(`http://localhost:5000/api/housekeepers/${id}/availability`, {
+  const res = await fetch(`${API_BASE_URL}/housekeepers/${id}/availability`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ available: isAvailable })
   });
   return res.json();
 }
 
 export async function updatePricing(id, price, priceType) {
-  const res = await fetch(`http://localhost:5000/api/housekeepers/${id}/pricing`, {
+  const res = await fetch(`${API_BASE_URL}/housekeepers/${id}/pricing`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ price, priceType })
   });
   return res.json();
 }
 
 export async function updateWorkingSchedule(id, workingDays, workingHours) {
-  const res = await fetch(`http://localhost:5000/api/housekeepers/${id}/schedule`, {
+  const res = await fetch(`${API_BASE_URL}/housekeepers/${id}/schedule`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ workingDays, workingHours })
   });
   return res.json();
 }
 
 export async function getHousekeeperStats(id) {
-  const res = await fetch(`http://localhost:5000/api/housekeepers/${id}/stats`);
+  const res = await fetch(`${API_BASE_URL}/housekeepers/${id}/stats`, {
+    headers: authHeaders()
+  });
   return res.json();
 } 

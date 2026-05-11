@@ -1,0 +1,7 @@
+node_modules
+backend
+.git
+*.md
+.env
+.env.*
+!.env.docker.example

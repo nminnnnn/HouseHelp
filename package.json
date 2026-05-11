@@ -4,6 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "docker:db": "docker compose -f docker-compose.db-only.yml up -d",
+    "docker:db:down": "docker compose -f docker-compose.db-only.yml down",
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",

@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import AdminVerificationPanel from '../components/AdminVerificationPanel';
 import CouponManagement from '../components/Admin/CouponManagement';
+import { authHeaders } from '../api/userApi';
 import './AdminDashboard.css';
+
+const authGet = () => ({ headers: authHeaders() });
 
 const AdminDashboard = () => {
   const [overview, setOverview] = useState({});
@@ -55,15 +58,15 @@ const AdminDashboard = () => {
         reviewsRes,
         housekeeperDetailsRes
       ] = await Promise.all([
-        fetch('http://localhost:5000/api/admin/dashboard/overview'),
-        fetch('http://localhost:5000/api/admin/dashboard/booking-stats'),
-        fetch('http://localhost:5000/api/admin/dashboard/top-housekeepers'),
-        fetch('http://localhost:5000/api/admin/dashboard/time-stats'),
-        fetch('http://localhost:5000/api/admin/dashboard/service-stats'),
-        fetch('http://localhost:5000/api/admin/housekeepers/status'),
-        fetch('http://localhost:5000/api/admin/dashboard/user-growth'),
-        fetch('http://localhost:5000/api/admin/reviews'),
-        fetch('http://localhost:5000/api/admin/dashboard/housekeeper-details')
+        fetch('http://localhost:5000/api/admin/dashboard/overview', authGet()),
+        fetch('http://localhost:5000/api/admin/dashboard/booking-stats', authGet()),
+        fetch('http://localhost:5000/api/admin/dashboard/top-housekeepers', authGet()),
+        fetch('http://localhost:5000/api/admin/dashboard/time-stats', authGet()),
+        fetch('http://localhost:5000/api/admin/dashboard/service-stats', authGet()),
+        fetch('http://localhost:5000/api/admin/housekeepers/status', authGet()),
+        fetch('http://localhost:5000/api/admin/dashboard/user-growth', authGet()),
+        fetch('http://localhost:5000/api/admin/reviews', authGet()),
+        fetch('http://localhost:5000/api/admin/dashboard/housekeeper-details', authGet())
       ]);
 
       setOverview(await overviewRes.json());
@@ -86,14 +89,12 @@ const AdminDashboard = () => {
     try {
       const response = await fetch(`http://localhost:5000/api/admin/housekeepers/${userId}/status`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ isApproved, isVerified }),
       });
 
       if (response.ok) {
-        const statusRes = await fetch('http://localhost:5000/api/admin/housekeepers/status');
+        const statusRes = await fetch('http://localhost:5000/api/admin/housekeepers/status', authGet());
         setHousekeeperStatus(await statusRes.json());
       }
     } catch (error) {
@@ -122,15 +123,13 @@ const AdminDashboard = () => {
     try {
       const response = await fetch(`http://localhost:5000/api/admin/reviews/${reviewId}/visibility`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ visible }),
       });
 
       if (response.ok) {
         // Refresh reviews data
-        const reviewsRes = await fetch('http://localhost:5000/api/admin/reviews');
+        const reviewsRes = await fetch('http://localhost:5000/api/admin/reviews', authGet());
         setReviews(await reviewsRes.json());
       }
     } catch (error) {
@@ -142,7 +141,7 @@ const AdminDashboard = () => {
   const fetchReports = async () => {
     setReportsLoading(true);
     try {
-      const response = await fetch('http://localhost:5000/api/reports');
+      const response = await fetch('http://localhost:5000/api/reports', authGet());
       if (response.ok) {
         const data = await response.json();
         setReports(data.reports || []);
@@ -156,7 +155,7 @@ const AdminDashboard = () => {
 
   const viewReportDetails = async (report) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/reports/${report.id}`);
+      const response = await fetch(`http://localhost:5000/api/reports/${report.id}`, authGet());
       if (response.ok) {
         const detailedReport = await response.json();
         setSelectedReport(detailedReport);
@@ -173,9 +172,7 @@ const AdminDashboard = () => {
     try {
       const response = await fetch(`http://localhost:5000/api/reports/${reportId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ status, adminResponse }),
       });
 
@@ -283,9 +280,7 @@ const AdminDashboard = () => {
 
       const response = await fetch('http://localhost:5000/api/warnings', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(warningData)
       });
 
@@ -321,11 +316,12 @@ const AdminDashboard = () => {
       try {
         const response = await fetch(`http://localhost:5000/api/admin/reviews/${reviewId}`, {
           method: 'DELETE',
+          headers: authHeaders(),
         });
 
         if (response.ok) {
           // Refresh reviews data
-          const reviewsRes = await fetch('http://localhost:5000/api/admin/reviews');
+          const reviewsRes = await fetch('http://localhost:5000/api/admin/reviews', authGet());
           setReviews(await reviewsRes.json());
         }
       } catch (error) {
@@ -456,12 +452,18 @@ const AdminDashboard = () => {
   };
 
   const LineChart = ({ data, title }) => {
-    const maxValue = Math.max(...data.map(item => item.bookings));
-    const points = data.map((item, index) => {
-      const x = (index / (data.length - 1)) * 300;
-      const y = 150 - (item.bookings / maxValue) * 120;
-      return `${x},${y}`;
-    }).join(' ');
+    const series = Array.isArray(data) && data.length > 0 ? data : [{ date: '-', bookings: 0 }];
+    const maxValue = Math.max(...series.map((item) => Number(item.bookings) || 0), 1);
+    const xDenom = series.length > 1 ? series.length - 1 : 1;
+
+    const points = series
+      .map((item, index) => {
+        const x = (index / xDenom) * 300;
+        const bookings = Number(item.bookings) || 0;
+        const y = 150 - (bookings / maxValue) * 120;
+        return `${x},${y}`;
+      })
+      .join(' ');
 
     return (
       <div className="chart-container">
@@ -474,9 +476,10 @@ const AdminDashboard = () => {
               stroke="#4CAF50"
               strokeWidth="3"
             />
-            {data.map((item, index) => {
-              const x = (index / (data.length - 1)) * 300;
-              const y = 150 - (item.bookings / maxValue) * 120;
+            {series.map((item, index) => {
+              const x = (index / xDenom) * 300;
+              const bookings = Number(item.bookings) || 0;
+              const y = 150 - (bookings / maxValue) * 120;
               return (
                 <circle
                   key={index}
@@ -489,7 +492,7 @@ const AdminDashboard = () => {
             })}
           </svg>
           <div className="line-labels">
-            {data.map((item, index) => (
+            {series.map((item, index) => (
               <span key={index}>{formatDate(item.date)}</span>
             ))}
           </div>

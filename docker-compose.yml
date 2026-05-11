@@ -1,0 +1,84 @@
+# HouseHelp — chạy MySQL + backend + frontend bằng Docker.
+# Sao chép .env.docker.example thành .env (cùng thư mục) nếu muốn đổi mật khẩu MySQL.
+#
+# Lệnh: docker compose up --build
+# Trình duyệt: http://localhost:5173  |  API: http://localhost:5000  |  phpMyAdmin: http://localhost:${PMA_PORT:-8081}
+# Dev nhanh (không build lại): docker compose down rồi `npm run docker:db` + backend `npm run dev` + gốc `npm run dev` — xem docker-compose.db-only.yml
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: househelp-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-househelp_secret}
+      MYSQL_DATABASE: househelp
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      # Nguồn DDL/DML: househelp.sql — sau khi sửa SQL chạy: node scripts/split-househelp-sql.mjs
+      - ./database/docker-init/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./database/docker-init/02_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: househelp-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      DB_HOST: mysql
+      DB_USER: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-househelp_secret}
+      DB_NAME: househelp
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-test-key-placeholder}
+      CHATBOT_MODEL: ${CHATBOT_MODEL:-gpt-4o-mini}
+      CHATBOT_MAX_TOKENS: ${CHATBOT_MAX_TOKENS:-1000}
+      CHATBOT_TEMPERATURE: ${CHATBOT_TEMPERATURE:-0.7}
+    command: node --watch server.js
+    volumes:
+      - ./backend/server.js:/app/server.js
+      - ./backend/services:/app/services
+      - ./backend/uploads:/app/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: househelp-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./src:/app/src
+      - ./index.html:/app/index.html
+      - ./vite.config.js:/app/vite.config.js
+      - ./public:/app/public
+    depends_on:
+      - backend
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: househelp-phpmyadmin
+    restart: unless-stopped
+    ports:
+      - "${PMA_PORT:-8081}:80"
+    environment:
+      PMA_HOST: mysql
+      PMA_USER: root
+      PMA_PASSWORD: ${MYSQL_ROOT_PASSWORD:-househelp_secret}
+    depends_on:
+      - mysql
+volumes:
+  mysql_data:

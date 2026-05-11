@@ -1,4 +1,5 @@
 import io from 'socket.io-client';
+import { authHeaders, getAccessToken } from '../api/userApi';
 
 class NotificationService {
   constructor() {
@@ -10,6 +11,10 @@ class NotificationService {
   // Kết nối WebSocket
   connect(userId, role) {
     try {
+      if (this.socket) {
+        this.socket.disconnect();
+        this.socket = null;
+      }
       this.socket = io('http://localhost:5000', {
         timeout: 5000,
         retries: 3,
@@ -84,9 +89,7 @@ class NotificationService {
     try {
       const response = await fetch(`http://localhost:5000/api/notifications/${notificationId}/read`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        }
+        headers: authHeaders({ 'Content-Type': 'application/json' })
       });
 
       if (response.ok) {
@@ -150,10 +153,16 @@ class NotificationService {
   async fetchNotifications(userId) {
     console.log('🔍 Fetching notifications for user ID:', userId);
     try {
+      const token = getAccessToken();
+      if (!token) {
+        console.warn('Skipping notification fetch: no access token (đăng nhập để đồng bộ)');
+        return;
+      }
+
       const url = `http://localhost:5000/api/notifications/${userId}`;
       console.log('🌐 Calling API:', url);
-      
-      const response = await fetch(url);
+
+      const response = await fetch(url, { headers: authHeaders() });
       console.log('📡 API Response status:', response.status);
       
       if (response.ok) {

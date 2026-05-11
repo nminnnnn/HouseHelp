@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { authHeaders } from '../api/userApi';
 import UploadBox from '../views/Common/UploadBox';
 
 const VerificationStatus = () => {
@@ -22,7 +23,9 @@ const VerificationStatus = () => {
   const fetchVerificationStatus = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:5000/api/verification/status/${user.id}`);
+      const response = await fetch(`http://localhost:5000/api/verification/status/${user.id}`, {
+        headers: authHeaders()
+      });
       
       if (response.ok) {
         const data = await response.json();
@@ -48,6 +51,7 @@ const VerificationStatus = () => {
 
       const response = await fetch('http://localhost:5000/api/upload', {
         method: 'POST',
+        headers: authHeaders(),
         body: formData,
       });
 
@@ -85,9 +89,7 @@ const VerificationStatus = () => {
       
       const response = await fetch('http://localhost:5000/api/verification/submit', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           userId: user.id,
           userNotes: submitForm.userNotes,
