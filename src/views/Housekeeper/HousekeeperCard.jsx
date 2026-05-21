@@ -27,16 +27,6 @@ export default function HousekeeperCard({ hk }) {
   // Kiểm tra xem user có phải là housekeeper không
   const isHousekeeperUser = user && user.role === 'housekeeper';
 
-  const isAuthenticatedOld = () => {
-    try {
-      const userData = localStorage.getItem("househelp_user");
-      const isAuth = userData && userData !== "null" && userData !== "undefined";
-      return isAuth;
-    } catch (error) {
-      return false;
-    }
-  };
-
   const handleBookNow = () => {
     // Ngăn housekeeper đặt lịch
     if (isHousekeeperUser) {

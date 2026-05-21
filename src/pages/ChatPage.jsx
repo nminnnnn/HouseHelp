@@ -32,11 +32,17 @@ const ChatPage = () => {
     // Đánh dấu đã đọc ngay khi click vào conversation
     if (user?.id) {
       try {
-        await fetch(`http://localhost:5000/api/bookings/${conversation.bookingId}/mark-read`, {
-          method: 'PUT',
-          headers: authHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ userId: user.id })
-        });
+        const bookingIds = conversation.bookingIds?.length
+          ? conversation.bookingIds
+          : [conversation.bookingId].filter(Boolean);
+
+        await Promise.all(bookingIds.map((bookingId) =>
+          fetch(`http://localhost:5000/api/bookings/${bookingId}/mark-read`, {
+            method: 'PUT',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ userId: user.id })
+          })
+        ));
         console.log('✅ Conversation marked as read on selection');
         // Trigger refresh để cập nhật unread count ngay lập tức
         setRefreshTrigger(prev => prev + 1);
@@ -46,7 +52,8 @@ const ChatPage = () => {
     }
 
     setSelectedConversation({
-      bookingId: conversation.bookingId,
+      bookingId: null,
+      directUserId: conversation.otherUserId,
       otherUser: {
         id: conversation.otherUserId,
         fullName: conversation.otherUserName,

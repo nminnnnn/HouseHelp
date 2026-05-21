@@ -131,6 +131,9 @@ db.connect(err => {
 
 const JWT_SECRET = process.env.JWT_SECRET || 'househelp_dev_secret_change_me';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
+
+const publicFileUrl = (filePath) => `${PUBLIC_BASE_URL}${filePath}`;
 
 const ACCESS_POLICIES = [
   { methods: ['POST'], pattern: /^\/api\/register$/, public: true },
@@ -698,7 +701,7 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
           filename: file.filename,
           originalName: file.originalname,
           path: filePath,
-          url: `http://localhost:5000${filePath}`,
+          url: publicFileUrl(filePath),
           size: file.size,
           type: uploadFileType
         }
@@ -760,7 +763,7 @@ app.post('/api/upload-multiple', upload.array('files', 5), (req, res) => {
               filename: file.filename,
               originalName: file.originalname,
               path: filePath,
-              url: `http://localhost:5000${filePath}`,
+              url: publicFileUrl(filePath),
               size: file.size,
               type: uploadFileType
             });
@@ -818,7 +821,7 @@ app.get('/api/users/:userId/files', (req, res) => {
     
     const files = results.map(file => ({
       ...file,
-      url: `http://localhost:5000${file.filePath}`
+      url: publicFileUrl(file.filePath)
     }));
     
     res.json(files);
@@ -2864,6 +2867,46 @@ function sendNotificationToUser(userId, notification) {
   }
 }
 
+function notifyUserAboutChatMessage(newMessage) {
+  if (!newMessage || !newMessage.receiverId) return;
+
+  const notification = {
+    id: Date.now(),
+    type: 'chat_message',
+    title: 'Tin nhan moi',
+    message: `${newMessage.senderName || 'Nguoi dung'}: ${newMessage.message}`,
+    bookingId: newMessage.bookingId,
+    senderId: newMessage.senderId,
+    messageId: newMessage.id,
+    timestamp: new Date(),
+    read: false
+  };
+
+  const notifSql = `INSERT INTO notifications (userId, type, title, message, bookingId, data, createdAt, read_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+  db.query(notifSql, [
+    newMessage.receiverId,
+    notification.type,
+    notification.title,
+    notification.message,
+    newMessage.bookingId || null,
+    JSON.stringify({ senderId: newMessage.senderId, receiverId: newMessage.receiverId, messageId: newMessage.id }),
+    new Date(),
+    0
+  ], (notifErr, notifResult) => {
+    if (notifErr) {
+      console.error('Error saving chat notification:', notifErr);
+      sendNotificationToUser(newMessage.receiverId, notification);
+      return;
+    }
+
+    sendNotificationToUser(newMessage.receiverId, {
+      ...notification,
+      id: notifResult?.insertId || notification.id,
+      userId: newMessage.receiverId
+    });
+  });
+}
+
 // API để debug active users
 app.get('/api/debug/active-users', (req, res) => {
   const activeUsersList = Array.from(activeUsers.entries()).map(([key, value]) => ({
@@ -4475,6 +4518,7 @@ app.post('/api/bookings/:bookingId/messages', (req, res) => {
       });
       
       console.log(`📨 New message sent in booking ${bookingId}`);
+      notifyUserAboutChatMessage(newMessage);
       res.json(newMessage);
     });
   });
@@ -4601,7 +4645,8 @@ app.post('/api/users/:userId1/messages/:userId2', (req, res) => {
           });
           
           console.log(`Direct message sent between users ${userId1} and ${userId2}`);
-          res.json(newMessage);
+          notifyUserAboutChatMessage(newMessage);
+      res.json(newMessage);
         });
       });
     };
@@ -4685,7 +4730,7 @@ app.get('/api/users/:userId/conversations', (req, res) => {
   const { userId } = req.params;
   
   const sql = `
-    SELECT DISTINCT
+    SELECT
       b.id as bookingId,
       b.service,
       b.status as bookingStatus,
@@ -4722,7 +4767,8 @@ app.get('/api/users/:userId/conversations', (req, res) => {
        AND cm.createdAt > COALESCE(
          (SELECT lastReadAt FROM chat_read_status WHERE userId = ? AND bookingId = b.id),
          '1970-01-01'
-       )) as unreadCount
+       )) as unreadCount,
+      b.createdAt as bookingCreatedAt
     FROM bookings b
     LEFT JOIN housekeepers h ON b.housekeeperId = h.id
     WHERE (b.customerId = ? OR h.userId = ?)
@@ -4745,7 +4791,7 @@ app.get('/api/users/:userId/user-conversations', (req, res) => {
   const { userId } = req.params;
   
   const sql = `
-    SELECT DISTINCT
+    SELECT
       CASE 
         WHEN cm.senderId = ? THEN cm.receiverId
         ELSE cm.senderId
@@ -4855,7 +4901,7 @@ app.delete('/api/conversations/:bookingId', (req, res) => {
   
   // Kiểm tra xem user có tin nhắn trong conversation này không
   const checkSql = `
-    SELECT DISTINCT bookingId 
+    SELECT bookingId 
     FROM chat_messages 
     WHERE bookingId = ? AND (senderId = ? OR receiverId = ?)
     LIMIT 1

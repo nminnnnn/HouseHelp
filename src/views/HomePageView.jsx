@@ -88,7 +88,7 @@ export default function HomePageView() {
     return (
       <div className="welcome-section">
         <div className="welcome-card">
-          <h2>👋 Chào mừng trở lại, {user.fullName}!</h2>
+          <h2>Chào mừng trở lại, {user.fullName}!</h2>
           {user.role === 'customer' && (
             <p>Tìm kiếm người giúp việc phù hợp với nhu cầu của bạn</p>
           )}

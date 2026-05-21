@@ -34,7 +34,10 @@ export default function NotificationBell() {
     }
 
     // Handle navigation based on notification type
-    if (notification.type === 'new_booking' || notification.type === 'quick_booking') {
+    if (notification.type === 'chat_message') {
+      setIsOpen(false);
+      navigate('/chat', notification.bookingId ? { state: { bookingId: notification.bookingId } } : undefined);
+    } else if (notification.type === 'new_booking' || notification.type === 'quick_booking') {
       // If user is housekeeper, navigate to dashboard
       setIsOpen(false); // Close dropdown
       navigate('/housekeeper/dashboard');
@@ -72,6 +75,8 @@ export default function NotificationBell() {
         return '❌';
       case 'payment_received':
         return '💰';
+      case 'chat_message':
+        return 'ðŸ’¬';
       default:
         return '📬';
     }
@@ -116,9 +121,9 @@ export default function NotificationBell() {
               notifications.slice(0, 10).map((notification) => (
                 <div
                   key={notification.id}
-                  className={`notification-item ${!notification.read ? 'unread' : ''} ${['new_booking', 'quick_booking', 'booking_confirmed', 'booking_rejected'].includes(notification.type) ? 'clickable' : ''}`}
+                  className={`notification-item ${!notification.read ? 'unread' : ''} ${['new_booking', 'quick_booking', 'booking_confirmed', 'booking_rejected', 'chat_message'].includes(notification.type) ? 'clickable' : ''}`}
                   onClick={() => handleNotificationClick(notification)}
-                  style={{ cursor: ['new_booking', 'quick_booking', 'booking_confirmed', 'booking_rejected'].includes(notification.type) ? 'pointer' : 'default' }}
+                  style={{ cursor: ['new_booking', 'quick_booking', 'booking_confirmed', 'booking_rejected', 'chat_message'].includes(notification.type) ? 'pointer' : 'default' }}
                 >
                   <div className="notification-icon">
                     {getNotificationIcon(notification.type)}

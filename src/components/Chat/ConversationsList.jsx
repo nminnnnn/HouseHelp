@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { authHeaders } from '../../api/userApi';
 import io from 'socket.io-client';
@@ -11,6 +11,44 @@ const ConversationsList = ({ onSelectConversation, refreshTrigger, selectedBooki
   const socketRef = useRef(null);
   const autoSelectedBookingRef = useRef(null);
   const [deletingConversation, setDeletingConversation] = useState(null);
+
+  const groupedConversations = useMemo(() => {
+    const grouped = new Map();
+
+    conversations.forEach((conversation) => {
+      const key = String(conversation.otherUserId || conversation.bookingId);
+      const existing = grouped.get(key);
+
+      if (!existing) {
+        grouped.set(key, {
+          ...conversation,
+          bookingIds: conversation.bookingId ? [conversation.bookingId] : [],
+          unreadCount: Number(conversation.unreadCount) || 0
+        });
+        return;
+      }
+
+      const currentTime = new Date(conversation.lastMessageTime || conversation.bookingCreatedAt || 0).getTime();
+      const existingTime = new Date(existing.lastMessageTime || existing.bookingCreatedAt || 0).getTime();
+
+      grouped.set(key, {
+        ...(currentTime > existingTime ? conversation : existing),
+        bookingIds: [
+          ...new Set([
+            ...(existing.bookingIds || []),
+            ...(conversation.bookingId ? [conversation.bookingId] : [])
+          ])
+        ],
+        unreadCount: (Number(existing.unreadCount) || 0) + (Number(conversation.unreadCount) || 0)
+      });
+    });
+
+    return Array.from(grouped.values()).sort((a, b) => {
+      const aTime = new Date(a.lastMessageTime || a.bookingCreatedAt || 0).getTime();
+      const bTime = new Date(b.lastMessageTime || b.bookingCreatedAt || 0).getTime();
+      return bTime - aTime;
+    });
+  }, [conversations]);
 
   const fetchConversations = async () => {
     if (!user?.id) return;
@@ -48,15 +86,17 @@ const ConversationsList = ({ onSelectConversation, refreshTrigger, selectedBooki
   }, [refreshTrigger]);
 
   useEffect(() => {
-    if (!selectedBookingId || conversations.length === 0) return;
+    if (!selectedBookingId || groupedConversations.length === 0) return;
     if (String(autoSelectedBookingRef.current) === String(selectedBookingId)) return;
 
-    const conversation = conversations.find(item => String(item.bookingId) === String(selectedBookingId));
+    const conversation = groupedConversations.find(item =>
+      item.bookingIds?.some(bookingId => String(bookingId) === String(selectedBookingId))
+    );
     if (conversation) {
       autoSelectedBookingRef.current = selectedBookingId;
       onSelectConversation(conversation);
     }
-  }, [selectedBookingId, conversations, onSelectConversation]);
+  }, [selectedBookingId, groupedConversations, onSelectConversation]);
 
   const handleDeleteConversation = async (bookingId, e) => {
     e.stopPropagation(); // Prevent conversation selection
@@ -185,7 +225,7 @@ const ConversationsList = ({ onSelectConversation, refreshTrigger, selectedBooki
     );
   }
 
-  if (conversations.length === 0) {
+  if (groupedConversations.length === 0) {
     return (
       <div className="conversations-empty">
         <div className="empty-icon">💬</div>
@@ -199,13 +239,13 @@ const ConversationsList = ({ onSelectConversation, refreshTrigger, selectedBooki
     <div className="conversations-list">
       <div className="conversations-header">
         <h2>Tin nhắn</h2>
-        <span className="conversations-count">({conversations.length})</span>
+        <span className="conversations-count">({groupedConversations.length})</span>
       </div>
       
       <div className="conversations-items">
-        {conversations.map((conversation) => (
+        {groupedConversations.map((conversation) => (
           <div
-            key={conversation.bookingId}
+            key={conversation.otherUserId || conversation.bookingId}
             className="conversation-item"
             onClick={() => onSelectConversation(conversation)}
           >

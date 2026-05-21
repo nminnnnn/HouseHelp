@@ -95,6 +95,10 @@ const ChatWindow = ({ bookingId, directUserId, otherUser, onClose }) => {
     
     socketRef.current.on('new_message', (data) => {
       console.log('🔔 Received new message:', data);
+      if (Number(data.senderId) === Number(user.id)) {
+        return;
+      }
+
       const isSameBooking = bookingId && data.bookingId === parseInt(bookingId);
       const isSameDirectUser = directUserId && (
         (Number(data.senderId) === Number(user.id) && Number(data.receiverId) === Number(directUserId)) ||
