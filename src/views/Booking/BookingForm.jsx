@@ -21,6 +21,8 @@ export default function BookingForm({ housekeeper, onSubmit, calculateTotalPrice
 
   const [errors, setErrors] = useState({});
   const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
   // Điền sẵn form nếu có prefillData từ Quick Booking
   useEffect(() => {
@@ -98,8 +100,10 @@ export default function BookingForm({ housekeeper, onSubmit, calculateTotalPrice
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting) return;
+    setSubmitError("");
     
     if (validateForm()) {
       // Include customer information in the booking data
@@ -113,7 +117,14 @@ export default function BookingForm({ housekeeper, onSubmit, calculateTotalPrice
         housekeeperId: housekeeper?.id || ""
       };
       
-      onSubmit(bookingDataWithCustomer, appliedCoupon);
+      try {
+        setSubmitting(true);
+        await onSubmit(bookingDataWithCustomer, appliedCoupon);
+      } catch (error) {
+        setSubmitError(error.message || "Không thể đặt lịch. Vui lòng thử lại.");
+      } finally {
+        setSubmitting(false);
+      }
     }
   };
 
@@ -256,8 +267,9 @@ export default function BookingForm({ housekeeper, onSubmit, calculateTotalPrice
         </div>
 
         {/* Submit Button */}
-        <button type="submit" className="submit-button">
-          {t.confirmBooking || "Confirm Booking"} - ${totalPrice.toFixed(2)}
+        {submitError && <div className="error-text">{submitError}</div>}
+        <button type="submit" className="submit-button" disabled={submitting}>
+          {submitting ? "Đang đặt lịch..." : `${t.confirmBooking || "Confirm Booking"} - $${totalPrice.toFixed(2)}`}
         </button>
       </form>
     </div>

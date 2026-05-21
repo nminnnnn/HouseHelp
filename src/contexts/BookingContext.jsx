@@ -208,13 +208,9 @@ export const BookingProvider = ({ children }) => {
     try {
       setError(null);
 
-      // Generate booking ID
-      const bookingId = `BK-${Date.now().toString().slice(-6)}`;
-      setBookingId(bookingId);
-
       const newBooking = {
         ...bookingData,
-        id: bookingId,
+        id: null,
         housekeeperId: state.selectedHousekeeper?.id,
         housekeeperName: state.selectedHousekeeper?.fullName,
         status: 'pending',
@@ -276,6 +272,11 @@ export const BookingProvider = ({ children }) => {
             else if (j.error) msg = j.error;
           } catch {
             if (errText) msg = errText;
+          }
+          if (response.status === 401) {
+            localStorage.removeItem('househelp_user');
+            localStorage.removeItem('househelp_access_token');
+            msg = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại rồi đặt lịch.';
           }
           console.error('Booking API error:', msg, errText);
           setError(msg);

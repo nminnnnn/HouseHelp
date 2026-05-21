@@ -84,6 +84,29 @@ export default function HousekeeperCard({ hk }) {
     }
   };
 
+  const handleMessage = () => {
+    if (!isAuthenticated) {
+      navigate("/login");
+      return;
+    }
+
+    const housekeeperUserId = hk.userId || hk.housekeeperUserId;
+    if (!housekeeperUserId) {
+      alert("Không tìm thấy thông tin người nhận tin nhắn.");
+      return;
+    }
+
+    navigate("/chat", {
+      state: {
+        directUser: {
+          id: housekeeperUserId,
+          fullName: hk.fullName || hk.name || "Người giúp việc",
+          role: "housekeeper"
+        }
+      }
+    });
+  };
+
   // Helper function to get initials from name
   const getInitials = (name) => {
     if (!name) return "HK";
@@ -111,7 +134,21 @@ export default function HousekeeperCard({ hk }) {
             <div className="hk-availability">{t.availableToday}</div>
           </div>
         </div>
-        <div className="hk-price">${hk.price}<span className="price-unit">/hr</span></div>
+        <div className="hk-card-tools">
+          {!isHousekeeperUser && (
+            <button
+              className="hk-message-btn"
+              onClick={handleMessage}
+              aria-label={`Nhắn tin với ${hk.fullName}`}
+              title="Nhắn tin"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+              </svg>
+            </button>
+          )}
+          <div className="hk-price">${hk.price}<span className="price-unit">/hr</span></div>
+        </div>
       </div>
 
       <div className="hk-services-section">

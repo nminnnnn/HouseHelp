@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { authHeaders } from '../../api/userApi';
 import './ServiceAdvisor.css';
 
 const ServiceAdvisor = ({ onServiceSelect, onComboRecommend, userContext }) => {
-  const [services, setServices] = useState([]);
+  const [_services, setServices] = useState([]);
   const [selectedServices, setSelectedServices] = useState([]);
   const [preferences, setPreferences] = useState({
     budget: '',
@@ -102,9 +103,7 @@ const ServiceAdvisor = ({ onServiceSelect, onComboRecommend, userContext }) => {
       // Gọi API để lấy gợi ý combo
       const response = await fetch('http://localhost:5000/api/chatbot/combo-recommendations', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           services: selectedServices,
           frequency: preferences.frequency,

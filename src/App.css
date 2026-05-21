@@ -842,6 +842,47 @@ body, html {
   gap: 12px;
 }
 
+.header-message-btn {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: white;
+  color: #666;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.header-message-btn img,
+.header-message-btn svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.header-message-btn svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.header-message-btn:hover {
+  background: #f0f0f0;
+  color: #333;
+  transform: translateY(-1px);
+}
+
+.header-message-btn:active {
+  transform: translateY(0);
+}
+
 .header-avatar {
   width: 36px;
   height: 36px;
@@ -1030,6 +1071,7 @@ body, html {
   width: 100vw;
   overflow-x: hidden;
 }
+
 .home-layout {
   flex: 1;
   display: flex;

@@ -84,6 +84,48 @@
   margin-top: 2px;
 }
 
+.hk-card-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.hk-message-btn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid #bfdbfe;
+  border-radius: 50%;
+  background: #eff6ff;
+  color: #2563eb;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.hk-message-btn:hover {
+  background: #2563eb;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.22);
+}
+
+.hk-message-btn:active {
+  transform: translateY(0);
+}
+
+.hk-message-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .price-unit {
   font-size: 0.95rem;
   color: #888;

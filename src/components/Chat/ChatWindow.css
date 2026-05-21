@@ -73,7 +73,6 @@
 .close-chat-btn:hover {
   background: rgba(255, 255, 255, 0.3);
 }
-}
 
 .chat-user-info {
   display: flex;

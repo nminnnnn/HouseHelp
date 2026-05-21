@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { useLanguage } from '../../contexts/LanguageContext';
-import translations from '../../locales/translations';
+import { authHeaders } from '../../api/userApi';
 import ServiceAdvisor from './ServiceAdvisor';
 import ComplaintHandler from './ComplaintHandler';
 import CostCalculator from './CostCalculator';
@@ -13,8 +12,6 @@ const AIChatbot = ({ isOpen, onClose }) => {
   
   // Force re-render when user role changes
   const userKey = `${user?.id || 'guest'}-${user?.role || 'customer'}`;
-  const { language } = useLanguage();
-  const t = translations[language];
   
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
@@ -61,7 +58,7 @@ const AIChatbot = ({ isOpen, onClose }) => {
 
       const response = await fetch('http://localhost:5000/api/chatbot/message', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           message: 'xin chào',
           conversationHistory: [],
@@ -192,9 +189,7 @@ const AIChatbot = ({ isOpen, onClose }) => {
 
       const response = await fetch('http://localhost:5000/api/chatbot/message', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           message: messageText.trim(),
           conversationHistory: conversationHistory,
@@ -255,9 +250,7 @@ const AIChatbot = ({ isOpen, onClose }) => {
     try {
       await fetch('http://localhost:5000/api/chatbot/save-conversation', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           userId: user.id,
           sessionId: sessionId,

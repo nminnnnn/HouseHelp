@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../hooks/useAuth';
+import { authHeaders } from '../../api/userApi';
 import io from 'socket.io-client';
 import './ConversationsList.css';
 
-const ConversationsList = ({ onSelectConversation, refreshTrigger }) => {
+const ConversationsList = ({ onSelectConversation, refreshTrigger, selectedBookingId }) => {
   const { user } = useAuth();
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
   const socketRef = useRef(null);
+  const autoSelectedBookingRef = useRef(null);
   const [deletingConversation, setDeletingConversation] = useState(null);
 
   const fetchConversations = async () => {
@@ -15,7 +17,9 @@ const ConversationsList = ({ onSelectConversation, refreshTrigger }) => {
     
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:5000/api/users/${user.id}/conversations`);
+      const response = await fetch(`http://localhost:5000/api/users/${user.id}/conversations`, {
+        headers: authHeaders()
+      });
       if (response.ok) {
         const data = await response.json();
         setConversations(data);
@@ -43,6 +47,17 @@ const ConversationsList = ({ onSelectConversation, refreshTrigger }) => {
     }
   }, [refreshTrigger]);
 
+  useEffect(() => {
+    if (!selectedBookingId || conversations.length === 0) return;
+    if (String(autoSelectedBookingRef.current) === String(selectedBookingId)) return;
+
+    const conversation = conversations.find(item => String(item.bookingId) === String(selectedBookingId));
+    if (conversation) {
+      autoSelectedBookingRef.current = selectedBookingId;
+      onSelectConversation(conversation);
+    }
+  }, [selectedBookingId, conversations, onSelectConversation]);
+
   const handleDeleteConversation = async (bookingId, e) => {
     e.stopPropagation(); // Prevent conversation selection
     
@@ -55,9 +70,7 @@ const ConversationsList = ({ onSelectConversation, refreshTrigger }) => {
     try {
       const response = await fetch(`http://localhost:5000/api/conversations/${bookingId}`, {
         method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ userId: user.id })
       });
 

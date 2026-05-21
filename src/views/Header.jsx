@@ -38,6 +38,11 @@ export default function Header({ keyword, setKeyword, onSearch }) {
     setShowDropdown(false);
   };
 
+  const handleMessages = () => {
+    navigate("/chat");
+    setShowDropdown(false);
+  };
+
   const getUserInitials = (fullName) => {
     if (!fullName) return "U";
     return fullName
@@ -88,6 +93,16 @@ export default function Header({ keyword, setKeyword, onSearch }) {
       <div className="header-right">
         {isAuthenticated ? (
           <div className="header-user-section" ref={dropdownRef}>
+            <button
+              className="header-message-btn"
+              onClick={handleMessages}
+              aria-label="Tin nhắn"
+              title="Tin nhắn"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+              </svg>
+            </button>
             <NotificationBell />
             <div 
               className="header-avatar" 
@@ -117,7 +132,7 @@ export default function Header({ keyword, setKeyword, onSearch }) {
                   <span className="dropdown-icon">👤</span>
                   {t.profile}
                 </button>
-                <button className="dropdown-item" onClick={() => { navigate("/chat"); setShowDropdown(false); }}>
+                <button className="dropdown-item" onClick={handleMessages}>
                   <span className="dropdown-icon">💬</span>
                   Tin nhắn
                 </button>

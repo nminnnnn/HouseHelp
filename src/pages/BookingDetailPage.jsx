@@ -158,6 +158,7 @@ export default function BookingDetailPage() {
     } catch (error) {
       console.error("Booking error:", error);
       // Error is handled in BookingContext
+      throw error;
     }
   };
 

@@ -1,22 +1,21 @@
-const OpenAI = require('openai');
+const { GoogleGenAI } = require('@google/genai');
 require('dotenv').config();
 
 class ChatbotService {
+
   constructor() {
     // Kiểm tra xem có API key thực không
-    const apiKey = process.env.OPENAI_API_KEY;
-    
-    if (apiKey && apiKey !== 'sk-test-key-placeholder' && apiKey.startsWith('sk-')) {
-      this.openai = new OpenAI({
-        apiKey: apiKey
-      });
-      this.useRealAI = true;
-      console.log('✅ OpenAI API initialized with real key');
-    } else {
-      this.openai = null;
-      this.useRealAI = false;
-      console.log('⚠️  Using mock AI responses (set OPENAI_API_KEY for real AI)');
-    }
+   const apiKey = process.env.GEMINI_API_KEY;
+
+if (apiKey && apiKey !== 'gemini-test-key-placeholder') {
+  this.ai = new GoogleGenAI({ apiKey });
+  this.useRealAI = true;
+  console.log('Gemini API initialized with real key');
+} else {
+  this.ai = null;
+  this.useRealAI = false;
+  console.log('Using mock AI responses (set GEMINI_API_KEY for real AI)');
+}
     
     // Thông tin về dịch vụ và giá cả từ database
     this.services = {
@@ -113,23 +112,36 @@ Hãy trả lời một cách tự nhiên, hữu ích và luôn hướng khách h
       
       let botResponse;
       
-      if (this.useRealAI && this.openai) {
+      if (this.useRealAI && this.ai) {
         // Sử dụng OpenAI API thực
-        const contextPrompt = this.buildContextPrompt(userContext);
-        const messages = [
-          { role: 'system', content: this.systemPrompt + contextPrompt },
-          ...conversationHistory,
-          { role: 'user', content: message }
-        ];
+        try {
+          const contextPrompt = this.buildContextPrompt(userContext);
+const contents = [
+  ...conversationHistory.map((msg) => ({
+    role: msg.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: msg.content }]
+  })),
+  {
+    role: 'user',
+    parts: [{ text: message }]
+  }
+];
 
-        const response = await this.openai.chat.completions.create({
-          model: process.env.CHATBOT_MODEL || 'gpt-4o-mini',
-          messages: messages,
-          max_tokens: parseInt(process.env.CHATBOT_MAX_TOKENS) || 1000,
-          temperature: parseFloat(process.env.CHATBOT_TEMPERATURE) || 0.7,
-        });
+const response = await this.ai.models.generateContent({
+  model: process.env.CHATBOT_MODEL || 'gemini-2.5-flash',
+  contents,
+  config: {
+    systemInstruction: this.systemPrompt + contextPrompt,
+    maxOutputTokens: parseInt(process.env.CHATBOT_MAX_TOKENS) || 1000,
+    temperature: parseFloat(process.env.CHATBOT_TEMPERATURE) || 0.7
+  }
+});
 
-        botResponse = response.choices[0].message.content;
+botResponse = response.text;
+        } catch (aiError) {
+          console.error('Chatbot AI provider error, falling back to mock:', aiError);
+          botResponse = this.generateMockResponse(message, intent, userContext);
+        }
       } else {
         // Sử dụng mock responses
         botResponse = this.generateMockResponse(message, intent, userContext);
@@ -403,48 +415,6 @@ Bạn cần hỗ trợ gì hôm nay?`
     return 'general';
   }
 
-  generateSuggestions(intent, userContext) {
-    const suggestions = {
-      'service_inquiry': [
-        'Xem tất cả dịch vụ',
-        'Tư vấn dịch vụ phù hợp',
-        'So sánh giá dịch vụ'
-      ],
-      'price_inquiry': [
-        'Tính chi phí dự kiến',
-        'Xem gói combo tiết kiệm',
-        'So sánh giá theo khu vực'
-      ],
-      'booking': [
-        'Đặt lịch ngay',
-        'Chọn thời gian phù hợp',
-        'Xem housekeeper gần nhất'
-      ],
-      'complaint': [
-        'Gửi khiếu nại chính thức',
-        'Upload bằng chứng',
-        'Liên hệ hotline'
-      ],
-      'combo_inquiry': [
-        'Xem gói tuần',
-        'Gói tháng ưu đãi',
-        'Combo dịch vụ'
-      ],
-      'premium_inquiry': [
-        'Tìm hiểu bảo hiểm',
-        'Đặt vệ sinh máy lạnh',
-        'Gói nhà sạch định kỳ'
-      ],
-      'app_guide': [
-        'Hướng dẫn đặt lịch',
-        'Cách thanh toán',
-        'Lưu housekeeper yêu thích'
-      ]
-    };
-
-    return suggestions[intent] || ['Tìm hiểu thêm', 'Đặt dịch vụ', 'Liên hệ hỗ trợ'];
-  }
-
   calculateEstimatedCost(service, duration, location = 'TP.HCM') {
     const serviceInfo = this.services[service];
     if (!serviceInfo) return null;
@@ -506,7 +476,7 @@ Bạn cần hỗ trợ gì hôm nay?`
     }).format(amount);
   }
 
-  getComboRecommendations(services, frequency = 'weekly') {
+  getComboRecommendations(services) {
     const combos = [];
 
     if (services.includes('Vệ sinh nhà cửa')) {

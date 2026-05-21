@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../hooks/useAuth';
+import { authHeaders } from '../../api/userApi';
 import io from 'socket.io-client';
 import CallButton from '../Call/CallButton';
 import CallWindow from '../Call/CallWindow';
 import CallService from '../../services/CallService';
 import './ChatWindow.css';
 
-const ChatWindow = ({ bookingId, otherUser, onClose }) => {
+const ChatWindow = ({ bookingId, directUserId, otherUser, onClose }) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
@@ -17,6 +18,7 @@ const ChatWindow = ({ bookingId, otherUser, onClose }) => {
   const [callData, setCallData] = useState(null);
   const messagesEndRef = useRef(null);
   const socketRef = useRef(null);
+  const isDirectChat = Boolean(directUserId) && !bookingId;
 
   // Scroll to bottom when new messages arrive
   const scrollToBottom = () => {
@@ -40,7 +42,12 @@ const ChatWindow = ({ bookingId, otherUser, onClose }) => {
     const fetchMessages = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`http://localhost:5000/api/bookings/${bookingId}/messages`);
+        const url = isDirectChat
+          ? `http://localhost:5000/api/users/${user.id}/messages/${directUserId}`
+          : `http://localhost:5000/api/bookings/${bookingId}/messages`;
+        const response = await fetch(url, {
+          headers: authHeaders()
+        });
         if (response.ok) {
           const data = await response.json();
           setMessages(data);
@@ -52,14 +59,14 @@ const ChatWindow = ({ bookingId, otherUser, onClose }) => {
       }
     };
 
-    if (bookingId) {
+    if ((isDirectChat && user?.id && directUserId) || bookingId) {
       fetchMessages();
     }
-  }, [bookingId]);
+  }, [bookingId, directUserId, isDirectChat, user?.id]);
 
   // Setup WebSocket for real-time messages
   useEffect(() => {
-    if (!user?.id || !bookingId) return;
+    if (!user?.id || (!bookingId && !directUserId)) return;
 
     socketRef.current = io('http://localhost:5000', {
       withCredentials: true,
@@ -88,7 +95,13 @@ const ChatWindow = ({ bookingId, otherUser, onClose }) => {
     
     socketRef.current.on('new_message', (data) => {
       console.log('🔔 Received new message:', data);
-      if (data.bookingId === parseInt(bookingId)) {
+      const isSameBooking = bookingId && data.bookingId === parseInt(bookingId);
+      const isSameDirectUser = directUserId && (
+        (Number(data.senderId) === Number(user.id) && Number(data.receiverId) === Number(directUserId)) ||
+        (Number(data.receiverId) === Number(user.id) && Number(data.senderId) === Number(directUserId))
+      );
+
+      if (isSameBooking || isSameDirectUser) {
         // Add new message to the list
         const newMsg = {
           id: data.id || Date.now(),
@@ -148,15 +161,13 @@ const ChatWindow = ({ bookingId, otherUser, onClose }) => {
         socketRef.current.disconnect();
       }
     };
-  }, [bookingId, user?.id, user?.role]);
+  }, [bookingId, directUserId, user?.id, user?.role]);
 
   const handleDeleteMessage = async (messageId) => {
     try {
       const response = await fetch(`http://localhost:5000/api/messages/${messageId}`, {
         method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ userId: user.id })
       });
 
@@ -184,7 +195,7 @@ const ChatWindow = ({ bookingId, otherUser, onClose }) => {
     // Optimistically add message to UI immediately
     const optimisticMessage = {
       id: Date.now(),
-      bookingId: parseInt(bookingId),
+      bookingId: bookingId ? parseInt(bookingId) : null,
       senderId: user.id,
       receiverId: otherUser.id,
       message: messageText,
@@ -198,17 +209,23 @@ const ChatWindow = ({ bookingId, otherUser, onClose }) => {
     setNewMessage(''); // Clear input immediately
     
     try {
-      const response = await fetch(`http://localhost:5000/api/bookings/${bookingId}/messages`, {
+      const url = isDirectChat
+        ? `http://localhost:5000/api/users/${user.id}/messages/${directUserId}`
+        : `http://localhost:5000/api/bookings/${bookingId}/messages`;
+      const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          senderId: user.id,
-          receiverId: otherUser.id,
-          message: messageText,
-          messageType: 'text'
-        }),
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(isDirectChat
+          ? {
+              message: messageText,
+              messageType: 'text'
+            }
+          : {
+              senderId: user.id,
+              receiverId: otherUser.id,
+              message: messageText,
+              messageType: 'text'
+            }),
       });
 
       if (response.ok) {

@@ -130,7 +130,7 @@ CREATE TABLE bookings (
   serviceId INT,
   startDate DATETIME NOT NULL,
   endDate DATETIME,
-  status ENUM('pending','confirmed','in_progress','completed','cancelled') DEFAULT 'pending',
+  status ENUM('pending','confirmed','in_progress','completed','cancelled','rejected') DEFAULT 'pending',
   paymentStatus ENUM('pending','success','failed') DEFAULT 'pending',
   totalPrice DECIMAL(10,2),
   notes TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,

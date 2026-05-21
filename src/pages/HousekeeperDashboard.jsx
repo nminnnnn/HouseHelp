@@ -158,7 +158,9 @@ export default function HousekeeperDashboard() {
           console.error('Error fetching housekeeper id:', e);
         }
         
-        const response = await fetch(`http://localhost:5000/api/bookings/user/${user.id}`);
+        const response = await fetch(`http://localhost:5000/api/bookings/user/${user.id}`, {
+          headers: authHeaders()
+        });
         if (response.ok) {
           const allBookings = await response.json();
           
@@ -197,7 +199,9 @@ export default function HousekeeperDashboard() {
       
       try {
         setWarningsLoading(true);
-        const response = await fetch(`http://localhost:5000/api/warnings/housekeeper/${user.id}`);
+        const response = await fetch(`http://localhost:5000/api/warnings/housekeeper/${user.id}`, {
+          headers: authHeaders()
+        });
         if (response.ok) {
           const data = await response.json();
           setWarnings(data.warnings || []);
@@ -212,15 +216,26 @@ export default function HousekeeperDashboard() {
     fetchWarnings();
   }, [user?.id, activeTab, refreshTrigger]);
 
+  // Khi housekeeper nhận notification đặt lịch mới qua WebSocket, tự tải lại danh sách booking.
+  useEffect(() => {
+    if (user?.role !== 'housekeeper') return;
+
+    const hasBookingNotification = notifications.some(notification =>
+      ['new_booking', 'quick_booking'].includes(notification.type)
+    );
+
+    if (hasBookingNotification) {
+      setRefreshTrigger(prev => prev + 1);
+    }
+  }, [notifications, user?.role]);
+
   // Xác nhận booking
   const handleConfirmBooking = async (booking) => {
     setLoading(true);
     try {
       const response = await fetch(`http://localhost:5000/api/bookings/${booking.id}/confirm`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           housekeeperId: user.id
         })
@@ -232,14 +247,19 @@ export default function HousekeeperDashboard() {
         // Backend API đã tự động gửi notification rồi, không cần gửi thêm ở đây
 
         // Đánh dấu notification đã đọc
-        await markAsRead(booking.notificationId);
+        if (booking.notificationId) {
+          await markAsRead(booking.notificationId);
+        }
         
         // Delete the notification completely to prevent re-showing
         try {
-          await fetch(`http://localhost:5000/api/notifications/${booking.notificationId}`, {
-            method: 'DELETE'
-          });
-          console.log('Notification deleted successfully (confirm)');
+          if (booking.notificationId) {
+            await fetch(`http://localhost:5000/api/notifications/${booking.notificationId}`, {
+              method: 'DELETE',
+              headers: authHeaders()
+            });
+            console.log('Notification deleted successfully (confirm)');
+          }
         } catch (deleteError) {
           console.error('Failed to delete notification (confirm):', deleteError);
         }
@@ -253,6 +273,7 @@ export default function HousekeeperDashboard() {
           console.log('Updated pending bookings after confirm:', updated.length, 'items');
           return updated;
         });
+        setRefreshTrigger(prev => prev + 1);
         
         alert('Đã xác nhận đơn đặt lịch thành công!');
       } else {
@@ -281,27 +302,31 @@ export default function HousekeeperDashboard() {
       console.log('Updating booking status in database...');
       const bookingResponse = await fetch(`http://localhost:5000/api/bookings/${booking.id}/reject`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        }
+        headers: authHeaders({ 'Content-Type': 'application/json' })
       });
 
       console.log('Booking response:', bookingResponse.status);
       
       if (!bookingResponse.ok) {
-        console.error('Failed to reject booking in database, but continuing with UI update');
-        // Continue anyway to update UI
+        const result = await bookingResponse.json().catch(() => ({}));
+        alert(result.error || 'Không thể từ chối booking');
+        return;
       }
 
       console.log('Marking notification as read...');
-      await markAsRead(booking.notificationId);
+      if (booking.notificationId) {
+        await markAsRead(booking.notificationId);
+      }
       
       // Optionally delete the notification completely to prevent re-showing
       try {
-        await fetch(`http://localhost:5000/api/notifications/${booking.notificationId}`, {
-          method: 'DELETE'
-        });
-        console.log('Notification deleted successfully');
+        if (booking.notificationId) {
+          await fetch(`http://localhost:5000/api/notifications/${booking.notificationId}`, {
+            method: 'DELETE',
+            headers: authHeaders()
+          });
+          console.log('Notification deleted successfully');
+        }
       } catch (deleteError) {
         console.error('Failed to delete notification:', deleteError);
       }
@@ -315,6 +340,7 @@ export default function HousekeeperDashboard() {
         console.log('Updated pending bookings after reject:', updated.length, 'items');
         return updated;
       });
+      setRefreshTrigger(prev => prev + 1);
       
       alert('Đã từ chối đơn đặt lịch');
     } catch (error) {
@@ -367,7 +393,8 @@ export default function HousekeeperDashboard() {
   const markWarningAsRead = async (warningId) => {
     try {
       const response = await fetch(`http://localhost:5000/api/warnings/${warningId}/read`, {
-        method: 'PUT'
+        method: 'PUT',
+        headers: authHeaders()
       });
       
       if (response.ok) {
@@ -610,7 +637,7 @@ export default function HousekeeperDashboard() {
                 <div className="booking-actions">
                   <button
                     className="chat-btn"
-                    onClick={() => navigate('/chat')}
+                    onClick={() => navigate('/chat', { state: { bookingId: booking.id } })}
                     title="Nhắn tin với khách hàng"
                   >
                     💬 Chat
@@ -719,7 +746,7 @@ export default function HousekeeperDashboard() {
                 <div className="booking-actions confirmed-actions">
                   <button
                     className="chat-btn"
-                    onClick={() => navigate('/chat')}
+                    onClick={() => navigate('/chat', { state: { bookingId: booking.id } })}
                     title="Nhắn tin với khách hàng"
                   >
                     💬 Chat

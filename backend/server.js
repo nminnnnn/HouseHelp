@@ -141,6 +141,7 @@ const ACCESS_POLICIES = [
   { methods: ['GET'], pattern: /^\/api\/reviews\/housekeeper\/\d+$/, public: true },
   { methods: ['GET'], pattern: /^\/api\/housekeepers\/\d+\/reviews$/, public: true },
   { methods: ['GET'], pattern: /^\/api\/filters\//, public: true },
+  { methods: ['POST'], pattern: /^\/api\/chatbot\/(message|calculate-cost|combo-recommendations|save-conversation)$/, public: true },
 
   { methods: ['*'], pattern: /^\/api\/admin(\/|$)/, roles: ['admin'] },
   { methods: ['*'], pattern: /^\/api\/debug(\/|$)/, roles: ['admin'] },
@@ -232,7 +233,7 @@ app.use((req, res, next) => {
     }
 
     const notificationMatch = req.path.match(/^\/api\/notifications\/(\d+)$/);
-    if (notificationMatch && req.user.role !== 'admin') {
+    if (req.method === 'GET' && notificationMatch && req.user.role !== 'admin') {
       if (!sameUser(notificationMatch[1], req.user.id)) {
         return res.status(403).json({
           error: 'Forbidden',
@@ -2160,15 +2161,19 @@ app.post('/api/quick-booking/create', (req, res) => {
         0
       ];
 
-      db.query(notificationSql, notificationValues, (err) => {
+      db.query(notificationSql, notificationValues, (err, notificationResult) => {
         if (err) {
           console.error('Error saving notification:', err);
-        } else {
-          console.log('✅ Quick booking notification saved to database');
+          return res.json({ success: true, booking: newBooking, id: bookingId });
         }
+        console.log('✅ Quick booking notification saved to database');
 
         if (io) {
-          sendNotificationToUser(housekeeperUserId, notificationToHousekeeper);
+          sendNotificationToUser(housekeeperUserId, {
+            ...notificationToHousekeeper,
+            id: notificationResult?.insertId || notificationToHousekeeper.id,
+            userId: housekeeperUserId
+          });
           console.log('📡 Quick booking notification sent via WebSocket');
         }
 
@@ -2261,9 +2266,6 @@ app.post('/api/bookings', (req, res) => {
         console.log('✅ Found housekeeper userId:', housekeeperUserId);
         console.log('📤 Sending notification to userId:', housekeeperUserId);
         
-        const sent = sendNotificationToUser(housekeeperUserId, notificationToHousekeeper);
-        console.log('📬 Notification sent result:', sent);
-        
         // Save notification to database
         const notifSql = `INSERT INTO notifications (userId, type, title, message, bookingId, data, createdAt, read_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
         db.query(notifSql, [
@@ -2275,35 +2277,20 @@ app.post('/api/bookings', (req, res) => {
           JSON.stringify(newBooking),
           new Date(),
           0
-        ], (notifErr) => {
-          if (notifErr) console.error('Error saving notification:', notifErr);
+        ], (notifErr, notifResult) => {
+          if (notifErr) {
+            console.error('Error saving notification:', notifErr);
+            return;
+          }
+          const sent = sendNotificationToUser(housekeeperUserId, {
+            ...notificationToHousekeeper,
+            id: notifResult?.insertId || notificationToHousekeeper.id,
+            userId: housekeeperUserId
+          });
+          console.log('Notification sent after save:', sent);
         });
 
-        // Tạo tin nhắn chào tự động
-        const welcomeMessage = `Xin chào! Tôi đã nhận được yêu cầu đặt lịch dịch vụ ${service} của bạn. Tôi sẽ xác nhận sớm nhất có thể. Cảm ơn bạn đã tin tưởng dịch vụ của chúng tôi! 😊`;
-        
-        const chatSql = `INSERT INTO chat_messages (bookingId, senderId, receiverId, message, messageType, createdAt) VALUES (?, ?, ?, ?, 'text', NOW())`;
-        
-        db.query(chatSql, [bookingId, housekeeperUserId, customerId, welcomeMessage], (chatErr, chatResult) => {
-          if (chatErr) {
-            console.error('Error creating welcome message:', chatErr);
-          } else {
-            console.log('✅ Welcome message created for booking:', bookingId);
-            
-            // Gửi WebSocket event cho tin nhắn chào
-            io.emit('new_message', {
-              id: chatResult.insertId,
-              bookingId: parseInt(bookingId),
-              senderId: housekeeperUserId,
-              receiverId: customerId,
-              message: welcomeMessage,
-              messageType: 'text',
-              senderName: housekeeperName,
-              receiverName: customerName,
-              timestamp: new Date()
-            });
-          }
-        });
+        // Không tự tạo tin nhắn thay housekeeper; housekeeper sẽ phản hồi sau khi xem/nhận đơn.
       }
     });
 
@@ -2318,7 +2305,7 @@ app.post('/api/bookings/:id/confirm', (req, res) => {
   
   // Kiểm tra trạng thái xác minh và phê duyệt của housekeeper trước khi cho phép xác nhận
   db.query(
-    `SELECT u.isVerified, u.isApproved
+    `SELECT u.id AS housekeeperUserId, u.isVerified, u.isApproved
      FROM bookings b
      JOIN housekeepers h ON b.housekeeperId = h.id
      JOIN users u ON h.userId = u.id
@@ -2335,6 +2322,10 @@ app.post('/api/bookings/:id/confirm', (req, res) => {
     }
     
     const housekeeper = verifyResults[0];
+    if (!sameUser(housekeeper.housekeeperUserId, req.user.id)) {
+      return res.status(403).json({ error: 'Bạn chỉ có thể xác nhận booking của chính mình' });
+    }
+
     if (!housekeeper.isVerified || !housekeeper.isApproved) {
       return res.status(403).json({ 
         error: 'Bạn cần được xác minh và phê duyệt bởi admin trước khi có thể xác nhận booking',
@@ -2376,8 +2367,6 @@ app.post('/api/bookings/:id/confirm', (req, res) => {
 
       console.log('🎉 Sending confirmation notification to customer:', booking.customerId);
       console.log('Notification data:', notificationToCustomer);
-      const sent = sendNotificationToUser(booking.customerId, notificationToCustomer);
-      console.log('Notification sent successfully:', sent);
       
       // Save notification to database
       const notifSql = `INSERT INTO notifications (userId, type, title, message, bookingId, data, createdAt, read_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
@@ -2390,8 +2379,17 @@ app.post('/api/bookings/:id/confirm', (req, res) => {
         JSON.stringify(booking),
         new Date(),
         0
-      ], (notifErr) => {
-        if (notifErr) console.error('Error saving notification:', notifErr);
+      ], (notifErr, notifResult) => {
+        if (notifErr) {
+          console.error('Error saving notification:', notifErr);
+          return;
+        }
+        const sent = sendNotificationToUser(booking.customerId, {
+          ...notificationToCustomer,
+          id: notifResult?.insertId || notificationToCustomer.id,
+          userId: booking.customerId
+        });
+        console.log('Notification sent successfully:', sent);
       });
 
       res.json({ message: 'Booking confirmed successfully', booking: booking });
@@ -2404,15 +2402,21 @@ app.post('/api/bookings/:id/confirm', (req, res) => {
 app.post('/api/bookings/:id/reject', (req, res) => {
   const bookingId = req.params.id;
   
-  // Update booking status to rejected
-  db.query('UPDATE bookings SET status = ? WHERE id = ?', ['rejected', bookingId], (err, result) => {
+  // Update booking status to rejected, scoped to the authenticated housekeeper.
+  db.query(
+    `UPDATE bookings b
+     JOIN housekeepers h ON b.housekeeperId = h.id
+     SET b.status = ?, b.updatedAt = NOW()
+     WHERE b.id = ? AND h.userId = ?`,
+    ['rejected', bookingId, req.user.id],
+    (err, result) => {
     if (err) {
       console.error('Error rejecting booking:', err);
       return res.status(500).json({ error: err });
     }
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ error: 'Booking not found' });
+      return res.status(404).json({ error: 'Booking not found or unauthorized' });
     }
 
     // Get booking details to send notification to customer
@@ -2437,8 +2441,6 @@ app.post('/api/bookings/:id/reject', (req, res) => {
 
       console.log('❌ Sending rejection notification to customer:', booking.customerId);
       console.log('Notification data:', notificationToCustomer);
-      const sent = sendNotificationToUser(booking.customerId, notificationToCustomer);
-      console.log('Notification sent successfully:', sent);
       
       // Save notification to database
       const notifSql = `INSERT INTO notifications (userId, type, title, message, bookingId, data, createdAt, read_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
@@ -2451,8 +2453,17 @@ app.post('/api/bookings/:id/reject', (req, res) => {
         JSON.stringify(booking),
         new Date(),
         0
-      ], (notifErr) => {
-        if (notifErr) console.error('Error saving notification:', notifErr);
+      ], (notifErr, notifResult) => {
+        if (notifErr) {
+          console.error('Error saving notification:', notifErr);
+          return;
+        }
+        const sent = sendNotificationToUser(booking.customerId, {
+          ...notificationToCustomer,
+          id: notifResult?.insertId || notificationToCustomer.id,
+          userId: booking.customerId
+        });
+        console.log('Notification sent successfully:', sent);
       });
 
       res.json({ message: 'Booking rejected successfully', booking: booking });
@@ -2649,10 +2660,16 @@ app.post('/api/notifications', (req, res) => {
 // API: Đánh dấu notification đã đọc
 app.put('/api/notifications/:id/read', (req, res) => {
   const notificationId = req.params.id;
+  const params = req.user?.role === 'admin'
+    ? [notificationId]
+    : [notificationId, req.user.id];
+  const sql = req.user?.role === 'admin'
+    ? 'UPDATE notifications SET read_status = 1 WHERE id = ?'
+    : 'UPDATE notifications SET read_status = 1 WHERE id = ? AND userId = ?';
   
   db.query(
-    'UPDATE notifications SET read_status = 1 WHERE id = ?',
-    [notificationId],
+    sql,
+    params,
     (err, result) => {
       if (err) {
         console.error('Error marking notification as read:', err);
@@ -2667,10 +2684,16 @@ app.put('/api/notifications/:id/read', (req, res) => {
 // API: Xóa notification
 app.delete('/api/notifications/:id', (req, res) => {
   const notificationId = req.params.id;
+  const params = req.user?.role === 'admin'
+    ? [notificationId]
+    : [notificationId, req.user.id];
+  const sql = req.user?.role === 'admin'
+    ? 'DELETE FROM notifications WHERE id = ?'
+    : 'DELETE FROM notifications WHERE id = ? AND userId = ?';
   
   db.query(
-    'DELETE FROM notifications WHERE id = ?',
-    [notificationId],
+    sql,
+    params,
     (err, result) => {
       if (err) {
         console.error('Error deleting notification:', err);
@@ -4535,59 +4558,123 @@ app.post('/api/users/:userId1/messages/:userId2', (req, res) => {
       return res.status(500).json({ error: err.message });
     }
     
-    if (bookingResults.length === 0) {
-      return res.status(404).json({ error: 'Không tìm thấy booking giữa 2 users này' });
-    }
-    
-    const booking = bookingResults[0];
-    const bookingId = booking.id;
-    
-    // Gửi tin nhắn
-    const insertSql = `
-      INSERT INTO chat_messages (bookingId, senderId, receiverId, message, messageType, createdAt)
-      VALUES (?, ?, ?, ?, ?, NOW())
-    `;
-    
-    db.query(insertSql, [bookingId, userId1, userId2, message, messageType], (insertErr, result) => {
-      if (insertErr) {
-        console.error('Error sending message:', insertErr);
-        return res.status(500).json({ error: insertErr.message });
-      }
-      
-      // Lấy tin nhắn vừa tạo với thông tin đầy đủ
-      const selectSql = `
-        SELECT cm.*, 
-               sender.fullName as senderName,
-               receiver.fullName as receiverName
-        FROM chat_messages cm
-        JOIN users sender ON cm.senderId = sender.id
-        JOIN users receiver ON cm.receiverId = receiver.id
-        WHERE cm.id = ?
+    const insertMessage = (bookingId) => {
+      const insertSql = `
+        INSERT INTO chat_messages (bookingId, senderId, receiverId, message, messageType, createdAt)
+        VALUES (?, ?, ?, ?, ?, NOW())
       `;
       
-      db.query(selectSql, [result.insertId], (selectErr, selectResults) => {
-        if (selectErr) {
-          console.error('Error fetching new message:', selectErr);
-          return res.status(500).json({ error: selectErr.message });
+      db.query(insertSql, [bookingId, userId1, userId2, message, messageType], (insertErr, result) => {
+        if (insertErr) {
+          console.error('Error sending message:', insertErr);
+          return res.status(500).json({ error: insertErr.message });
         }
         
-        const newMessage = selectResults[0];
+        const selectSql = `
+          SELECT cm.*, 
+                 sender.fullName as senderName,
+                 receiver.fullName as receiverName
+          FROM chat_messages cm
+          JOIN users sender ON cm.senderId = sender.id
+          JOIN users receiver ON cm.receiverId = receiver.id
+          WHERE cm.id = ?
+        `;
         
-        // Gửi WebSocket event
-        io.emit('new_message', {
-          id: newMessage.id,
-          bookingId: parseInt(bookingId),
-          senderId: newMessage.senderId,
-          receiverId: newMessage.receiverId,
-          message: newMessage.message,
-          messageType: newMessage.messageType,
-          senderName: newMessage.senderName,
-          receiverName: newMessage.receiverName,
-          timestamp: newMessage.createdAt
+        db.query(selectSql, [result.insertId], (selectErr, selectResults) => {
+          if (selectErr) {
+            console.error('Error fetching new message:', selectErr);
+            return res.status(500).json({ error: selectErr.message });
+          }
+          
+          const newMessage = selectResults[0];
+          
+          io.emit('new_message', {
+            id: newMessage.id,
+            bookingId: parseInt(bookingId),
+            senderId: newMessage.senderId,
+            receiverId: newMessage.receiverId,
+            message: newMessage.message,
+            messageType: newMessage.messageType,
+            senderName: newMessage.senderName,
+            receiverName: newMessage.receiverName,
+            timestamp: newMessage.createdAt
+          });
+          
+          console.log(`Direct message sent between users ${userId1} and ${userId2}`);
+          res.json(newMessage);
         });
-        
-        console.log(`📨 New message sent between users ${userId1} and ${userId2}`);
-        res.json(newMessage);
+      });
+    };
+
+    if (bookingResults.length > 0) {
+      insertMessage(bookingResults[0].id);
+      return;
+    }
+
+    const directBookingSql = `
+      SELECT
+        u1.id AS user1Id, u1.fullName AS user1Name, u1.email AS user1Email, u1.phone AS user1Phone,
+        u2.id AS user2Id, u2.fullName AS user2Name, u2.email AS user2Email, u2.phone AS user2Phone,
+        h1.id AS housekeeper1Id,
+        h2.id AS housekeeper2Id
+      FROM users u1
+      JOIN users u2 ON u2.id = ?
+      LEFT JOIN housekeepers h1 ON h1.userId = u1.id
+      LEFT JOIN housekeepers h2 ON h2.userId = u2.id
+      WHERE u1.id = ?
+      LIMIT 1
+    `;
+
+    db.query(directBookingSql, [userId2, userId1], (directErr, directRows) => {
+      if (directErr) {
+        console.error('Error preparing direct chat booking:', directErr);
+        return res.status(500).json({ error: directErr.message });
+      }
+
+      if (directRows.length === 0) {
+        return res.status(404).json({ error: 'Kh�ng t�m th?y ngu?i d�ng d? nh?n tin' });
+      }
+
+      const row = directRows[0];
+      const firstUserIsHousekeeper = Boolean(row.housekeeper1Id);
+      const secondUserIsHousekeeper = Boolean(row.housekeeper2Id);
+
+      if (firstUserIsHousekeeper === secondUserIsHousekeeper) {
+        return res.status(400).json({ error: 'Ch? h? tr? nh?n tr?c ti?p gi?a kh�ch h�ng v� ngu?i gi�p vi?c' });
+      }
+
+      const customer = firstUserIsHousekeeper
+        ? { id: row.user2Id, name: row.user2Name, email: row.user2Email, phone: row.user2Phone }
+        : { id: row.user1Id, name: row.user1Name, email: row.user1Email, phone: row.user1Phone };
+      const housekeeper = firstUserIsHousekeeper
+        ? { id: row.housekeeper1Id, name: row.user1Name }
+        : { id: row.housekeeper2Id, name: row.user2Name };
+
+      const createBookingSql = `
+        INSERT INTO bookings (
+          customerId, housekeeperId, startDate, endDate, status, paymentStatus,
+          totalPrice, notes, customerAddress, time, duration, location,
+          customerName, customerEmail, customerPhone, housekeeperName, service,
+          urgency, isQuickBooking, matchScore
+        ) VALUES (?, ?, NOW(), NOW(), 'pending', 'pending', 0, ?, '', '', 0, '', ?, ?, ?, ?, ?, 'normal', FALSE, 0)
+      `;
+
+      db.query(createBookingSql, [
+        customer.id,
+        housekeeper.id,
+        'Cu?c tr� chuy?n tr?c ti?p',
+        customer.name,
+        customer.email,
+        customer.phone,
+        housekeeper.name,
+        'Trao d?i tr?c ti?p'
+      ], (createErr, createResult) => {
+        if (createErr) {
+          console.error('Error creating direct chat booking:', createErr);
+          return res.status(500).json({ error: createErr.message });
+        }
+
+        insertMessage(createResult.insertId);
       });
     });
   });
@@ -4639,8 +4726,7 @@ app.get('/api/users/:userId/conversations', (req, res) => {
     FROM bookings b
     LEFT JOIN housekeepers h ON b.housekeeperId = h.id
     WHERE (b.customerId = ? OR h.userId = ?)
-    AND EXISTS (SELECT 1 FROM chat_messages cm WHERE cm.bookingId = b.id)
-    ORDER BY lastMessageTime DESC
+    ORDER BY COALESCE(lastMessageTime, b.createdAt) DESC
   `;
   
   db.query(sql, [userId, userId, userId, userId, userId, userId, userId, userId], (err, results) => {

@@ -166,7 +166,12 @@ class NotificationService {
       console.log('📡 API Response status:', response.status);
       
       if (response.ok) {
-        const notifications = await response.json();
+        const rawNotifications = await response.json();
+        const notifications = rawNotifications.map(notification => ({
+          ...notification,
+          timestamp: notification.timestamp || notification.createdAt,
+          read: Boolean(notification.read)
+        }));
         console.log('✅ Received notifications:', notifications.length, 'items');
         console.log('📋 Notifications data:', notifications);
         
@@ -175,6 +180,13 @@ class NotificationService {
         this.notifyListeners();
         
         console.log('🔄 Updated local notifications, count:', this.notifications.length);
+      } else if (response.status === 401) {
+        console.error('Notification API unauthorized: clearing expired session');
+        localStorage.removeItem('househelp_user');
+        localStorage.removeItem('househelp_access_token');
+        this.notifications = [];
+        this.saveToLocalStorage();
+        this.notifyListeners();
       } else {
         console.error('❌ API Error:', response.status, response.statusText);
         const errorText = await response.text();

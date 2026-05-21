@@ -8,6 +8,23 @@ export const useAuth = () => {
   const [refreshTrigger, setRefreshTrigger] = useState(0); // Force refresh trigger
   const navigate = useNavigate();
 
+  const isTokenUsable = (token) => {
+    if (!token) return false;
+
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (!payload.exp) return true;
+      return payload.exp * 1000 > Date.now();
+    } catch {
+      return false;
+    }
+  };
+
+  const clearAuthStorage = () => {
+    localStorage.removeItem("househelp_user");
+    localStorage.removeItem("househelp_access_token");
+  };
+
   useEffect(() => {
     checkAuthState();
   }, [refreshTrigger]); // Re-check when refreshTrigger changes
@@ -15,16 +32,20 @@ export const useAuth = () => {
   const checkAuthState = useCallback(() => {
     try {
       const userData = localStorage.getItem("househelp_user");
-      if (userData && userData !== "null" && userData !== "undefined") {
+      const accessToken = localStorage.getItem("househelp_access_token");
+
+      if (userData && userData !== "null" && userData !== "undefined" && isTokenUsable(accessToken)) {
         const parsedUser = JSON.parse(userData);
         setUser(parsedUser);
         setIsAuthenticated(true);
       } else {
+        clearAuthStorage();
         setUser(null);
         setIsAuthenticated(false);
       }
     } catch (error) {
       console.error("Error checking auth state:", error);
+      clearAuthStorage();
       setUser(null);
       setIsAuthenticated(false);
     } finally {
@@ -50,8 +71,7 @@ export const useAuth = () => {
 
   const logout = () => {
     console.log("Logout called - clearing localStorage and state");
-    localStorage.removeItem("househelp_user");
-    localStorage.removeItem("househelp_access_token");
+    clearAuthStorage();
     setUser(null);
     setIsAuthenticated(false);
     setRefreshTrigger(prev => prev + 1); // Trigger refresh for all instances
@@ -69,7 +89,8 @@ export const useAuth = () => {
   const isCurrentlyAuthenticated = () => {
     try {
       const userData = localStorage.getItem("househelp_user");
-      return userData && userData !== "null" && userData !== "undefined";
+      const accessToken = localStorage.getItem("househelp_access_token");
+      return Boolean(userData && userData !== "null" && userData !== "undefined" && isTokenUsable(accessToken));
     } catch (error) {
       console.error("Error checking current auth:", error);
       return false;

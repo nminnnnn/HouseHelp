@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { authHeaders } from '../../api/userApi';
 import './CostCalculator.css';
 
 const CostCalculator = ({ onCostCalculated, userContext }) => {
@@ -173,9 +174,7 @@ const CostCalculator = ({ onCostCalculated, userContext }) => {
       // Gọi API backend để tính toán
       const response = await fetch('http://localhost:5000/api/chatbot/calculate-cost', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           service: calculatorData.service,
           duration: parseFloat(calculatorData.duration),
@@ -187,7 +186,6 @@ const CostCalculator = ({ onCostCalculated, userContext }) => {
 
       if (apiResult.success) {
         // Tính toán chi tiết với các yếu tố bổ sung
-        const serviceInfo = serviceData[calculatorData.service];
         const baseCost = apiResult.estimate.estimatedCost;
         
         // Áp dụng các hệ số

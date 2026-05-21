@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import './AppGuide.css';
 
-const AppGuide = ({ onGuideComplete, userContext }) => {
+const AppGuide = ({ onGuideComplete }) => {
   const [currentSection, setCurrentSection] = useState('overview');
   const [completedSteps, setCompletedSteps] = useState([]);
 
