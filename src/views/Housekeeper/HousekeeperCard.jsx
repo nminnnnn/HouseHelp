@@ -23,6 +23,7 @@ export default function HousekeeperCard({ hk }) {
 
   const rating = parseFloat(hk.rating) || 0;
   const reviewCount = parseInt(hk.reviewCount) || 0;
+  const formattedPrice = new Intl.NumberFormat("vi-VN").format(Number(hk.price) || 0);
 
   // Kiểm tra xem user có phải là housekeeper không
   const isHousekeeperUser = user && user.role === 'housekeeper';
@@ -137,7 +138,7 @@ export default function HousekeeperCard({ hk }) {
               </svg>
             </button>
           )}
-          <div className="hk-price">${hk.price}<span className="price-unit">/hr</span></div>
+          <div className="hk-price">{formattedPrice}đ<span className="price-unit">/giờ</span></div>
         </div>
       </div>
 

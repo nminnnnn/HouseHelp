@@ -7,7 +7,7 @@ const items = [
   { label: 'Home', href: '/(customer)' as const, icon: 'home-outline', activeIcon: 'home' },
   { label: 'Activity', href: '/(customer)/bookings' as const, icon: 'reader-outline', activeIcon: 'reader' },
   { label: 'Book', href: '/(customer)' as const, icon: 'sparkles-outline', activeIcon: 'sparkles', center: true },
-  { label: 'Chat', href: '/chat/0' as const, icon: 'people-outline', activeIcon: 'people' },
+  { label: 'Chat', href: '/chat' as const, icon: 'chatbubbles-outline', activeIcon: 'chatbubbles' },
   { label: 'Account', href: '/profile' as const, icon: 'person-outline', activeIcon: 'person' },
 ];
 
@@ -28,12 +28,12 @@ export function CustomerBottomNav() {
           <TouchableOpacity
             activeOpacity={0.82}
             key={item.label}
-            onPress={() => router.push(item.href)}
+            onPress={() => router.push(item.href as any)}
             style={[styles.item, item.center && styles.centerItem]}
           >
             <View style={[styles.iconWrap, item.center && styles.centerIconWrap, isActive && !item.center && styles.activeSoft]}>
               <Ionicons
-                color={item.center ? '#fff' : isActive ? '#18bf62' : '#8a94a3'}
+                color={item.center ? '#fff' : isActive ? '#ff8128' : '#8a94a3'}
                 name={(isActive ? item.activeIcon : item.icon) as any}
                 size={item.center ? 30 : 25}
               />
@@ -52,10 +52,10 @@ export function CustomerBottomNav() {
 
 const styles = StyleSheet.create({
   activeLabel: {
-    color: '#18bf62',
+    color: '#ff8128',
   },
   activeSoft: {
-    backgroundColor: '#eefbf4',
+    backgroundColor: '#fff1e8',
   },
   centerIconWrap: {
     backgroundColor: '#ff8128',

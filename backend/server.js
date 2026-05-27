@@ -321,9 +321,8 @@ app.get('/api/housekeepers', (req, res) => {
       FROM housekeepers h
       JOIN users u ON h.userId = u.id
       LEFT JOIN reviews r ON h.id = r.housekeeperId
-      WHERE u.isApproved = 1 AND u.isVerified = 1
     `;
-    const where = [];
+    const where = [`u.isApproved = 1 AND u.isVerified = 1`];
     const having = [];
     const params = [];
 
@@ -342,7 +341,7 @@ app.get('/api/housekeepers', (req, res) => {
     }
 
     if (where.length) {
-      sql += ` AND ` + where.join(" AND ");
+      sql += ` WHERE ` + where.join(" AND ");
     }
     sql += ` GROUP BY h.id, h.userId, h.services, h.price, h.available, h.description, u.fullName, u.email, u.phone`;
     

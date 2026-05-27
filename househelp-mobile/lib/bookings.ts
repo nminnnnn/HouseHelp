@@ -19,6 +19,7 @@ export type Booking = {
   customerEmail?: string;
   customerPhone?: string;
   housekeeperName?: string;
+  paymentStatus?: string;
   createdAt?: string;
 };
 
@@ -36,6 +37,13 @@ export type CreateBookingPayload = {
   customerEmail?: string;
   customerPhone?: string;
   housekeeperName?: string;
+};
+
+export type ConfirmPaymentPayload = {
+  customerId: number;
+  paymentMethod: string;
+  rating?: number;
+  review?: string;
 };
 
 export const bookingService = {
@@ -58,6 +66,14 @@ export const bookingService = {
 
   reject: async (bookingId: number) => {
     const response = await api.post<{ message: string; booking: Booking }>(`/bookings/${bookingId}/reject`);
+    return response.data;
+  },
+
+  confirmPayment: async (bookingId: number, payload: ConfirmPaymentPayload) => {
+    const response = await api.post<{ message: string; booking: Booking; paymentStatus: string }>(
+      `/bookings/${bookingId}/confirm-payment`,
+      payload,
+    );
     return response.data;
   },
 };

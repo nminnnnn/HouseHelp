@@ -12,7 +12,6 @@ export default function FilterSidebar({ onFilterChange }) {
   const [services, setServices] = useState([]);
   const [ratings, setRatings] = useState([]);
   const [priceRange, setPriceRange] = useState({ min_price: 0, max_price: 100 });
-  const [availability, setAvailability] = useState([]);
   const [filter, setFilter] = useState({
     services: [],
     exactRating: null,
@@ -28,7 +27,6 @@ export default function FilterSidebar({ onFilterChange }) {
     fetch("http://localhost:5000/api/filters/services").then(res => res.json()).then(setServices);
     fetch("http://localhost:5000/api/filters/ratings").then(res => res.json()).then(setRatings);
     fetch("http://localhost:5000/api/filters/price-range").then(res => res.json()).then(setPriceRange);
-    fetch("http://localhost:5000/api/filters/availability").then(res => res.json()).then(setAvailability);
   }, []);
 
   useEffect(() => {
@@ -75,7 +73,7 @@ export default function FilterSidebar({ onFilterChange }) {
       </div>
       <div className="filter-section">
         <div className="filter-label">
-          {t.priceRange || "Price Range"} (${priceRange.min_price} - ${priceRange.max_price})
+          {t.priceRange || "Price Range"} ({Number(priceRange.min_price || 0).toLocaleString("vi-VN")}đ - {Number(priceRange.max_price || 0).toLocaleString("vi-VN")}đ)
         </div>
         <input type="range" min={priceRange.min_price} max={priceRange.max_price} value={filter.maxPrice || priceRange.max_price} onChange={handlePrice} className="filter-slider" />
       </div>

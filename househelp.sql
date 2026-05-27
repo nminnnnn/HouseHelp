@@ -1041,4 +1041,36 @@ INSERT INTO coupon_usage (couponId, userId, bookingId, discountAmount, usedAt) V
 (1, 5, 7, 20.00, '2024-11-28 16:20:00'),  -- WELCOME20 used by customer 5
 ((SELECT id FROM coupons WHERE code = 'LOYALTY10' LIMIT 1), 1, 9, 8.50, '2024-11-29 11:10:00');
 
+-- =====================================================
+-- SAMPLE HOUSEKEEPER PRICE NORMALIZATION
+-- Gia mau chuan hoa theo VND/gio: 60,000 - 100,000
+-- Dat o cuoi file de de bao tri va ghi de cac INSERT phia tren.
+-- =====================================================
+
+UPDATE housekeepers h
+JOIN users u ON h.userId = u.id
+SET
+  h.price = CASE u.email
+    WHEN 'tan.nguyen@email.com' THEN 60000.00
+    WHEN 'mai.le@email.com' THEN 65000.00
+    WHEN 'lan.nguyen@email.com' THEN 75000.00
+    WHEN 'kim.le@email.com' THEN 80000.00
+    WHEN 'long.pham@email.com' THEN 85000.00
+    WHEN 'minh.tran@email.com' THEN 90000.00
+    WHEN 'dung.tran@email.com' THEN 95000.00
+    WHEN 'huong.nguyen@email.com' THEN 100000.00
+    ELSE h.price
+  END,
+  h.priceType = 'hourly'
+WHERE u.email IN (
+  'tan.nguyen@email.com',
+  'mai.le@email.com',
+  'lan.nguyen@email.com',
+  'kim.le@email.com',
+  'long.pham@email.com',
+  'minh.tran@email.com',
+  'dung.tran@email.com',
+  'huong.nguyen@email.com'
+);
+
 COMMIT;

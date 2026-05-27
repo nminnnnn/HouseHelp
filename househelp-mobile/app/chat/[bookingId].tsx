@@ -79,11 +79,19 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [receiverId, setReceiverId] = useState<number | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
-  const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
+  const { bookingId, receiverId: directReceiverId, receiverName } = useLocalSearchParams<{
+    bookingId: string;
+    receiverId?: string;
+    receiverName?: string;
+  }>();
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const router = useRouter();
 
   const title = useMemo(() => {
+    if (bookingId === 'direct') {
+      return receiverName || 'Chat';
+    }
+
     if (!booking || !user) {
       return 'Chat';
     }
@@ -91,7 +99,7 @@ export default function ChatScreen() {
     return user.id === booking.customerId
       ? booking.housekeeperName || 'Nguoi giup viec'
       : booking.customerName || 'Khach hang';
-  }, [booking, user]);
+  }, [booking, bookingId, receiverName, user]);
 
   const resolveReceiverId = useCallback(async (currentUser: AuthUser, currentBooking: Booking) => {
     if (currentUser.id === currentBooking.customerId) {
@@ -126,6 +134,25 @@ export default function ChatScreen() {
         return;
       }
 
+      if (bookingId === 'direct') {
+        const nextReceiverId = Number(directReceiverId);
+
+        if (!Number.isFinite(nextReceiverId) || nextReceiverId <= 0) {
+          Alert.alert('Khong mo duoc chat', 'Thieu thong tin nguoi nhan.');
+          router.back();
+          return;
+        }
+
+        const directMessages = await messageService.getBetweenUsers(currentUser.id, nextReceiverId);
+
+        setBooking(null);
+        setMessages(directMessages);
+        setReceiverId(nextReceiverId);
+        setUser(currentUser);
+        setBackgroundError(null);
+        return;
+      }
+
       const [allBookings, bookingMessages] = await Promise.all([
         bookingService.getForUser(currentUser.id),
         messageService.getForBooking(bookingId),
@@ -152,7 +179,7 @@ export default function ChatScreen() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [bookingId, resolveReceiverId, router]);
+  }, [bookingId, directReceiverId, resolveReceiverId, router]);
 
   useEffect(() => {
     loadChat();
@@ -184,7 +211,7 @@ export default function ChatScreen() {
     const handleNewMessage = (incoming: ChatMessage) => {
       const nextMessage = normalizeSocketMessage(incoming);
 
-      const isSameBooking = String(nextMessage.bookingId) === String(bookingId);
+    const isSameBooking = bookingId !== 'direct' && String(nextMessage.bookingId) === String(bookingId);
       const isSameDirectUser =
         receiverId !== null &&
         ((nextMessage.senderId === user.id && nextMessage.receiverId === receiverId) ||
@@ -218,7 +245,7 @@ export default function ChatScreen() {
     const intervalId = setInterval(async () => {
       try {
         const [latestBookingMessages, latestDirectMessages] = await Promise.all([
-          messageService.getForBooking(bookingId),
+          bookingId === 'direct' ? Promise.resolve([]) : messageService.getForBooking(bookingId),
           receiverId ? messageService.getBetweenUsers(user.id, receiverId) : Promise.resolve([]),
         ]);
         setMessages((current) => mergeMessages(current, mergeMessages(latestBookingMessages, latestDirectMessages)));
@@ -247,12 +274,18 @@ export default function ChatScreen() {
     try {
       setIsSending(true);
       setInput('');
-      const newMessage = await messageService.send(bookingId, {
-        message: trimmed,
-        messageType: 'text',
-        receiverId,
-        senderId: user.id,
-      });
+      const newMessage =
+        bookingId === 'direct'
+          ? await messageService.sendBetweenUsers(user.id, receiverId, {
+              message: trimmed,
+              messageType: 'text',
+            })
+          : await messageService.send(bookingId, {
+              message: trimmed,
+              messageType: 'text',
+              receiverId,
+              senderId: user.id,
+            });
       setMessages((current) => {
         if (current.some((message) => message.id === newMessage.id)) {
           return current;
@@ -283,7 +316,7 @@ export default function ChatScreen() {
           <Text style={styles.backText}>Quay lai</Text>
         </TouchableOpacity>
         <Text style={styles.title}>{title}</Text>
-        <Text style={styles.subtitle}>Booking #{bookingId}</Text>
+        <Text style={styles.subtitle}>{bookingId === 'direct' ? 'Trao doi truc tiep' : `Booking #${bookingId}`}</Text>
       </View>
 
       <FlatList
@@ -329,7 +362,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   backText: {
-    color: '#0f766e',
+    color: '#ff8128',
     fontSize: 15,
     fontWeight: '700',
   },
@@ -403,7 +436,7 @@ const styles = StyleSheet.create({
     lineHeight: 21,
   },
   mineBubble: {
-    backgroundColor: '#0f766e',
+    backgroundColor: '#ff8128',
   },
   mineRow: {
     justifyContent: 'flex-end',
@@ -420,7 +453,7 @@ const styles = StyleSheet.create({
   },
   sendButton: {
     alignItems: 'center',
-    backgroundColor: '#0f766e',
+    backgroundColor: '#ff8128',
     borderRadius: 8,
     justifyContent: 'center',
     minHeight: 44,

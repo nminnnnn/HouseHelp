@@ -1,14 +1,30 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CustomerBottomNav } from '../../components/customer-bottom-nav';
 import { authService } from '../../lib/auth';
 import { bookingService, type Booking } from '../../lib/bookings';
 
-const tabs = ['Upcoming', 'Schedule', 'Monthly'] as const;
+function errorMessage(error: any) {
+  const value = error?.response?.data?.message || error?.response?.data?.error || error?.message;
+  return typeof value === 'string' ? value : 'Khong the tai booking.';
+}
+
+const tabs = ['Upcoming', 'Schedule', 'Monthly', 'History'] as const;
 
 function formatPrice(value?: number | string) {
   const price = Number(value || 0);
@@ -32,22 +48,40 @@ function statusLabel(status: string) {
   return labels[status] || status;
 }
 
-function BookingCard({ item, onChat }: { item: Booking; onChat: () => void }) {
+function BookingCard({
+  item,
+  onChat,
+  onReviewPayment,
+}: {
+  item: Booking;
+  onChat: () => void;
+  onReviewPayment: () => void;
+}) {
+  const isCompleted = item.status === 'completed';
+  const isPaid = item.paymentStatus === 'success';
+
   return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
         <Text numberOfLines={1} style={styles.service}>{item.service || 'Dich vu'}</Text>
         <Text style={styles.status}>{statusLabel(item.status)}</Text>
       </View>
-      <Text style={styles.meta}>Tasker: {item.housekeeperName || `#${item.housekeeperId}`}</Text>
+      <Text style={styles.meta}>Housekeeper: {item.housekeeperName || `#${item.housekeeperId}`}</Text>
       <Text style={styles.meta}>Ngay: {formatDate(item)} - {item.time || 'Chua co'}</Text>
       <Text style={styles.meta}>Dia chi: {item.location || 'Chua co'}</Text>
       <View style={styles.cardFooter}>
         <Text style={styles.price}>{formatPrice(item.totalPrice)}</Text>
-        <TouchableOpacity onPress={onChat} style={styles.chatButton}>
-          <Ionicons color="#fff" name="chatbubble-outline" size={16} />
-          <Text style={styles.chatText}>Chat</Text>
-        </TouchableOpacity>
+        <View style={styles.actions}>
+          <TouchableOpacity onPress={onChat} style={styles.chatButton}>
+            <Ionicons color="#fff" name="chatbubble-outline" size={16} />
+            <Text style={styles.chatText}>Chat</Text>
+          </TouchableOpacity>
+          {isCompleted ? (
+            <TouchableOpacity disabled={isPaid} onPress={onReviewPayment} style={[styles.payButton, isPaid && styles.paidButton]}>
+              <Text style={[styles.payText, isPaid && styles.paidText]}>{isPaid ? 'Da thanh toan' : 'Thanh toan'}</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
     </View>
   );
@@ -59,6 +93,11 @@ export default function CustomerBookingsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState('cash');
+  const [rating, setRating] = useState(5);
+  const [review, setReview] = useState('');
+  const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const router = useRouter();
 
   const loadBookings = useCallback(async (refreshing = false) => {
@@ -79,7 +118,7 @@ export default function CustomerBookingsScreen() {
       const data = await bookingService.getForUser(user.id);
       setBookings(data);
     } catch (loadError: any) {
-      setError(loadError.response?.data?.message || loadError.response?.data?.error || 'Khong the tai booking.');
+      setError(errorMessage(loadError));
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -95,12 +134,50 @@ export default function CustomerBookingsScreen() {
       return bookings.filter((item) => String(item.service || '').toLowerCase().includes('monthly'));
     }
 
+    if (activeTab === 'History') {
+      return bookings.filter((item) => ['completed', 'cancelled', 'rejected'].includes(item.status));
+    }
+
     if (activeTab === 'Schedule') {
       return bookings.filter((item) => ['confirmed', 'in_progress'].includes(item.status));
     }
 
     return bookings.filter((item) => !['completed', 'cancelled', 'rejected'].includes(item.status));
   }, [activeTab, bookings]);
+
+  const openPaymentReview = (booking: Booking) => {
+    setSelectedBooking(booking);
+    setPaymentMethod('cash');
+    setRating(5);
+    setReview('');
+  };
+
+  const closePaymentReview = () => {
+    if (!isSubmittingPayment) {
+      setSelectedBooking(null);
+    }
+  };
+
+  const submitPaymentReview = async () => {
+    if (!selectedBooking) return;
+
+    try {
+      setIsSubmittingPayment(true);
+      await bookingService.confirmPayment(selectedBooking.id, {
+        customerId: selectedBooking.customerId,
+        paymentMethod,
+        rating,
+        review: review.trim() || undefined,
+      });
+      setSelectedBooking(null);
+      Alert.alert('Da thanh toan', 'Cam on ban da xac nhan thanh toan va danh gia dich vu.');
+      await loadBookings(true);
+    } catch (paymentError: any) {
+      Alert.alert('Khong thanh toan duoc', errorMessage(paymentError));
+    } finally {
+      setIsSubmittingPayment(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -120,7 +197,7 @@ export default function CustomerBookingsScreen() {
         >
           <View style={styles.header}>
             <Text style={styles.title}>Activity</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => setActiveTab('History')}>
               <Text style={styles.history}>History</Text>
             </TouchableOpacity>
           </View>
@@ -154,11 +231,67 @@ export default function CustomerBookingsScreen() {
           ) : (
             <View style={styles.list}>
               {visibleBookings.map((item) => (
-                <BookingCard key={String(item.id)} item={item} onChat={() => router.push(`/chat/${item.id}`)} />
+                <BookingCard
+                  item={item}
+                  key={String(item.id)}
+                  onChat={() => router.push(`/chat/${item.id}`)}
+                  onReviewPayment={() => openPaymentReview(item)}
+                />
               ))}
             </View>
           )}
         </ScrollView>
+
+        <Modal animationType="slide" onRequestClose={closePaymentReview} transparent visible={!!selectedBooking}>
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Thanh toan & danh gia</Text>
+              <Text style={styles.modalMeta}>{selectedBooking?.housekeeperName || 'Housekeeper'}</Text>
+              <Text style={styles.modalPrice}>{formatPrice(selectedBooking?.totalPrice)}</Text>
+
+              <Text style={styles.modalLabel}>Phuong thuc thanh toan</Text>
+              <View style={styles.methodRow}>
+                {['cash', 'bank', 'wallet'].map((method) => (
+                  <TouchableOpacity
+                    key={method}
+                    onPress={() => setPaymentMethod(method)}
+                    style={[styles.methodButton, paymentMethod === method && styles.methodButtonActive]}
+                  >
+                    <Text style={[styles.methodText, paymentMethod === method && styles.methodTextActive]}>
+                      {method === 'cash' ? 'Tien mat' : method === 'bank' ? 'Chuyen khoan' : 'Vi dien tu'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.modalLabel}>Danh gia</Text>
+              <View style={styles.starRow}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <TouchableOpacity key={star} onPress={() => setRating(star)}>
+                    <Ionicons color={star <= rating ? '#ff8128' : '#d1d5db'} name="star" size={31} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <TextInput
+                multiline
+                onChangeText={setReview}
+                placeholder="Nhan xet ve dich vu..."
+                style={styles.reviewInput}
+                value={review}
+              />
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity disabled={isSubmittingPayment} onPress={closePaymentReview} style={styles.cancelButton}>
+                  <Text style={styles.cancelText}>De sau</Text>
+                </TouchableOpacity>
+                <TouchableOpacity disabled={isSubmittingPayment} onPress={submitPaymentReview} style={styles.confirmButton}>
+                  {isSubmittingPayment ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmText}>Xac nhan</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
         <CustomerBottomNav />
       </View>
     </SafeAreaView>
@@ -178,6 +311,11 @@ const styles = StyleSheet.create({
   activeTabText: {
     color: '#ff8128',
   },
+  actions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
   card: {
     backgroundColor: '#fff',
     borderColor: '#edf0f4',
@@ -189,6 +327,7 @@ const styles = StyleSheet.create({
   cardFooter: {
     alignItems: 'center',
     flexDirection: 'row',
+    gap: 12,
     justifyContent: 'space-between',
     marginTop: 4,
   },
@@ -206,7 +345,7 @@ const styles = StyleSheet.create({
   },
   chatButton: {
     alignItems: 'center',
-    backgroundColor: '#18bf62',
+    backgroundColor: '#ff8128',
     borderRadius: 999,
     flexDirection: 'row',
     gap: 5,
@@ -222,7 +361,7 @@ const styles = StyleSheet.create({
     paddingBottom: 112,
   },
   ctaButton: {
-    backgroundColor: '#18bf62',
+    backgroundColor: '#ff8128',
     borderRadius: 14,
     marginTop: 4,
     minWidth: 238,
@@ -284,13 +423,107 @@ const styles = StyleSheet.create({
     paddingTop: 26,
   },
   history: {
-    color: '#18bf62',
+    color: '#ff8128',
     fontSize: 19,
     fontWeight: '900',
   },
   list: {
     gap: 12,
     padding: 16,
+  },
+  cancelButton: {
+    alignItems: 'center',
+    borderColor: '#d8dde3',
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    paddingVertical: 13,
+  },
+  cancelText: {
+    color: '#667085',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  confirmButton: {
+    alignItems: 'center',
+    backgroundColor: '#ff8128',
+    borderRadius: 12,
+    flex: 1,
+    paddingVertical: 13,
+  },
+  confirmText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  methodButton: {
+    alignItems: 'center',
+    backgroundColor: '#f7f8fa',
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 10,
+  },
+  methodButtonActive: {
+    backgroundColor: '#fff1e8',
+    borderColor: '#ff8128',
+  },
+  methodRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 15,
+  },
+  methodText: {
+    color: '#667085',
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  methodTextActive: {
+    color: '#ff8128',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+  },
+  modalBackdrop: {
+    backgroundColor: 'rgba(17, 24, 39, 0.42)',
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    padding: 18,
+    paddingBottom: 28,
+  },
+  modalLabel: {
+    color: '#172033',
+    fontSize: 14,
+    fontWeight: '900',
+    marginBottom: 9,
+    marginTop: 14,
+  },
+  modalMeta: {
+    color: '#667085',
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  modalPrice: {
+    color: '#ff8128',
+    fontSize: 22,
+    fontWeight: '900',
+    marginTop: 10,
+  },
+  modalTitle: {
+    color: '#172033',
+    fontSize: 22,
+    fontWeight: '900',
   },
   meta: {
     color: '#667085',
@@ -301,6 +534,34 @@ const styles = StyleSheet.create({
     color: '#ff8128',
     fontSize: 15,
     fontWeight: '900',
+  },
+  paidButton: {
+    backgroundColor: '#f3f4f6',
+  },
+  paidText: {
+    color: '#6b7280',
+  },
+  payButton: {
+    alignItems: 'center',
+    backgroundColor: '#fff1e8',
+    borderRadius: 999,
+    paddingHorizontal: 13,
+    paddingVertical: 8,
+  },
+  payText: {
+    color: '#ff8128',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  reviewInput: {
+    backgroundColor: '#f7f8fa',
+    borderColor: '#d8dde3',
+    borderRadius: 12,
+    borderWidth: 1,
+    color: '#172033',
+    minHeight: 92,
+    padding: 12,
+    textAlignVertical: 'top',
   },
   safeArea: {
     backgroundColor: '#fff',
@@ -317,9 +578,9 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   status: {
-    backgroundColor: '#eefbf4',
+    backgroundColor: '#fff1e8',
     borderRadius: 999,
-    color: '#18a957',
+    color: '#ff8128',
     fontSize: 12,
     fontWeight: '900',
     overflow: 'hidden',
@@ -348,5 +609,10 @@ const styles = StyleSheet.create({
     color: '#172033',
     fontSize: 34,
     fontWeight: '900',
+  },
+  starRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 2,
   },
 });

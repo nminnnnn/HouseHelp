@@ -10,6 +10,7 @@ function buildQuery(filter = {}) {
   if (filter.exactRating) params.set("exactRating", filter.exactRating);
   if (filter.maxPrice) params.set("maxPrice", filter.maxPrice);
   if (filter.available) params.set("available", filter.available);
+  if (filter.topRated) params.set("topRated", "true");
 
   const query = params.toString();
   return query ? `?${query}` : "";
@@ -115,6 +116,10 @@ export default function HousekeeperList({ filter }) {
       }
 
       if (activeFilter.available && housekeeper.available !== activeFilter.available) {
+        return false;
+      }
+
+      if (activeFilter.topRated && !housekeeper.isTopRated) {
         return false;
       }
 

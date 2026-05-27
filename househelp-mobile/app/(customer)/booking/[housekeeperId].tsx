@@ -19,7 +19,12 @@ function todayDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function firstService(services?: string) {
+function firstService(services?: string, selectedService?: string | string[]) {
+  const paramService = Array.isArray(selectedService) ? selectedService[0] : selectedService;
+  if (paramService?.trim()) {
+    return paramService.trim();
+  }
+
   const value = services
     ?.split(',')
     .map((item) => item.trim())
@@ -33,6 +38,11 @@ function parseDuration(value: string) {
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 1;
 }
 
+function parsePrice(value?: number | string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export default function CreateBookingScreen() {
   const [date, setDate] = useState(todayDate());
   const [duration, setDuration] = useState('2');
@@ -44,7 +54,11 @@ export default function CreateBookingScreen() {
   const [service, setService] = useState('');
   const [time, setTime] = useState('08:00');
   const [user, setUser] = useState<AuthUser | null>(null);
-  const { housekeeperId } = useLocalSearchParams<{ housekeeperId: string }>();
+  const { housekeeperId, recurring, service: selectedService } = useLocalSearchParams<{
+    housekeeperId: string;
+    recurring?: string;
+    service?: string;
+  }>();
   const router = useRouter();
 
   const loadData = useCallback(async () => {
@@ -62,20 +76,23 @@ export default function CreateBookingScreen() {
 
       setUser(storedUser);
       setHousekeeper(detail);
-      setService(firstService(detail.services));
+      setService(firstService(detail.services, selectedService));
+      if (recurring === 'monthly') {
+        setDuration('3');
+      }
     } catch (error: any) {
       Alert.alert('Khong tai duoc du lieu', error.response?.data?.message || error.response?.data?.error || 'Thu lai sau.');
     } finally {
       setIsLoading(false);
     }
-  }, [housekeeperId]);
+  }, [housekeeperId, recurring, selectedService]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
   const totalPrice = useMemo(() => {
-    const price = typeof housekeeper?.price === 'number' ? housekeeper.price : 0;
+    const price = parsePrice(housekeeper?.price);
     return price * parseDuration(duration);
   }, [duration, housekeeper?.price]);
 
@@ -104,7 +121,7 @@ export default function CreateBookingScreen() {
         housekeeperName: housekeeper.fullName,
         location: location.trim(),
         notes: notes.trim() || undefined,
-        service: service.trim(),
+        service: recurring === 'monthly' ? `${service.trim()} monthly` : service.trim(),
         time: time.trim(),
         totalPrice,
       });
@@ -135,6 +152,11 @@ export default function CreateBookingScreen() {
 
       <Text style={styles.title}>Dat lich</Text>
       <Text style={styles.subtitle}>{housekeeper?.fullName || 'Nguoi giup viec'}</Text>
+      {recurring === 'monthly' ? (
+        <View style={styles.recurringBadge}>
+          <Text style={styles.recurringText}>Lich hang thang</Text>
+        </View>
+      ) : null}
 
       <View style={styles.summary}>
         <Text style={styles.summaryLabel}>Tam tinh</Text>
@@ -190,7 +212,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   backText: {
-    color: '#0f766e',
+    color: '#ff8128',
     fontSize: 15,
     fontWeight: '700',
   },
@@ -226,7 +248,7 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     alignItems: 'center',
-    backgroundColor: '#0f766e',
+    backgroundColor: '#ff8128',
     borderRadius: 8,
     marginTop: 10,
     padding: 15,
@@ -235,6 +257,20 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '800',
+  },
+  recurringBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#fff1e8',
+    borderRadius: 999,
+    marginBottom: 14,
+    marginTop: -6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  recurringText: {
+    color: '#ff8128',
+    fontSize: 13,
+    fontWeight: '900',
   },
   screen: {
     backgroundColor: '#f7f8fa',
@@ -262,7 +298,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   summaryValue: {
-    color: '#0f766e',
+    color: '#ff8128',
     fontSize: 16,
     fontWeight: '800',
   },

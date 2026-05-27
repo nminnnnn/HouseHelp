@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { authService } from '../lib/auth';
 import { notificationService, type AppNotification } from '../lib/notifications';
@@ -136,21 +137,24 @@ export default function NotificationsScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator />
-      </View>
+      <SafeAreaView edges={['top']} style={styles.safeArea}>
+        <View style={styles.centered}>
+          <ActivityIndicator color="#ff8128" />
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.screen}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Text style={styles.backText}>Quay lai</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>Thong bao</Text>
-        <Text style={styles.subtitle}>{unreadCount} thong bao moi</Text>
-      </View>
+    <SafeAreaView edges={['top']} style={styles.safeArea}>
+      <View style={styles.screen}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Text style={styles.backText}>Quay lai</Text>
+          </TouchableOpacity>
+          <Text style={styles.title}>Thong bao</Text>
+          <Text style={styles.subtitle}>{unreadCount} thong bao moi</Text>
+        </View>
 
       {error ? (
         <View style={styles.errorBox}>
@@ -162,7 +166,7 @@ export default function NotificationsScreen() {
         contentContainerStyle={styles.list}
         data={notifications}
         keyExtractor={(item) => String(item.id)}
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadNotifications(true)} />}
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadNotifications(true)} tintColor="#ff8128" />}
         renderItem={({ item }) => (
           <NotificationCard item={item} onDelete={() => handleDelete(item)} onOpen={() => handleOpen(item)} />
         )}
@@ -173,7 +177,8 @@ export default function NotificationsScreen() {
           </View>
         }
       />
-    </View>
+      </View>
+    </SafeAreaView>
   );
 }
 
@@ -183,7 +188,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   backText: {
-    color: '#0f766e',
+    color: '#ff8128',
     fontSize: 15,
     fontWeight: '700',
   },
@@ -280,6 +285,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#f7f8fa',
     flex: 1,
   },
+  safeArea: {
+    backgroundColor: '#fff',
+    flex: 1,
+  },
   subtitle: {
     color: '#6b7280',
     fontSize: 13,
@@ -296,12 +305,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   type: {
-    color: '#0f766e',
+    color: '#ff8128',
     fontSize: 12,
     fontWeight: '800',
   },
   unreadBadge: {
-    backgroundColor: '#0f766e',
+    backgroundColor: '#ff8128',
     borderRadius: 999,
     color: '#fff',
     fontSize: 11,
@@ -311,6 +320,6 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   unreadCard: {
-    borderColor: '#0f766e',
+    borderColor: '#ff8128',
   },
 });

@@ -9,7 +9,7 @@ export type Housekeeper = {
   phoneNumber?: string;
   initials?: string;
   services?: string;
-  price?: number;
+  price?: number | string;
   available?: number | boolean;
   description?: string;
   experience?: string;
@@ -21,14 +21,25 @@ export type Housekeeper = {
   availability?: string;
 };
 
+function normalizeHousekeeper(housekeeper: Housekeeper): Housekeeper {
+  const price = Number(housekeeper.price);
+
+  return {
+    ...housekeeper,
+    price: Number.isFinite(price) ? price : undefined,
+  };
+}
+
 export const housekeeperService = {
-  getAll: async () => {
-    const response = await api.get<Housekeeper[]>('/housekeepers');
-    return response.data;
+  getAll: async (services?: string) => {
+    const response = await api.get<Housekeeper[]>('/housekeepers', {
+      params: services ? { services } : undefined,
+    });
+    return response.data.map(normalizeHousekeeper);
   },
 
   getById: async (id: number | string) => {
     const response = await api.get<Housekeeper>(`/housekeepers/${id}`);
-    return response.data;
+    return normalizeHousekeeper(response.data);
   },
 };

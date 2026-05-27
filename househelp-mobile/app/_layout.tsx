@@ -17,6 +17,7 @@ export default function RootLayout() {
         <Stack.Screen name="(housekeeper)" />
         <Stack.Screen name="notifications" />
         <Stack.Screen name="profile" />
+        <Stack.Screen name="chat/index" />
         <Stack.Screen name="chat/[bookingId]" />
       </Stack>
       <StatusBar style="auto" />

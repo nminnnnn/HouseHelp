@@ -20,6 +20,23 @@ export type SendMessagePayload = {
   messageType?: 'text';
 };
 
+export type Conversation = {
+  bookingId?: number;
+  service?: string;
+  bookingStatus?: string;
+  customerId?: number;
+  housekeeperId?: number;
+  customerName?: string;
+  housekeeperName?: string;
+  otherUserId: number;
+  otherUserName?: string;
+  otherUserRole?: string;
+  lastMessage?: string;
+  lastMessageTime?: string;
+  unreadCount?: number;
+  bookingCreatedAt?: string;
+};
+
 export const messageService = {
   getForBooking: async (bookingId: number | string) => {
     const response = await api.get<ChatMessage[]>(`/bookings/${bookingId}/messages`);
@@ -31,8 +48,18 @@ export const messageService = {
     return response.data;
   },
 
+  getConversations: async (userId: number) => {
+    const response = await api.get<Conversation[]>(`/users/${userId}/conversations`);
+    return response.data;
+  },
+
   send: async (bookingId: number | string, payload: SendMessagePayload) => {
     const response = await api.post<ChatMessage>(`/bookings/${bookingId}/messages`, payload);
+    return response.data;
+  },
+
+  sendBetweenUsers: async (userId1: number, userId2: number, payload: Pick<SendMessagePayload, 'message' | 'messageType'>) => {
+    const response = await api.post<ChatMessage>(`/users/${userId1}/messages/${userId2}`, payload);
     return response.data;
   },
 };

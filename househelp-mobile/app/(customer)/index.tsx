@@ -16,15 +16,20 @@ import { CustomerBottomNav } from '../../components/customer-bottom-nav';
 import { authService, type AuthUser } from '../../lib/auth';
 import { housekeeperService, type Housekeeper } from '../../lib/housekeepers';
 
+function errorMessage(error: any) {
+  const value = error?.response?.data?.message || error?.response?.data?.error || error?.message;
+  return typeof value === 'string' ? value : 'Khong the tai danh sach.';
+}
+
 const services = [
-  { title: 'Cleaning', subtitle: 'on-demand', icon: 'sparkles-outline', filter: 'Cleaning' },
-  { title: 'Cleaning', subtitle: 'monthly', icon: 'calendar-outline', filter: 'Cleaning' },
-  { title: 'Deep', subtitle: 'Cleaning', icon: 'home-outline', filter: 'Deep Cleaning' },
-  { title: 'A/C Cleaning', subtitle: '', icon: 'snow-outline', filter: 'A/C Cleaning' },
-  { title: 'Cooking', subtitle: '', icon: 'restaurant-outline', filter: 'Cooking' },
-  { title: 'Laundry', subtitle: '', icon: 'shirt-outline', filter: 'Laundry' },
-  { title: 'Elderly Care', subtitle: '', icon: 'heart-outline', filter: 'Elder Care' },
-  { title: 'More', subtitle: 'services', icon: 'add-circle-outline', filter: '' },
+  { title: 'Cleaning', subtitle: 'on-demand', icon: 'sparkles-outline', key: 'cleaning', filter: 'Dọn dẹp nhà cửa' },
+  { title: 'Cleaning', subtitle: 'monthly', icon: 'calendar-outline', key: 'cleaning-monthly', filter: 'Dọn dẹp nhà cửa' },
+  { title: 'Deep', subtitle: 'Cleaning', icon: 'home-outline', key: 'deep-cleaning', filter: 'Dọn dẹp nhà cửa' },
+  { title: 'A/C Cleaning', subtitle: '', icon: 'snow-outline', key: 'industrial-cleaning', filter: 'Vệ sinh công nghiệp' },
+  { title: 'Cooking', subtitle: '', icon: 'restaurant-outline', key: 'cooking', filter: 'Nấu ăn' },
+  { title: 'Laundry', subtitle: '', icon: 'shirt-outline', key: 'laundry', filter: 'Giặt ủi quần áo' },
+  { title: 'Elderly Care', subtitle: '', icon: 'heart-outline', key: 'elder-care', filter: 'Chăm sóc người già' },
+  { title: 'More', subtitle: 'services', icon: 'add-circle-outline', key: 'all', filter: '' },
 ];
 
 const featured = [
@@ -34,25 +39,26 @@ const featured = [
   { title: 'Home Moving', icon: 'cube-outline' },
 ];
 
-function formatPrice(price?: number) {
-  if (typeof price !== 'number') return 'Lien he';
-  return `${price.toLocaleString('vi-VN')} VND`;
+function formatPrice(price?: number | string) {
+  const value = Number(price);
+  if (!Number.isFinite(value)) return 'Lien he';
+  return `${value.toLocaleString('vi-VN')} VND`;
 }
 
 function compactName(name?: string) {
   return name?.split(' ')[0] || 'ban';
 }
 
-function TaskerCard({ item, onPress }: { item: Housekeeper; onPress: () => void }) {
+function HousekeeperCard({ item, onPress }: { item: Housekeeper; onPress: () => void }) {
   return (
-    <TouchableOpacity activeOpacity={0.86} onPress={onPress} style={styles.taskerCard}>
-      <View style={styles.taskerAvatar}>
-        <Text style={styles.taskerAvatarText}>{item.initials || item.fullName?.slice(0, 1) || 'H'}</Text>
+    <TouchableOpacity activeOpacity={0.86} onPress={onPress} style={styles.housekeeperCard}>
+      <View style={styles.housekeeperAvatar}>
+        <Text style={styles.housekeeperAvatarText}>{item.initials || item.fullName?.slice(0, 1) || 'H'}</Text>
       </View>
-      <View style={styles.taskerInfo}>
-        <Text numberOfLines={1} style={styles.taskerName}>{item.fullName}</Text>
-        <Text numberOfLines={1} style={styles.taskerMeta}>{item.services || 'House cleaning'}</Text>
-        <View style={styles.taskerFooter}>
+      <View style={styles.housekeeperInfo}>
+        <Text numberOfLines={1} style={styles.housekeeperName}>{item.fullName}</Text>
+        <Text numberOfLines={1} style={styles.housekeeperMeta}>{item.services || 'House cleaning'}</Text>
+        <View style={styles.housekeeperFooter}>
           <Text style={styles.rating}>★ {item.rating ?? item.avgRating ?? '0.0'}</Text>
           <Text style={styles.price}>{formatPrice(item.price)}</Text>
         </View>
@@ -84,7 +90,7 @@ export default function CustomerHome() {
       setUser(storedUser);
       setHousekeepers(data);
     } catch (loadError: any) {
-      setError(loadError.response?.data?.message || loadError.response?.data?.error || 'Khong the tai danh sach.');
+      setError(errorMessage(loadError));
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -167,7 +173,31 @@ export default function CustomerHome() {
 
           <View style={styles.serviceGrid}>
             {services.map((item) => (
-              <TouchableOpacity activeOpacity={0.8} key={`${item.title}-${item.subtitle}`} style={styles.serviceItem}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                key={`${item.title}-${item.subtitle}`}
+                onPress={() => {
+                  if (!item.filter) {
+                    router.push({
+                      pathname: '/(customer)/service/[service]',
+                      params: { service: 'all', title: 'All services' },
+                    });
+                    return;
+                  }
+
+                  const title = item.subtitle ? `${item.title} ${item.subtitle}` : item.title;
+                  router.push({
+                    pathname: '/(customer)/service/[service]',
+                    params: {
+                      dbService: item.filter,
+                      recurring: item.subtitle === 'monthly' ? 'monthly' : '',
+                      service: item.key,
+                      title,
+                    },
+                  });
+                }}
+                style={styles.serviceItem}
+              >
                 <Ionicons color="#ff8a35" name={item.icon as any} size={38} />
                 <Text style={styles.serviceTitle}>{item.title}</Text>
                 {item.subtitle ? <Text style={styles.serviceSubtitle}>{item.subtitle}</Text> : null}
@@ -186,7 +216,7 @@ export default function CustomerHome() {
           </View>
 
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Taskers near you</Text>
+            <Text style={styles.sectionTitle}>Housekeepers near you</Text>
           </View>
 
           {error ? (
@@ -198,9 +228,9 @@ export default function CustomerHome() {
             </View>
           ) : null}
 
-          <View style={styles.taskerList}>
+          <View style={styles.housekeeperList}>
             {housekeepers.slice(0, 6).map((item) => (
-              <TaskerCard key={String(item.id)} item={item} onPress={() => router.push(`/(customer)/housekeeper/${item.id}`)} />
+              <HousekeeperCard key={String(item.id)} item={item} onPress={() => router.push(`/(customer)/housekeeper/${item.id}`)} />
             ))}
           </View>
         </ScrollView>
@@ -233,7 +263,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   bannerKicker: {
-    color: '#18bf62',
+    color: '#ff8128',
     fontSize: 11,
     fontWeight: '900',
     marginBottom: 5,
@@ -245,7 +275,7 @@ const styles = StyleSheet.create({
     maxWidth: 210,
   },
   bookAgain: {
-    color: '#18bf62',
+    color: '#ff8128',
     fontSize: 17,
     fontWeight: '900',
   },
@@ -439,7 +469,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   seeAll: {
-    color: '#18bf62',
+    color: '#ff8128',
     fontSize: 18,
     fontWeight: '900',
   },
@@ -467,7 +497,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textAlign: 'center',
   },
-  taskerAvatar: {
+  housekeeperAvatar: {
     alignItems: 'center',
     backgroundColor: '#fff1e8',
     borderRadius: 24,
@@ -475,12 +505,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 48,
   },
-  taskerAvatarText: {
+  housekeeperAvatarText: {
     color: '#ff8128',
     fontSize: 17,
     fontWeight: '900',
   },
-  taskerCard: {
+  housekeeperCard: {
     backgroundColor: '#fff',
     borderColor: '#edf0f4',
     borderRadius: 16,
@@ -489,25 +519,25 @@ const styles = StyleSheet.create({
     gap: 12,
     padding: 14,
   },
-  taskerFooter: {
+  housekeeperFooter: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  taskerInfo: {
+  housekeeperInfo: {
     flex: 1,
     gap: 5,
   },
-  taskerList: {
+  housekeeperList: {
     gap: 12,
     paddingHorizontal: 16,
   },
-  taskerMeta: {
+  housekeeperMeta: {
     color: '#687386',
     fontSize: 13,
     fontWeight: '600',
   },
-  taskerName: {
+  housekeeperName: {
     color: '#172033',
     fontSize: 16,
     fontWeight: '900',

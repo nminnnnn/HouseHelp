@@ -9,13 +9,13 @@ import { useAuth } from "../hooks/useAuth";
 import MobileBottomNav from "../components/MobileBottomNav";
 
 const serviceGroups = [
-  { title: "Cleaning", subtitle: "on-demand", icon: "broom", filter: "Cleaning" },
-  { title: "Cleaning", subtitle: "monthly", icon: "calendar", filter: "Cleaning" },
-  { title: "Deep", subtitle: "Cleaning", icon: "home", filter: "Deep Cleaning" },
-  { title: "A/C Cleaning", subtitle: "", icon: "snow", filter: "A/C Cleaning" },
-  { title: "Cooking", subtitle: "", icon: "pot", filter: "Cooking" },
-  { title: "Laundry", subtitle: "", icon: "shirt", filter: "Laundry" },
-  { title: "Elderly Care", subtitle: "", icon: "care", filter: "Elder Care" },
+  { title: "Cleaning", subtitle: "on-demand", icon: "broom", filter: "Dọn dẹp nhà cửa" },
+  { title: "Cleaning", subtitle: "monthly", icon: "calendar", filter: "Dọn dẹp nhà cửa" },
+  { title: "Deep", subtitle: "Cleaning", icon: "home", filter: "Dọn dẹp nhà cửa" },
+  { title: "A/C Cleaning", subtitle: "", icon: "snow", filter: "Vệ sinh công nghiệp" },
+  { title: "Cooking", subtitle: "", icon: "pot", filter: "Nấu ăn" },
+  { title: "Laundry", subtitle: "", icon: "shirt", filter: "Giặt ủi quần áo" },
+  { title: "Elderly Care", subtitle: "", icon: "care", filter: "Chăm sóc người già" },
   { title: "More", subtitle: "services", icon: "plus", filter: "" }
 ];
 

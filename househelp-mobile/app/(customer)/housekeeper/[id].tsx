@@ -1,15 +1,17 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { housekeeperService, type Housekeeper } from '../../../lib/housekeepers';
 
-function formatPrice(price?: number) {
-  if (typeof price !== 'number') {
+function formatPrice(price?: number | string) {
+  const value = Number(price);
+  if (!Number.isFinite(value)) {
     return 'Lien he';
   }
 
-  return `${price.toLocaleString('vi-VN')} VND`;
+  return `${value.toLocaleString('vi-VN')} VND`;
 }
 
 function formatServices(services?: string) {
@@ -80,6 +82,21 @@ export default function HousekeeperDetailScreen() {
 
   const services = formatServices(housekeeper.services);
 
+  const openChat = () => {
+    if (!housekeeper.userId) {
+      return;
+    }
+
+    router.push({
+      pathname: '/chat/[bookingId]',
+      params: {
+        bookingId: 'direct',
+        receiverId: String(housekeeper.userId),
+        receiverName: housekeeper.fullName || 'Housekeeper',
+      },
+    });
+  };
+
   return (
     <ScrollView contentContainerStyle={styles.content} style={styles.screen}>
       <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
@@ -95,7 +112,7 @@ export default function HousekeeperDetailScreen() {
         <Text style={styles.name}>{housekeeper.fullName}</Text>
         <Text style={styles.location}>{housekeeper.location || 'Chua cap nhat khu vuc'}</Text>
         <Text style={[styles.status, housekeeper.available ? styles.available : styles.unavailable]}>
-          {housekeeper.availability || (housekeeper.available ? 'San sang nhan viec' : 'Dang ban')}
+          {housekeeper.available ? 'Nhan viec' : 'Tam nghi'}
         </Text>
       </View>
 
@@ -136,7 +153,14 @@ export default function HousekeeperDetailScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Lien he</Text>
-        <Text style={styles.bodyText}>{housekeeper.phoneNumber || housekeeper.phone || 'Chua cap nhat so dien thoai'}</Text>
+        <TouchableOpacity disabled={!housekeeper.userId} onPress={openChat} style={styles.chatButton}>
+          <Ionicons color="#ff8128" name="chatbubble-ellipses-outline" size={22} />
+          <View style={styles.chatCopy}>
+            <Text style={styles.chatTitle}>Nhan tin voi housekeeper</Text>
+            <Text style={styles.chatSubtitle}>Hoi lich trong, trao doi yeu cau va thong tin dich vu.</Text>
+          </View>
+          <Ionicons color="#ff8128" name="chevron-forward" size={20} />
+        </TouchableOpacity>
       </View>
 
       <TouchableOpacity onPress={() => router.push(`/(customer)/booking/${housekeeper.id}`)} style={styles.primaryButton}>
@@ -148,12 +172,12 @@ export default function HousekeeperDetailScreen() {
 
 const styles = StyleSheet.create({
   available: {
-    backgroundColor: '#dcfce7',
-    color: '#166534',
+    backgroundColor: '#fff1e8',
+    color: '#ff8128',
   },
   avatar: {
     alignItems: 'center',
-    backgroundColor: '#0f766e',
+    backgroundColor: '#ff8128',
     borderRadius: 36,
     height: 72,
     justifyContent: 'center',
@@ -169,7 +193,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   backText: {
-    color: '#0f766e',
+    color: '#ff8128',
     fontSize: 15,
     fontWeight: '700',
   },
@@ -186,9 +210,9 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   chip: {
-    backgroundColor: '#e6f4f1',
+    backgroundColor: '#fff1e8',
     borderRadius: 999,
-    color: '#0f766e',
+    color: '#ff8128',
     fontSize: 13,
     fontWeight: '700',
     overflow: 'hidden',
@@ -199,6 +223,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  chatButton: {
+    alignItems: 'center',
+    backgroundColor: '#fff7ed',
+    borderColor: '#fed7aa',
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    padding: 14,
+  },
+  chatCopy: {
+    flex: 1,
+  },
+  chatSubtitle: {
+    color: '#6b7280',
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 3,
+  },
+  chatTitle: {
+    color: '#111827',
+    fontSize: 15,
+    fontWeight: '800',
   },
   content: {
     padding: 16,
@@ -233,7 +281,7 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     alignItems: 'center',
-    backgroundColor: '#0f766e',
+    backgroundColor: '#ff8128',
     borderRadius: 8,
     marginTop: 18,
     padding: 15,
@@ -260,7 +308,7 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   secondaryText: {
-    color: '#0f766e',
+    color: '#ff8128',
     fontSize: 15,
     fontWeight: '700',
   },

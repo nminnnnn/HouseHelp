@@ -23,7 +23,7 @@ const accountRows = [
   { label: 'Saved Addresses', icon: 'location' },
   { label: 'Transaction history', icon: 'time' },
   { label: 'My Rewards', icon: 'gift' },
-  { label: 'Favorite Taskers', icon: 'heart' },
+  { label: 'Favorite Housekeepers', icon: 'heart' },
   { label: 'Block List', icon: 'ban' },
   { label: 'Create a Business account', icon: 'business' },
 ];
