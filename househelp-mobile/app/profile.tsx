@@ -1,10 +1,9 @@
-import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,34 +11,55 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { CustomerBottomNav } from '../components/customer-bottom-nav';
 import { authService } from '../lib/auth';
 import { storage } from '../lib/storage';
-import { profileService, type UploadFileType, type UserProfile } from '../lib/profile';
+import { profileService, type UserProfile } from '../lib/profile';
 
-function publicUrl(value?: string) {
-  if (!value) {
-    return null;
-  }
+const accountRows = [
+  { label: 'Personal Profile', icon: 'person' },
+  { label: 'Saved Addresses', icon: 'location' },
+  { label: 'Transaction history', icon: 'time' },
+  { label: 'My Rewards', icon: 'gift' },
+  { label: 'Favorite Taskers', icon: 'heart' },
+  { label: 'Block List', icon: 'ban' },
+  { label: 'Create a Business account', icon: 'business' },
+];
 
-  if (value.startsWith('http')) {
-    return value;
-  }
+const utilityRows = [
+  { label: 'HouseHelp Pay', icon: 'wallet' },
+  { label: 'Language', icon: 'globe' },
+  { label: 'Help Center', icon: 'help-circle' },
+];
 
-  return `${process.env.EXPO_PUBLIC_SOCKET_URL}${value}`;
+function initials(name?: string) {
+  return (name || 'U')
+    .split(' ')
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
 }
 
-function imageName(fileType: UploadFileType) {
-  if (fileType === 'avatar') return 'avatar.jpg';
-  if (fileType === 'id_card_front') return 'id-card-front.jpg';
-  return 'id-card-back.jpg';
+function AccountRow({ label, icon, onPress }: { label: string; icon: string; onPress?: () => void }) {
+  return (
+    <TouchableOpacity activeOpacity={0.78} onPress={onPress} style={styles.rowButton}>
+      <View style={styles.rowIcon}>
+        <Ionicons color="#ff8128" name={icon as any} size={18} />
+      </View>
+      <Text numberOfLines={1} style={styles.rowLabel}>{label}</Text>
+      <Ionicons color="#ff8128" name="chevron-forward" size={22} />
+    </TouchableOpacity>
+  );
 }
 
 export default function ProfileScreen() {
   const [form, setForm] = useState<Partial<UserProfile>>({});
+  const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [uploadingType, setUploadingType] = useState<UploadFileType | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
   const router = useRouter();
 
@@ -55,7 +75,7 @@ export default function ProfileScreen() {
 
       setUserId(user.id);
       const profile = await profileService.getProfile(user.id);
-      setForm(profile);
+      setForm({ ...user, ...profile });
     } catch (error: any) {
       Alert.alert('Khong tai duoc profile', error.response?.data?.message || error.response?.data?.error || 'Thu lai sau.');
     } finally {
@@ -79,6 +99,7 @@ export default function ProfileScreen() {
       const updated = await profileService.updateProfile(userId, form);
       setForm(updated);
       await storage.saveUser(updated);
+      setIsEditing(false);
       Alert.alert('Da luu', 'Profile da duoc cap nhat.');
     } catch (error: any) {
       Alert.alert('Khong luu duoc', error.response?.data?.message || error.response?.data?.error || 'Thu lai sau.');
@@ -87,196 +108,172 @@ export default function ProfileScreen() {
     }
   };
 
-  const handlePickImage = async (fileType: UploadFileType) => {
-    if (!userId) return;
-
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Can quyen truy cap', 'Vui long cho phep truy cap thu vien anh de upload.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      allowsEditing: true,
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.85,
-    });
-
-    if (result.canceled || !result.assets[0]) {
-      return;
-    }
-
-    const asset = result.assets[0];
-    const file = {
-      name: asset.fileName || imageName(fileType),
-      type: asset.mimeType || 'image/jpeg',
-      uri: asset.uri,
-    };
-
-    try {
-      setUploadingType(fileType);
-      await profileService.uploadImage(userId, fileType, file);
-      await loadProfile();
-      Alert.alert('Upload thanh cong', 'Anh da duoc cap nhat.');
-    } catch (error: any) {
-      Alert.alert('Upload that bai', error.response?.data?.message || error.response?.data?.error || 'Thu lai sau.');
-    } finally {
-      setUploadingType(null);
-    }
+  const handleLogout = async () => {
+    await authService.logout();
+    router.replace('/(auth)/login');
   };
 
   if (isLoading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator />
+        <ActivityIndicator color="#ff8128" />
       </View>
     );
   }
 
-  const avatarUrl = publicUrl(form.avatar);
+  if (isEditing) {
+    return (
+      <SafeAreaView edges={['top']} style={styles.safeArea}>
+        <ScrollView contentContainerStyle={styles.editorContent} keyboardShouldPersistTaps="handled" style={styles.screen}>
+          <TouchableOpacity onPress={() => setIsEditing(false)} style={styles.backButton}>
+            <Ionicons color="#ff8128" name="chevron-back" size={22} />
+            <Text style={styles.backText}>Account</Text>
+          </TouchableOpacity>
+
+          <Text style={styles.title}>Personal Profile</Text>
+          <Text style={styles.subtitle}>{form.email}</Text>
+
+          <Text style={styles.label}>Ho ten</Text>
+          <TextInput onChangeText={(value) => updateField('fullName', value)} style={styles.input} value={form.fullName || ''} />
+
+          <Text style={styles.label}>So dien thoai</Text>
+          <TextInput keyboardType="phone-pad" onChangeText={(value) => updateField('phone', value)} style={styles.input} value={form.phone || ''} />
+
+          <Text style={styles.label}>Dia chi</Text>
+          <TextInput onChangeText={(value) => updateField('address', value)} style={styles.input} value={form.address || ''} />
+
+          <View style={styles.editorRow}>
+            <View style={styles.editorColumn}>
+              <Text style={styles.label}>Thanh pho</Text>
+              <TextInput onChangeText={(value) => updateField('city', value)} style={styles.input} value={form.city || ''} />
+            </View>
+            <View style={styles.editorColumn}>
+              <Text style={styles.label}>Quan/Huyen</Text>
+              <TextInput onChangeText={(value) => updateField('district', value)} style={styles.input} value={form.district || ''} />
+            </View>
+          </View>
+
+          <Text style={styles.label}>Gioi thieu</Text>
+          <TextInput multiline onChangeText={(value) => updateField('bio', value)} style={[styles.input, styles.multiline]} value={form.bio || ''} />
+
+          <TouchableOpacity disabled={isSaving} onPress={handleSave} style={styles.primaryButton}>
+            {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Luu profile</Text>}
+          </TouchableOpacity>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" style={styles.screen}>
-      <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-        <Text style={styles.backText}>Quay lai</Text>
-      </TouchableOpacity>
+    <SafeAreaView edges={['top']} style={styles.safeArea}>
+      <View style={styles.screen}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <Text style={styles.title}>Account</Text>
 
-      <Text style={styles.title}>Profile</Text>
-      <Text style={styles.subtitle}>{form.email}</Text>
-
-      <View style={styles.avatarBox}>
-        {avatarUrl ? (
-          <Image source={{ uri: avatarUrl }} style={styles.avatar} />
-        ) : (
-          <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarText}>{form.fullName?.slice(0, 1) || 'U'}</Text>
+          <View style={styles.identity}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{initials(form.fullName)}</Text>
+            </View>
+            <View style={styles.identityInfo}>
+              <Text numberOfLines={2} style={styles.name}>{form.fullName || 'HouseHelp User'}</Text>
+              <TouchableOpacity activeOpacity={0.85} style={styles.memberPill}>
+                <Text style={styles.memberText}>Member tier</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        )}
-        <TouchableOpacity onPress={() => handlePickImage('avatar')} style={styles.uploadButton}>
-          <Text style={styles.uploadText}>{uploadingType === 'avatar' ? 'Dang upload...' : 'Upload avatar'}</Text>
-        </TouchableOpacity>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Account</Text>
+            {accountRows.map((row, index) => (
+              <AccountRow
+                icon={row.icon}
+                key={row.label}
+                label={row.label}
+                onPress={index === 0 ? () => setIsEditing(true) : undefined}
+              />
+            ))}
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Utilities</Text>
+            {utilityRows.map((row) => (
+              <AccountRow icon={row.icon} key={row.label} label={row.label} />
+            ))}
+          </View>
+
+          <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
+            <Ionicons color="#ef4444" name="log-out-outline" size={20} />
+            <Text style={styles.logoutText}>Dang xuat</Text>
+          </TouchableOpacity>
+        </ScrollView>
+        <CustomerBottomNav />
       </View>
-
-      <Text style={styles.label}>Ho ten</Text>
-      <TextInput onChangeText={(value) => updateField('fullName', value)} style={styles.input} value={form.fullName || ''} />
-
-      <Text style={styles.label}>So dien thoai</Text>
-      <TextInput
-        keyboardType="phone-pad"
-        onChangeText={(value) => updateField('phone', value)}
-        style={styles.input}
-        value={form.phone || ''}
-      />
-
-      <Text style={styles.label}>Dia chi</Text>
-      <TextInput onChangeText={(value) => updateField('address', value)} style={styles.input} value={form.address || ''} />
-
-      <View style={styles.row}>
-        <View style={styles.rowItem}>
-          <Text style={styles.label}>Thanh pho</Text>
-          <TextInput onChangeText={(value) => updateField('city', value)} style={styles.input} value={form.city || ''} />
-        </View>
-        <View style={styles.rowItem}>
-          <Text style={styles.label}>Quan/Huyen</Text>
-          <TextInput onChangeText={(value) => updateField('district', value)} style={styles.input} value={form.district || ''} />
-        </View>
-      </View>
-
-      <Text style={styles.label}>Gioi thieu</Text>
-      <TextInput
-        multiline
-        onChangeText={(value) => updateField('bio', value)}
-        style={[styles.input, styles.multiline]}
-        value={form.bio || ''}
-      />
-
-      <View style={styles.documents}>
-        <Text style={styles.sectionTitle}>Giay to xac minh</Text>
-        <TouchableOpacity onPress={() => handlePickImage('id_card_front')} style={styles.documentButton}>
-          <Text style={styles.documentText}>
-            {uploadingType === 'id_card_front' ? 'Dang upload...' : 'Upload mat truoc CCCD'}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => handlePickImage('id_card_back')} style={styles.documentButton}>
-          <Text style={styles.documentText}>
-            {uploadingType === 'id_card_back' ? 'Dang upload...' : 'Upload mat sau CCCD'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <TouchableOpacity disabled={isSaving} onPress={handleSave} style={styles.primaryButton}>
-        {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Luu profile</Text>}
-      </TouchableOpacity>
-    </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   avatar: {
-    borderRadius: 44,
-    height: 88,
-    width: 88,
-  },
-  avatarBox: {
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderColor: '#e5e7eb',
-    borderRadius: 8,
-    borderWidth: 1,
-    marginBottom: 18,
-    padding: 18,
-  },
-  avatarPlaceholder: {
-    alignItems: 'center',
-    backgroundColor: '#0f766e',
-    borderRadius: 44,
-    height: 88,
+    backgroundColor: '#eef0f4',
+    borderRadius: 39,
+    height: 78,
     justifyContent: 'center',
-    width: 88,
+    width: 78,
   },
   avatarText: {
-    color: '#fff',
-    fontSize: 30,
-    fontWeight: '800',
+    color: '#9aa3af',
+    fontSize: 24,
+    fontWeight: '900',
   },
   backButton: {
+    alignItems: 'center',
     alignSelf: 'flex-start',
+    flexDirection: 'row',
+    gap: 4,
     paddingVertical: 8,
   },
   backText: {
-    color: '#0f766e',
+    color: '#ff8128',
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '900',
   },
   centered: {
     alignItems: 'center',
-    backgroundColor: '#f7f8fa',
+    backgroundColor: '#fff',
     flex: 1,
     justifyContent: 'center',
   },
   content: {
+    paddingBottom: 112,
+    paddingHorizontal: 16,
+    paddingTop: 24,
+  },
+  editorColumn: {
+    flex: 1,
+  },
+  editorContent: {
     padding: 16,
-    paddingBottom: 32,
+    paddingBottom: 40,
   },
-  documentButton: {
-    backgroundColor: '#e6f4f1',
-    borderRadius: 8,
-    padding: 13,
-  },
-  documentText: {
-    color: '#0f766e',
-    fontSize: 14,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  documents: {
+  editorRow: {
+    flexDirection: 'row',
     gap: 10,
-    marginTop: 8,
+  },
+  identity: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 18,
+    marginBottom: 30,
+    marginTop: 28,
+  },
+  identityInfo: {
+    flex: 1,
   },
   input: {
     backgroundColor: '#fff',
     borderColor: '#d8dde3',
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     color: '#111827',
     fontSize: 15,
@@ -286,40 +283,99 @@ const styles = StyleSheet.create({
   label: {
     color: '#374151',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '900',
     marginBottom: 7,
+  },
+  logoutButton: {
+    alignItems: 'center',
+    borderColor: '#fee2e2',
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    marginTop: 22,
+    padding: 14,
+  },
+  logoutText: {
+    color: '#ef4444',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  memberPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#ff8128',
+    borderRadius: 999,
+    marginTop: 9,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  memberText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '900',
   },
   multiline: {
     minHeight: 92,
     textAlignVertical: 'top',
   },
+  name: {
+    color: '#172033',
+    fontSize: 29,
+    fontWeight: '900',
+    lineHeight: 34,
+  },
   primaryButton: {
     alignItems: 'center',
-    backgroundColor: '#0f766e',
-    borderRadius: 8,
-    marginTop: 18,
+    backgroundColor: '#18bf62',
+    borderRadius: 14,
+    marginTop: 10,
     padding: 15,
   },
   primaryText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '900',
   },
-  row: {
+  rowButton: {
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderBottomColor: '#edf0f4',
+    borderBottomWidth: 1,
     flexDirection: 'row',
-    gap: 10,
+    minHeight: 66,
   },
-  rowItem: {
+  rowIcon: {
+    alignItems: 'center',
+    backgroundColor: '#fff1e8',
+    borderRadius: 16,
+    height: 32,
+    justifyContent: 'center',
+    marginRight: 18,
+    width: 32,
+  },
+  rowLabel: {
+    color: '#1d2636',
+    flex: 1,
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  safeArea: {
+    backgroundColor: '#fff',
     flex: 1,
   },
   screen: {
-    backgroundColor: '#f7f8fa',
+    backgroundColor: '#fff',
     flex: 1,
   },
+  section: {
+    marginTop: 24,
+  },
   sectionTitle: {
-    color: '#111827',
-    fontSize: 17,
-    fontWeight: '800',
+    color: '#172033',
+    fontSize: 24,
+    fontWeight: '900',
+    marginBottom: 12,
   },
   subtitle: {
     color: '#6b7280',
@@ -327,21 +383,8 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   title: {
-    color: '#111827',
-    fontSize: 28,
-    fontWeight: '800',
-    marginTop: 8,
-  },
-  uploadButton: {
-    backgroundColor: '#0f766e',
-    borderRadius: 8,
-    marginTop: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  uploadText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '800',
+    color: '#172033',
+    fontSize: 34,
+    fontWeight: '900',
   },
 });

@@ -1,58 +1,59 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { authService } from '../../lib/auth';
+import { CustomerBottomNav } from '../../components/customer-bottom-nav';
+import { authService, type AuthUser } from '../../lib/auth';
 import { housekeeperService, type Housekeeper } from '../../lib/housekeepers';
 
-function formatPrice(price?: number) {
-  if (typeof price !== 'number') {
-    return 'Lien he';
-  }
+const services = [
+  { title: 'Cleaning', subtitle: 'on-demand', icon: 'sparkles-outline', filter: 'Cleaning' },
+  { title: 'Cleaning', subtitle: 'monthly', icon: 'calendar-outline', filter: 'Cleaning' },
+  { title: 'Deep', subtitle: 'Cleaning', icon: 'home-outline', filter: 'Deep Cleaning' },
+  { title: 'A/C Cleaning', subtitle: '', icon: 'snow-outline', filter: 'A/C Cleaning' },
+  { title: 'Cooking', subtitle: '', icon: 'restaurant-outline', filter: 'Cooking' },
+  { title: 'Laundry', subtitle: '', icon: 'shirt-outline', filter: 'Laundry' },
+  { title: 'Elderly Care', subtitle: '', icon: 'heart-outline', filter: 'Elder Care' },
+  { title: 'More', subtitle: 'services', icon: 'add-circle-outline', filter: '' },
+];
 
+const featured = [
+  { title: 'Wellness Office', icon: 'leaf-outline' },
+  { title: 'Pet Care', icon: 'heart-circle-outline' },
+  { title: 'Patient Care', icon: 'medkit-outline' },
+  { title: 'Home Moving', icon: 'cube-outline' },
+];
+
+function formatPrice(price?: number) {
+  if (typeof price !== 'number') return 'Lien he';
   return `${price.toLocaleString('vi-VN')} VND`;
 }
 
-function formatServices(services?: string) {
-  if (!services) {
-    return 'Chua cap nhat dich vu';
-  }
-
-  return services.split(',').filter(Boolean).join(', ');
+function compactName(name?: string) {
+  return name?.split(' ')[0] || 'ban';
 }
 
-function HousekeeperCard({ item, onPress }: { item: Housekeeper; onPress: () => void }) {
+function TaskerCard({ item, onPress }: { item: Housekeeper; onPress: () => void }) {
   return (
-    <TouchableOpacity activeOpacity={0.85} onPress={onPress} style={styles.card}>
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>{item.initials || item.fullName?.slice(0, 1) || 'H'}</Text>
+    <TouchableOpacity activeOpacity={0.86} onPress={onPress} style={styles.taskerCard}>
+      <View style={styles.taskerAvatar}>
+        <Text style={styles.taskerAvatarText}>{item.initials || item.fullName?.slice(0, 1) || 'H'}</Text>
       </View>
-
-      <View style={styles.cardBody}>
-        <View style={styles.cardHeader}>
-          <Text numberOfLines={1} style={styles.name}>
-            {item.fullName}
-          </Text>
-          <Text style={[styles.status, item.available ? styles.available : styles.unavailable]}>
-            {item.available ? 'San sang' : 'Ban'}
-          </Text>
-        </View>
-
-        <Text numberOfLines={1} style={styles.services}>
-          {formatServices(item.services)}
-        </Text>
-
-        <View style={styles.metaRow}>
-          <Text style={styles.meta}>Danh gia {item.rating ?? item.avgRating ?? '0.0'}</Text>
-          <Text style={styles.meta}>{item.reviewCount ?? 0} nhan xet</Text>
+      <View style={styles.taskerInfo}>
+        <Text numberOfLines={1} style={styles.taskerName}>{item.fullName}</Text>
+        <Text numberOfLines={1} style={styles.taskerMeta}>{item.services || 'House cleaning'}</Text>
+        <View style={styles.taskerFooter}>
+          <Text style={styles.rating}>★ {item.rating ?? item.avgRating ?? '0.0'}</Text>
           <Text style={styles.price}>{formatPrice(item.price)}</Text>
         </View>
       </View>
@@ -65,18 +66,22 @@ export default function CustomerHome() {
   const [housekeepers, setHousekeepers] = useState<Housekeeper[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const router = useRouter();
 
-  const loadHousekeepers = useCallback(async (refreshing = false) => {
+  const loadData = useCallback(async (refreshing = false) => {
     try {
       if (refreshing) {
         setIsRefreshing(true);
       } else {
         setIsLoading(true);
       }
-
       setError(null);
-      const data = await housekeeperService.getAll();
+      const [storedUser, data] = await Promise.all([
+        authService.checkAuthStatus(),
+        housekeeperService.getAll(),
+      ]);
+      setUser(storedUser);
       setHousekeepers(data);
     } catch (loadError: any) {
       setError(loadError.response?.data?.message || loadError.response?.data?.error || 'Khong the tai danh sach.');
@@ -87,301 +92,424 @@ export default function CustomerHome() {
   }, []);
 
   useEffect(() => {
-    loadHousekeepers();
-  }, [loadHousekeepers]);
-
-  const handleLogout = async () => {
-    await authService.logout();
-    router.replace('/(auth)/login');
-  };
+    loadData();
+  }, [loadData]);
 
   if (isLoading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator />
+        <ActivityIndicator color="#ff8128" />
       </View>
     );
   }
 
   return (
-    <View style={styles.screen}>
-      <View style={styles.header}>
-        <View style={styles.headerTitle}>
-          <Text style={styles.title}>Nguoi giup viec</Text>
-          <Text style={styles.subtitle}>{housekeepers.length} ho so san sang de xem</Text>
-        </View>
+    <SafeAreaView edges={['top']} style={styles.safeArea}>
+      <View style={styles.screen}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadData(true)} tintColor="#ff8128" />}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.hero}>
+            <View style={styles.heroTop}>
+              <View>
+                <Text style={styles.greeting}>Hi {compactName(user?.fullName)}</Text>
+                <Text style={styles.heroCopy}>Dat dich vu cham soc nha cua nhanh va ro gia.</Text>
+              </View>
+              <TouchableOpacity onPress={() => router.push('/notifications')} style={styles.messageButton}>
+                <Ionicons color="#fff" name="chatbubble-ellipses-outline" size={26} />
+                <View style={styles.messageDot} />
+              </TouchableOpacity>
+            </View>
 
-        <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => router.push('/notifications')} style={styles.notificationButton}>
-            <Text style={styles.notificationText}>Thong bao</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/profile')} style={styles.profileHeaderButton}>
-            <Text style={styles.profileHeaderText}>Tai khoan</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-            <Text style={styles.logoutText}>Dang xuat</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <TouchableOpacity onPress={() => router.push('/(customer)/bookings')} style={styles.bookingsButton}>
-        <Text style={styles.bookingsText}>Xem booking cua toi</Text>
-      </TouchableOpacity>
-
-      {error ? (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity onPress={() => loadHousekeepers()} style={styles.retryButton}>
-            <Text style={styles.retryText}>Thu lai</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
-
-      <FlatList
-        contentContainerStyle={styles.list}
-        data={housekeepers}
-        keyExtractor={(item) => String(item.id)}
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadHousekeepers(true)} />}
-        renderItem={({ item }) => (
-          <HousekeeperCard item={item} onPress={() => router.push(`/(customer)/housekeeper/${item.id}`)} />
-        )}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>Chua co ho so nao</Text>
-            <Text style={styles.emptyText}>Kiem tra lai backend hoac trang thai verified/approved cua housekeeper.</Text>
+            <View style={styles.recentCard}>
+              <View style={styles.recentHeader}>
+                <View>
+                  <Text style={styles.recentTitle}>Cleaning</Text>
+                  <Text numberOfLines={1} style={styles.recentAddress}>
+                    {String(user?.address || 'Them dia chi de dat lich nhanh hon')}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => router.push('/(customer)/bookings')}>
+                  <Text style={styles.bookAgain}>Book again</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.rewardRow}>
+                <View style={styles.rewardCell}>
+                  <Ionicons color="#ff8128" name="logo-bitcoin" size={24} />
+                  <Text style={styles.rewardText}>0 d</Text>
+                </View>
+                <View style={[styles.rewardCell, styles.rewardBorder]}>
+                  <Ionicons color="#ff8128" name="ribbon-outline" size={24} />
+                  <Text style={styles.rewardText}>0 points</Text>
+                </View>
+              </View>
+            </View>
           </View>
-        }
-      />
-    </View>
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Service</Text>
+            <TouchableOpacity>
+              <Text style={styles.seeAll}>See all</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.featuredRow}>
+            {featured.map((item) => (
+              <TouchableOpacity activeOpacity={0.8} key={item.title} style={styles.featuredItem}>
+                <Text style={styles.newBadge}>NEW</Text>
+                <Ionicons color="#ff8128" name={item.icon as any} size={42} />
+                <Text numberOfLines={2} style={styles.featuredText}>{item.title}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={styles.serviceGrid}>
+            {services.map((item) => (
+              <TouchableOpacity activeOpacity={0.8} key={`${item.title}-${item.subtitle}`} style={styles.serviceItem}>
+                <Ionicons color="#ff8a35" name={item.icon as any} size={38} />
+                <Text style={styles.serviceTitle}>{item.title}</Text>
+                {item.subtitle ? <Text style={styles.serviceSubtitle}>{item.subtitle}</Text> : null}
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={styles.banner}>
+            <View>
+              <Text style={styles.bannerKicker}>SPECIAL OFFER</Text>
+              <Text style={styles.bannerTitle}>Lam sach nha cua, nhe dau viec nha</Text>
+            </View>
+            <TouchableOpacity onPress={() => router.push('/(customer)/bookings')} style={styles.bannerButton}>
+              <Text style={styles.bannerButtonText}>Dat ngay</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Taskers near you</Text>
+          </View>
+
+          {error ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{error}</Text>
+              <TouchableOpacity onPress={() => loadData()} style={styles.retryButton}>
+                <Text style={styles.retryText}>Thu lai</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          <View style={styles.taskerList}>
+            {housekeepers.slice(0, 6).map((item) => (
+              <TaskerCard key={String(item.id)} item={item} onPress={() => router.push(`/(customer)/housekeeper/${item.id}`)} />
+            ))}
+          </View>
+        </ScrollView>
+        <CustomerBottomNav />
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  available: {
-    backgroundColor: '#dcfce7',
-    color: '#166534',
-  },
-  avatar: {
+  banner: {
     alignItems: 'center',
-    backgroundColor: '#0f766e',
-    borderRadius: 24,
-    height: 48,
-    justifyContent: 'center',
-    width: 48,
-  },
-  avatarText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  bookingsButton: {
-    alignItems: 'center',
-    backgroundColor: '#0f766e',
-    borderRadius: 8,
-    marginHorizontal: 16,
-    marginTop: 12,
-    padding: 13,
-  },
-  bookingsText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderColor: '#e5e7eb',
-    borderRadius: 8,
-    borderWidth: 1,
+    backgroundColor: '#fff3e9',
+    borderRadius: 18,
     flexDirection: 'row',
-    gap: 12,
-    padding: 14,
-  },
-  cardBody: {
-    flex: 1,
-    gap: 7,
-  },
-  cardHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
     justifyContent: 'space-between',
+    marginHorizontal: 16,
+    marginTop: 14,
+    padding: 16,
+  },
+  bannerButton: {
+    backgroundColor: '#ff8128',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  bannerButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  bannerKicker: {
+    color: '#18bf62',
+    fontSize: 11,
+    fontWeight: '900',
+    marginBottom: 5,
+  },
+  bannerTitle: {
+    color: '#1d2636',
+    fontSize: 16,
+    fontWeight: '900',
+    maxWidth: 210,
+  },
+  bookAgain: {
+    color: '#18bf62',
+    fontSize: 17,
+    fontWeight: '900',
   },
   centered: {
     alignItems: 'center',
-    backgroundColor: '#f7f8fa',
+    backgroundColor: '#fff',
     flex: 1,
     justifyContent: 'center',
   },
-  empty: {
-    alignItems: 'center',
-    paddingHorizontal: 22,
-    paddingVertical: 48,
-  },
-  emptyText: {
-    color: '#6b7280',
-    fontSize: 14,
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  emptyTitle: {
-    color: '#111827',
-    fontSize: 17,
-    fontWeight: '800',
+  content: {
+    paddingBottom: 112,
   },
   errorBox: {
     backgroundColor: '#fef2f2',
     borderColor: '#fecaca',
-    borderRadius: 8,
+    borderRadius: 14,
     borderWidth: 1,
     marginHorizontal: 16,
-    marginTop: 12,
     padding: 14,
   },
   errorText: {
     color: '#991b1b',
     fontSize: 14,
   },
-  header: {
-    backgroundColor: '#fff',
-    borderBottomColor: '#e5e7eb',
-    borderBottomWidth: 1,
-    paddingHorizontal: 16,
-    paddingBottom: 14,
-    paddingTop: 28,
+  featuredItem: {
+    alignItems: 'center',
+    flex: 1,
+    gap: 6,
+    minWidth: 78,
   },
-  headerActions: {
+  featuredRow: {
+    backgroundColor: '#fff4ec',
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 8,
-    marginTop: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 16,
   },
-  headerTitle: {
-    gap: 3,
-  },
-  list: {
-    gap: 12,
-    padding: 16,
-    paddingBottom: 28,
-  },
-  logoutButton: {
-    alignItems: 'center',
-    borderColor: '#0f766e',
-    borderRadius: 8,
-    borderWidth: 1,
-    flex: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-  },
-  logoutText: {
-    color: '#0f766e',
+  featuredText: {
+    color: '#20283a',
     fontSize: 13,
-    fontWeight: '700',
-  },
-  notificationButton: {
-    alignItems: 'center',
-    backgroundColor: '#0f766e',
-    borderRadius: 8,
-    flex: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-  },
-  notificationText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  meta: {
-    color: '#6b7280',
-    fontSize: 12,
-  },
-  metaRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  name: {
-    color: '#111827',
-    flex: 1,
-    fontSize: 16,
     fontWeight: '800',
+    minHeight: 34,
+    textAlign: 'center',
+  },
+  greeting: {
+    color: '#fff',
+    fontSize: 31,
+    fontWeight: '900',
+  },
+  hero: {
+    backgroundColor: '#ff8128',
+    paddingBottom: 20,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  heroCopy: {
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 8,
+    maxWidth: 250,
+  },
+  heroTop: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  messageButton: {
+    alignItems: 'center',
+    borderColor: '#fff',
+    borderRadius: 24,
+    borderWidth: 2,
+    height: 48,
+    justifyContent: 'center',
+    position: 'relative',
+    width: 48,
+  },
+  messageDot: {
+    backgroundColor: '#ef4444',
+    borderColor: '#ff8128',
+    borderRadius: 6,
+    borderWidth: 2,
+    height: 12,
+    position: 'absolute',
+    right: 2,
+    top: 2,
+    width: 12,
+  },
+  newBadge: {
+    backgroundColor: '#f04452',
+    borderRadius: 999,
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '900',
+    overflow: 'hidden',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
   price: {
-    color: '#0f766e',
+    color: '#ff8128',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  rating: {
+    color: '#1d2636',
     fontSize: 12,
     fontWeight: '800',
   },
-  profileHeaderButton: {
-    alignItems: 'center',
-    backgroundColor: '#ecfeff',
-    borderColor: '#0f766e',
-    borderRadius: 8,
-    borderWidth: 1,
-    flex: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 11,
+  recentAddress: {
+    color: '#7d8796',
+    fontSize: 15,
+    marginTop: 5,
+    maxWidth: 210,
   },
-  profileHeaderText: {
-    color: '#0f766e',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  profileWideButton: {
-    alignItems: 'center',
+  recentCard: {
     backgroundColor: '#fff',
-    borderColor: '#0f766e',
-    borderRadius: 8,
-    borderWidth: 1,
-    marginHorizontal: 16,
-    marginTop: 10,
-    padding: 13,
+    borderRadius: 22,
+    elevation: 7,
+    padding: 18,
+    shadowColor: '#85400d',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.16,
+    shadowRadius: 20,
   },
-  profileWideText: {
-    color: '#0f766e',
-    fontSize: 14,
-    fontWeight: '800',
+  recentHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  recentTitle: {
+    color: '#ff8128',
+    fontSize: 25,
+    fontWeight: '900',
   },
   retryButton: {
     alignSelf: 'flex-start',
     backgroundColor: '#991b1b',
-    borderRadius: 8,
-    marginTop: 12,
+    borderRadius: 10,
+    marginTop: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   retryText: {
     color: '#fff',
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
   },
-  screen: {
-    backgroundColor: '#f7f8fa',
+  rewardBorder: {
+    borderLeftColor: '#edf0f4',
+    borderLeftWidth: 1,
+  },
+  rewardCell: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+  },
+  rewardRow: {
+    borderTopColor: '#edf0f4',
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    marginTop: 16,
+    paddingTop: 14,
+  },
+  rewardText: {
+    color: '#4a5568',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  safeArea: {
+    backgroundColor: '#ff8128',
     flex: 1,
   },
-  services: {
-    color: '#374151',
-    fontSize: 14,
+  screen: {
+    backgroundColor: '#fff',
+    flex: 1,
   },
-  status: {
-    borderRadius: 999,
-    fontSize: 11,
-    fontWeight: '800',
-    overflow: 'hidden',
+  sectionHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 24,
+    paddingBottom: 14,
+  },
+  sectionTitle: {
+    color: '#172033',
+    fontSize: 28,
+    fontWeight: '900',
+  },
+  seeAll: {
+    color: '#18bf62',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  serviceGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    rowGap: 24,
   },
-  subtitle: {
-    color: '#6b7280',
-    fontSize: 13,
-    marginTop: 3,
+  serviceItem: {
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 4,
+    width: '25%',
   },
-  title: {
-    color: '#111827',
-    fontSize: 24,
+  serviceSubtitle: {
+    color: '#ff8128',
+    fontSize: 14,
     fontWeight: '800',
+    textAlign: 'center',
   },
-  unavailable: {
-    backgroundColor: '#f3f4f6',
-    color: '#4b5563',
+  serviceTitle: {
+    color: '#20283a',
+    fontSize: 14,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  taskerAvatar: {
+    alignItems: 'center',
+    backgroundColor: '#fff1e8',
+    borderRadius: 24,
+    height: 48,
+    justifyContent: 'center',
+    width: 48,
+  },
+  taskerAvatarText: {
+    color: '#ff8128',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  taskerCard: {
+    backgroundColor: '#fff',
+    borderColor: '#edf0f4',
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    padding: 14,
+  },
+  taskerFooter: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  taskerInfo: {
+    flex: 1,
+    gap: 5,
+  },
+  taskerList: {
+    gap: 12,
+    paddingHorizontal: 16,
+  },
+  taskerMeta: {
+    color: '#687386',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  taskerName: {
+    color: '#172033',
+    fontSize: 16,
+    fontWeight: '900',
   },
 });

@@ -3,6 +3,7 @@ import { useAuth } from '../hooks/useAuth';
 import { getUserProfile, updateUserProfile } from '../api/userApi';
 import { getHousekeeperProfile, updateHousekeeperProfile } from '../api/housekeeperApi';
 import ProfileView from '../views/ProfileView';
+import CustomerAccountView from '../views/CustomerAccountView';
 
 function ProfilePage() {
   const { user } = useAuth();
@@ -99,15 +100,39 @@ function ProfilePage() {
   }
 
   return (
-    <ProfileView
-      user={user}
-      profileData={profileData}
-      loading={loading}
-      editing={editing}
-      onEdit={() => setEditing(true)}
-      onCancel={() => setEditing(false)}
-      onSave={handleUpdateProfile}
-    />
+    user.role === 'customer' && !editing ? (
+      <>
+        <div className="desktop-profile-shell">
+          <ProfileView
+            user={user}
+            profileData={profileData}
+            loading={loading}
+            editing={editing}
+            onEdit={() => setEditing(true)}
+            onCancel={() => setEditing(false)}
+            onSave={handleUpdateProfile}
+          />
+        </div>
+        <div className="mobile-profile-shell">
+          <CustomerAccountView
+            user={user}
+            profileData={profileData}
+            loading={loading}
+            onEdit={() => setEditing(true)}
+          />
+        </div>
+      </>
+    ) : (
+      <ProfileView
+        user={user}
+        profileData={profileData}
+        loading={loading}
+        editing={editing}
+        onEdit={() => setEditing(true)}
+        onCancel={() => setEditing(false)}
+        onSave={handleUpdateProfile}
+      />
+    )
   );
 }
 
