@@ -4252,10 +4252,10 @@ app.post('/api/bookings/:id/confirm-payment', (req, res) => {
       const booking = bookingResults[0];
 
       // Thêm review nếu có
-      if (rating && review) {
+      if (rating) {
         const reviewSql = `INSERT INTO reviews (bookingId, housekeeperId, customerId, rating, comment, createdAt) 
                           VALUES (?, ?, ?, ?, ?, NOW())`;
-        db.query(reviewSql, [bookingId, booking.housekeeperId, customerId, rating, review], (err) => {
+        db.query(reviewSql, [bookingId, booking.housekeeperId, customerId, rating, review || ''], (err) => {
           if (err) console.error('Error saving review:', err);
           
           // Cập nhật rating trung bình cho housekeeper
@@ -4263,7 +4263,7 @@ app.post('/api/bookings/:id/confirm-payment', (req, res) => {
             UPDATE housekeepers SET 
               rating = (SELECT AVG(rating) FROM reviews WHERE housekeeperId = ?),
               totalReviews = (SELECT COUNT(*) FROM reviews WHERE housekeeperId = ?)
-            WHERE userId = ?
+            WHERE id = ?
           `;
           db.query(updateRatingSql, [booking.housekeeperId, booking.housekeeperId, booking.housekeeperId], 
             (err) => {

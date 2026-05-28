@@ -28,7 +28,7 @@ export function CustomerBottomNav() {
           <TouchableOpacity
             activeOpacity={0.82}
             key={item.label}
-            onPress={() => router.push(item.href as any)}
+            onPress={() => router.replace(item.href as any)}
             style={[styles.item, item.center && styles.centerItem]}
           >
             <View style={[styles.iconWrap, item.center && styles.centerIconWrap, isActive && !item.center && styles.activeSoft]}>

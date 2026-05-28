@@ -154,7 +154,7 @@ export default function ServiceHousekeepersScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <TouchableOpacity onPress={() => router.replace('/(customer)')} style={styles.backButton}>
               <Ionicons color="#ff8128" name="chevron-back" size={22} />
               <Text style={styles.backText}>Home</Text>
             </TouchableOpacity>

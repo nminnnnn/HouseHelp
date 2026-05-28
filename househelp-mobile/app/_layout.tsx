@@ -12,8 +12,6 @@ export default function RootLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(customer)" />
         <Stack.Screen name="(housekeeper)" />
         <Stack.Screen name="notifications" />
         <Stack.Screen name="profile" />
