@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CustomerBottomNav } from '../../components/customer-bottom-nav';
-import { authService } from '../../lib/auth';
+import { authService, type AuthUser } from '../../lib/auth';
 import { messageService, type Conversation } from '../../lib/messages';
 
 function formatTime(value?: string) {
@@ -91,9 +91,12 @@ function groupConversationsByUser(items: Conversation[]) {
 
 export default function ChatListScreen() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const { refresh } = useLocalSearchParams<{ refresh?: string }>();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
 
   const unreadTotal = useMemo(
@@ -117,6 +120,7 @@ export default function ChatListScreen() {
         return;
       }
 
+      setCurrentUser(user);
       const data = await messageService.getConversations(user.id);
       setConversations(groupConversationsByUser(data));
     } catch (loadError: any) {
@@ -130,7 +134,7 @@ export default function ChatListScreen() {
   useFocusEffect(
     useCallback(() => {
       loadConversations();
-    }, [loadConversations]),
+    }, [loadConversations, refresh]),
   );
 
   const openConversation = (conversation: Conversation) => {
@@ -143,10 +147,11 @@ export default function ChatListScreen() {
       },
     });
   };
+  const isHousekeeper = currentUser?.role === 'housekeeper';
 
   if (isLoading) {
     return (
-      <SafeAreaView edges={['top']} style={styles.safeArea}>
+      <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
         <View style={styles.centered}>
           <ActivityIndicator color="#ff8128" />
         </View>
@@ -155,11 +160,26 @@ export default function ChatListScreen() {
   }
 
   return (
-    <SafeAreaView edges={['top']} style={styles.safeArea}>
+    <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
       <View style={styles.screen}>
         <View style={styles.header}>
-          <Text style={styles.title}>Chat</Text>
-          <Text style={styles.subtitle}>{unreadTotal} tin nhan moi</Text>
+          {isHousekeeper ? (
+            <TouchableOpacity onPress={() => router.replace('/(housekeeper)')} style={styles.backButton}>
+              <Ionicons color="#ff8128" name="chevron-back" size={22} />
+              <Text style={styles.backText}>Dashboard</Text>
+            </TouchableOpacity>
+          ) : null}
+          <View style={styles.headerRow}>
+            <View>
+              <Text style={styles.title}>Chat</Text>
+              <Text style={styles.subtitle}>{unreadTotal} tin nhan moi</Text>
+            </View>
+            {isHousekeeper ? (
+              <View style={styles.rolePill}>
+                <Text style={styles.rolePillText}>Housekeeper</Text>
+              </View>
+            ) : null}
+          </View>
         </View>
 
         {error ? (
@@ -169,7 +189,10 @@ export default function ChatListScreen() {
         ) : null}
 
         <FlatList
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[
+            styles.list,
+            { paddingBottom: isHousekeeper ? Math.max(insets.bottom + 16, 32) : Math.max(insets.bottom + 112, 128) },
+          ]}
           data={conversations}
           keyExtractor={(item) => `${item.bookingId || 'direct'}-${item.otherUserId}`}
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadConversations(true)} tintColor="#ff8128" />}
@@ -178,12 +201,16 @@ export default function ChatListScreen() {
             <View style={styles.empty}>
               <Ionicons color="#ff8128" name="chatbubbles-outline" size={64} />
               <Text style={styles.emptyTitle}>Chua co hoi thoai</Text>
-              <Text style={styles.emptyText}>Vao ho so housekeeper va bam Nhan tin de bat dau trao doi.</Text>
+              <Text style={styles.emptyText}>
+                {isHousekeeper
+                  ? 'Hoi thoai voi khach hang se hien o day sau khi co tin nhan hoac booking.'
+                  : 'Vao ho so housekeeper va bam Nhan tin de bat dau trao doi.'}
+              </Text>
             </View>
           }
         />
 
-        <CustomerBottomNav />
+        {isHousekeeper ? null : <CustomerBottomNav />}
       </View>
     </SafeAreaView>
   );
@@ -212,6 +239,18 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     paddingHorizontal: 8,
     paddingVertical: 3,
+  },
+  backButton: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    gap: 3,
+    marginBottom: 10,
+  },
+  backText: {
+    color: '#ff8128',
+    fontSize: 14,
+    fontWeight: '900',
   },
   card: {
     backgroundColor: '#fff',
@@ -273,6 +312,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 18,
   },
+  headerRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
   list: {
     gap: 12,
     padding: 16,
@@ -295,6 +339,17 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   role: {
+    color: '#ff8128',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  rolePill: {
+    backgroundColor: '#fff1e8',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  rolePillText: {
     color: '#ff8128',
     fontSize: 12,
     fontWeight: '900',

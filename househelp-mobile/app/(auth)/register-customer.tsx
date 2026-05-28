@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { authService } from '../../lib/auth';
 
@@ -11,6 +12,7 @@ export default function RegisterCustomerScreen() {
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const handleRegister = async () => {
     if (!fullName.trim() || !email.trim() || !password) {
@@ -38,29 +40,34 @@ export default function RegisterCustomerScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      <Text style={styles.title}>Dang ky khach hang</Text>
+    <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 24) }]}>
+      <ScrollView
+        contentContainerStyle={[styles.container, { paddingBottom: Math.max(insets.bottom + 30, 44) }]}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={styles.title}>Dang ky khach hang</Text>
 
-      <TextInput onChangeText={setFullName} placeholder="Ho ten" style={styles.input} value={fullName} />
-      <TextInput
-        autoCapitalize="none"
-        keyboardType="email-address"
-        onChangeText={setEmail}
-        placeholder="Email"
-        style={styles.input}
-        value={email}
-      />
-      <TextInput keyboardType="phone-pad" onChangeText={setPhone} placeholder="So dien thoai" style={styles.input} value={phone} />
-      <TextInput onChangeText={setPassword} placeholder="Mat khau" secureTextEntry style={styles.input} value={password} />
+        <TextInput onChangeText={setFullName} placeholder="Ho ten" style={styles.input} value={fullName} />
+        <TextInput
+          autoCapitalize="none"
+          keyboardType="email-address"
+          onChangeText={setEmail}
+          placeholder="Email"
+          style={styles.input}
+          value={email}
+        />
+        <TextInput keyboardType="phone-pad" onChangeText={setPhone} placeholder="So dien thoai" style={styles.input} value={phone} />
+        <TextInput onChangeText={setPassword} placeholder="Mat khau" secureTextEntry style={styles.input} value={password} />
 
-      <TouchableOpacity disabled={isSubmitting} onPress={handleRegister} style={styles.button}>
-        {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Tao tai khoan</Text>}
-      </TouchableOpacity>
+        <TouchableOpacity disabled={isSubmitting} onPress={handleRegister} style={styles.button}>
+          {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Tao tai khoan</Text>}
+        </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => router.back()} style={styles.secondaryButton}>
-        <Text style={styles.secondaryText}>Quay lai dang nhap</Text>
-      </TouchableOpacity>
-    </ScrollView>
+        <TouchableOpacity onPress={() => router.back()} style={styles.secondaryButton}>
+          <Text style={styles.secondaryText}>Quay lai dang nhap</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -78,7 +85,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   container: {
-    backgroundColor: '#f7f8fa',
     flexGrow: 1,
     justifyContent: 'center',
     padding: 30,
@@ -99,6 +105,10 @@ const styles = StyleSheet.create({
     color: '#0f766e',
     fontSize: 15,
     fontWeight: '600',
+  },
+  safeArea: {
+    backgroundColor: '#f7f8fa',
+    flex: 1,
   },
   title: {
     color: '#111827',

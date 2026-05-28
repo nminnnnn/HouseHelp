@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 const items = [
   { label: 'Home', href: '/(customer)' as const, icon: 'home-outline', activeIcon: 'home' },
   { label: 'Activity', href: '/(customer)/bookings' as const, icon: 'reader-outline', activeIcon: 'reader' },
-  { label: 'Book', href: '/(customer)' as const, icon: 'sparkles-outline', activeIcon: 'sparkles', center: true },
+  { label: 'Chatbot', href: '/chatbot' as const, icon: 'chatbox-ellipses-outline', activeIcon: 'chatbox-ellipses', center: true },
   { label: 'Chat', href: '/chat' as const, icon: 'chatbubbles-outline', activeIcon: 'chatbubbles' },
   { label: 'Account', href: '/profile' as const, icon: 'person-outline', activeIcon: 'person' },
 ];
@@ -15,6 +15,13 @@ export function CustomerBottomNav() {
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
   const router = useRouter();
+
+  const goTo = (href: (typeof items)[number]['href']) => {
+    router.replace({
+      pathname: href,
+      params: { refresh: String(Date.now()) },
+    } as any);
+  };
 
   return (
     <View style={[styles.nav, { paddingBottom: Math.max(insets.bottom, 8) }]}>
@@ -28,7 +35,7 @@ export function CustomerBottomNav() {
           <TouchableOpacity
             activeOpacity={0.82}
             key={item.label}
-            onPress={() => router.replace(item.href as any)}
+            onPress={() => goTo(item.href)}
             style={[styles.item, item.center && styles.centerItem]}
           >
             <View style={[styles.iconWrap, item.center && styles.centerIconWrap, isActive && !item.center && styles.activeSoft]}>
@@ -38,11 +45,15 @@ export function CustomerBottomNav() {
                 size={item.center ? 30 : 25}
               />
             </View>
-            {!item.center ? (
+            {item.center ? (
+              <Text numberOfLines={1} style={[styles.label, isActive && styles.activeLabel]}>
+                AI
+              </Text>
+            ) : (
               <Text numberOfLines={1} style={[styles.label, isActive && styles.activeLabel]}>
                 {item.label}
               </Text>
-            ) : null}
+            )}
           </TouchableOpacity>
         );
       })}

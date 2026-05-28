@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CustomerBottomNav } from '../../components/customer-bottom-nav';
 import { authService, type AuthUser } from '../../lib/auth';
@@ -73,7 +73,9 @@ export default function CustomerHome() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
+  const { refresh } = useLocalSearchParams<{ refresh?: string }>();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const loadData = useCallback(async (refreshing = false) => {
     try {
@@ -99,21 +101,23 @@ export default function CustomerHome() {
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, [loadData, refresh]);
 
   if (isLoading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator color="#ff8128" />
-      </View>
+      <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
+        <View style={styles.centered}>
+          <ActivityIndicator color="#ff8128" />
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView edges={['top']} style={styles.safeArea}>
+    <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
       <View style={styles.screen}>
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 112, 128) }]}
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadData(true)} tintColor="#ff8128" />}
           showsVerticalScrollIndicator={false}
         >
@@ -124,7 +128,7 @@ export default function CustomerHome() {
                 <Text style={styles.heroCopy}>Dat dich vu cham soc nha cua nhanh va ro gia.</Text>
               </View>
               <TouchableOpacity onPress={() => router.push('/notifications')} style={styles.messageButton}>
-                <Ionicons color="#fff" name="chatbubble-ellipses-outline" size={26} />
+                <Ionicons color="#fff" name="notifications-outline" size={26} />
                 <View style={styles.messageDot} />
               </TouchableOpacity>
             </View>

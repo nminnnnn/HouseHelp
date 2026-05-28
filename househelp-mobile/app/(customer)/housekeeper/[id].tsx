@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { housekeeperService, type Housekeeper } from '../../../lib/housekeepers';
 
@@ -33,6 +34,7 @@ export default function HousekeeperDetailScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const loadDetail = useCallback(async () => {
     if (!id) {
@@ -59,24 +61,28 @@ export default function HousekeeperDetailScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator />
-      </View>
+      <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
+        <View style={styles.centered}>
+          <ActivityIndicator />
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (error || !housekeeper) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.errorTitle}>Khong tai duoc ho so</Text>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity onPress={loadDetail} style={styles.primaryButton}>
-          <Text style={styles.primaryText}>Thu lai</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.back()} style={styles.secondaryButton}>
-          <Text style={styles.secondaryText}>Quay lai</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
+        <View style={styles.centered}>
+          <Text style={styles.errorTitle}>Khong tai duoc ho so</Text>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity onPress={loadDetail} style={styles.primaryButton}>
+            <Text style={styles.primaryText}>Thu lai</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.back()} style={styles.secondaryButton}>
+            <Text style={styles.secondaryText}>Quay lai</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -98,75 +104,80 @@ export default function HousekeeperDetailScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.content} style={styles.screen}>
-      <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-        <Text style={styles.backText}>Quay lai</Text>
-      </TouchableOpacity>
+    <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 28, 44) }]}
+        style={styles.screen}
+      >
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <Text style={styles.backText}>Quay lai</Text>
+        </TouchableOpacity>
 
-      <View style={styles.profileHeader}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {housekeeper.initials || housekeeper.fullName?.slice(0, 1) || 'H'}
+        <View style={styles.profileHeader}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>
+              {housekeeper.initials || housekeeper.fullName?.slice(0, 1) || 'H'}
+            </Text>
+          </View>
+          <Text style={styles.name}>{housekeeper.fullName}</Text>
+          <Text style={styles.location}>{housekeeper.location || 'Chua cap nhat khu vuc'}</Text>
+          <Text style={[styles.status, housekeeper.available ? styles.available : styles.unavailable]}>
+            {housekeeper.available ? 'Nhan viec' : 'Tam nghi'}
           </Text>
         </View>
-        <Text style={styles.name}>{housekeeper.fullName}</Text>
-        <Text style={styles.location}>{housekeeper.location || 'Chua cap nhat khu vuc'}</Text>
-        <Text style={[styles.status, housekeeper.available ? styles.available : styles.unavailable]}>
-          {housekeeper.available ? 'Nhan viec' : 'Tam nghi'}
-        </Text>
-      </View>
 
-      <View style={styles.stats}>
-        <View style={styles.statItem}>
-          <Text style={styles.statValue}>{housekeeper.rating ?? housekeeper.avgRating ?? '0.0'}</Text>
-          <Text style={styles.statLabel}>Danh gia</Text>
-        </View>
-        <View style={styles.divider} />
-        <View style={styles.statItem}>
-          <Text style={styles.statValue}>{housekeeper.reviewCount ?? 0}</Text>
-          <Text style={styles.statLabel}>Nhan xet</Text>
-        </View>
-        <View style={styles.divider} />
-        <View style={styles.statItem}>
-          <Text style={styles.statValue}>{formatPrice(housekeeper.price)}</Text>
-          <Text style={styles.statLabel}>Gia tham khao</Text>
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Gioi thieu</Text>
-        <Text style={styles.bodyText}>
-          {housekeeper.bio || housekeeper.description || housekeeper.experience || 'Ho so chua co mo ta.'}
-        </Text>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Dich vu</Text>
-        <View style={styles.chips}>
-          {services.map((service) => (
-            <Text key={service} style={styles.chip}>
-              {service}
-            </Text>
-          ))}
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Lien he</Text>
-        <TouchableOpacity disabled={!housekeeper.userId} onPress={openChat} style={styles.chatButton}>
-          <Ionicons color="#ff8128" name="chatbubble-ellipses-outline" size={22} />
-          <View style={styles.chatCopy}>
-            <Text style={styles.chatTitle}>Nhan tin voi housekeeper</Text>
-            <Text style={styles.chatSubtitle}>Hoi lich trong, trao doi yeu cau va thong tin dich vu.</Text>
+        <View style={styles.stats}>
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{housekeeper.rating ?? housekeeper.avgRating ?? '0.0'}</Text>
+            <Text style={styles.statLabel}>Danh gia</Text>
           </View>
-          <Ionicons color="#ff8128" name="chevron-forward" size={20} />
-        </TouchableOpacity>
-      </View>
+          <View style={styles.divider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{housekeeper.reviewCount ?? 0}</Text>
+            <Text style={styles.statLabel}>Nhan xet</Text>
+          </View>
+          <View style={styles.divider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{formatPrice(housekeeper.price)}</Text>
+            <Text style={styles.statLabel}>Gia tham khao</Text>
+          </View>
+        </View>
 
-      <TouchableOpacity onPress={() => router.push(`/(customer)/booking/${housekeeper.id}`)} style={styles.primaryButton}>
-        <Text style={styles.primaryText}>Dat lich</Text>
-      </TouchableOpacity>
-    </ScrollView>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Gioi thieu</Text>
+          <Text style={styles.bodyText}>
+            {housekeeper.bio || housekeeper.description || housekeeper.experience || 'Ho so chua co mo ta.'}
+          </Text>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Dich vu</Text>
+          <View style={styles.chips}>
+            {services.map((service) => (
+              <Text key={service} style={styles.chip}>
+                {service}
+              </Text>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Lien he</Text>
+          <TouchableOpacity disabled={!housekeeper.userId} onPress={openChat} style={styles.chatButton}>
+            <Ionicons color="#ff8128" name="chatbubble-ellipses-outline" size={22} />
+            <View style={styles.chatCopy}>
+              <Text style={styles.chatTitle}>Nhan tin voi housekeeper</Text>
+              <Text style={styles.chatSubtitle}>Hoi lich trong, trao doi yeu cau va thong tin dich vu.</Text>
+            </View>
+            <Ionicons color="#ff8128" name="chevron-forward" size={20} />
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity onPress={() => router.push(`/(customer)/booking/${housekeeper.id}`)} style={styles.primaryButton}>
+          <Text style={styles.primaryText}>Dat lich</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -300,6 +311,10 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   screen: {
+    backgroundColor: '#f7f8fa',
+    flex: 1,
+  },
+  safeArea: {
     backgroundColor: '#f7f8fa',
     flex: 1,
   },

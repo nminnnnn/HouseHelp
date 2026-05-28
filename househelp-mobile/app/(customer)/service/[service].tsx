@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CustomerBottomNav } from '../../../components/customer-bottom-nav';
 import { housekeeperService, type Housekeeper } from '../../../lib/housekeepers';
@@ -78,6 +78,7 @@ export default function ServiceHousekeepersScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
     dbService?: string;
     recurring?: string;
@@ -139,22 +140,32 @@ export default function ServiceHousekeepersScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator color="#ff8128" />
-      </View>
+      <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
+        <View style={styles.centered}>
+          <ActivityIndicator color="#ff8128" />
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView edges={['top']} style={styles.safeArea}>
+    <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
       <View style={styles.screen}>
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 112, 128) }]}
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadHousekeepers(true)} tintColor="#ff8128" />}
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.replace('/(customer)')} style={styles.backButton}>
+            <TouchableOpacity
+              onPress={() =>
+                router.replace({
+                  pathname: '/(customer)',
+                  params: { refresh: String(Date.now()) },
+                } as any)
+              }
+              style={styles.backButton}
+            >
               <Ionicons color="#ff8128" name="chevron-back" size={22} />
               <Text style={styles.backText}>Home</Text>
             </TouchableOpacity>

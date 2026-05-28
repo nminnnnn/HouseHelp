@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -13,7 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CustomerBottomNav } from '../../components/customer-bottom-nav';
 import { authService } from '../../lib/auth';
@@ -50,15 +50,18 @@ function statusLabel(status: string) {
 
 function BookingCard({
   item,
+  onCancel,
   onChat,
   onReviewPayment,
 }: {
   item: Booking;
+  onCancel: () => void;
   onChat: () => void;
   onReviewPayment: () => void;
 }) {
   const isCompleted = item.status === 'completed';
   const isPaid = item.paymentStatus === 'success';
+  const canCancel = item.status === 'pending';
 
   return (
     <View style={styles.card}>
@@ -76,6 +79,11 @@ function BookingCard({
             <Ionicons color="#fff" name="chatbubble-outline" size={16} />
             <Text style={styles.chatText}>Chat</Text>
           </TouchableOpacity>
+          {canCancel ? (
+            <TouchableOpacity onPress={onCancel} style={styles.cancelBookingButton}>
+              <Text style={styles.cancelBookingText}>Huy</Text>
+            </TouchableOpacity>
+          ) : null}
           {isCompleted ? (
             <TouchableOpacity disabled={isPaid} onPress={onReviewPayment} style={[styles.payButton, isPaid && styles.paidButton]}>
               <Text style={[styles.payText, isPaid && styles.paidText]}>{isPaid ? 'Da thanh toan' : 'Thanh toan'}</Text>
@@ -98,7 +106,9 @@ export default function CustomerBookingsScreen() {
   const [rating, setRating] = useState(5);
   const [review, setReview] = useState('');
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+  const { refresh } = useLocalSearchParams<{ refresh?: string }>();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const loadBookings = useCallback(async (refreshing = false) => {
     try {
@@ -127,7 +137,7 @@ export default function CustomerBookingsScreen() {
 
   useEffect(() => {
     loadBookings();
-  }, [loadBookings]);
+  }, [loadBookings, refresh]);
 
   const visibleBookings = useMemo(() => {
     if (activeTab === 'Monthly') {
@@ -179,19 +189,40 @@ export default function CustomerBookingsScreen() {
     }
   };
 
+  const handleCancelBooking = (booking: Booking) => {
+    Alert.alert('Huy booking', 'Ban co chac muon huy booking nay?', [
+      { text: 'De sau', style: 'cancel' },
+      {
+        text: 'Huy booking',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await bookingService.cancel(booking.id);
+            Alert.alert('Da huy', 'Booking da duoc huy.');
+            await loadBookings(true);
+          } catch (cancelError: any) {
+            Alert.alert('Khong huy duoc', errorMessage(cancelError));
+          }
+        },
+      },
+    ]);
+  };
+
   if (isLoading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator color="#ff8128" />
-      </View>
+      <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
+        <View style={styles.centered}>
+          <ActivityIndicator color="#ff8128" />
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView edges={['top']} style={styles.safeArea}>
+    <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
       <View style={styles.screen}>
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 112, 128) }]}
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadBookings(true)} tintColor="#ff8128" />}
           showsVerticalScrollIndicator={false}
         >
@@ -205,7 +236,14 @@ export default function CustomerBookingsScreen() {
           <View style={styles.tabs}>
             {tabs.map((tab) => (
               <TouchableOpacity key={tab} onPress={() => setActiveTab(tab)} style={styles.tab}>
-                <Text style={[styles.tabText, activeTab === tab && styles.activeTabText]}>{tab}</Text>
+                <Text
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.82}
+                  numberOfLines={1}
+                  style={[styles.tabText, activeTab === tab && styles.activeTabText]}
+                >
+                  {tab}
+                </Text>
                 {activeTab === tab ? <View style={styles.activeLine} /> : null}
               </TouchableOpacity>
             ))}
@@ -234,6 +272,7 @@ export default function CustomerBookingsScreen() {
                 <BookingCard
                   item={item}
                   key={String(item.id)}
+                  onCancel={() => handleCancelBooking(item)}
                   onChat={() => router.push(`/chat/${item.id}`)}
                   onReviewPayment={() => openPaymentReview(item)}
                 />
@@ -244,7 +283,7 @@ export default function CustomerBookingsScreen() {
 
         <Modal animationType="slide" onRequestClose={closePaymentReview} transparent visible={!!selectedBooking}>
           <View style={styles.modalBackdrop}>
-            <View style={styles.modalCard}>
+            <View style={[styles.modalCard, { paddingBottom: Math.max(insets.bottom + 18, 28) }]}>
               <Text style={styles.modalTitle}>Thanh toan & danh gia</Text>
               <Text style={styles.modalMeta}>{selectedBooking?.housekeeperName || 'Housekeeper'}</Text>
               <Text style={styles.modalPrice}>{formatPrice(selectedBooking?.totalPrice)}</Text>
@@ -439,6 +478,18 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 13,
   },
+  cancelBookingButton: {
+    alignItems: 'center',
+    backgroundColor: '#fee2e2',
+    borderRadius: 999,
+    paddingHorizontal: 13,
+    paddingVertical: 8,
+  },
+  cancelBookingText: {
+    color: '#991b1b',
+    fontSize: 13,
+    fontWeight: '900',
+  },
   cancelText: {
     color: '#667085',
     fontSize: 15,
@@ -591,13 +642,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
     paddingBottom: 16,
+    paddingHorizontal: 2,
     paddingTop: 17,
     position: 'relative',
   },
   tabText: {
     color: '#737b8c',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
+    textAlign: 'center',
+    width: '100%',
   },
   tabs: {
     backgroundColor: '#fff',

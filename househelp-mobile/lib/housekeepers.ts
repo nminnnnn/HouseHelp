@@ -21,6 +21,10 @@ export type Housekeeper = {
   availability?: string;
 };
 
+type GetAllOptions = {
+  availableOnly?: boolean;
+};
+
 function normalizeHousekeeper(housekeeper: Housekeeper): Housekeeper {
   const price = Number(housekeeper.price);
 
@@ -31,15 +35,28 @@ function normalizeHousekeeper(housekeeper: Housekeeper): Housekeeper {
 }
 
 export const housekeeperService = {
-  getAll: async (services?: string) => {
+  getAll: async (services?: string, options: GetAllOptions = { availableOnly: true }) => {
     const response = await api.get<Housekeeper[]>('/housekeepers', {
-      params: services ? { services } : undefined,
+      params: {
+        ...(services ? { services } : {}),
+        ...(options.availableOnly === false ? {} : { available: 1 }),
+      },
     });
     return response.data.map(normalizeHousekeeper);
   },
 
   getById: async (id: number | string) => {
     const response = await api.get<Housekeeper>(`/housekeepers/${id}`);
+    return normalizeHousekeeper(response.data);
+  },
+
+  getProfileByUserId: async (userId: number | string) => {
+    const response = await api.get<Housekeeper>(`/housekeepers/${userId}/profile`);
+    return normalizeHousekeeper(response.data);
+  },
+
+  updateAvailability: async (userId: number | string, available: boolean) => {
+    const response = await api.put<Housekeeper>(`/housekeepers/${userId}/availability`, { available });
     return normalizeHousekeeper(response.data);
   },
 };

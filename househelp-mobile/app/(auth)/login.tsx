@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { authService, type AuthUser } from '../../lib/auth';
 
@@ -21,6 +22,7 @@ export default function LoginScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [password, setPassword] = useState('');
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const handleLogin = async () => {
     if (!email.trim() || !password) {
@@ -50,7 +52,13 @@ export default function LoginScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView
+      edges={[]}
+      style={[
+        styles.container,
+        { paddingBottom: Math.max(insets.bottom, 24), paddingTop: Math.max(insets.top, 24) },
+      ]}
+    >
       <Text style={styles.title}>HouseHelp</Text>
       <Text style={styles.subtitle}>Dang nhap de tiep tuc</Text>
 
@@ -83,7 +91,7 @@ export default function LoginScreen() {
           <Text style={styles.linkText}>Dang ky nguoi giup viec</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 

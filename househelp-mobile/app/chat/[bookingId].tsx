@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -13,6 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { authService, type AuthUser } from '../../lib/auth';
 import { bookingService, type Booking } from '../../lib/bookings';
@@ -69,6 +71,15 @@ function mergeMessages(current: ChatMessage[], incoming: ChatMessage[]) {
   });
 }
 
+function callRoomId(bookingId: string, userId?: number, receiverId?: number | null) {
+  if (bookingId !== 'direct') {
+    return `househelp-booking-${bookingId}`;
+  }
+
+  const ids = [userId, receiverId].filter((value): value is number => Number.isFinite(Number(value))).sort((a, b) => a - b);
+  return `househelp-direct-${ids.join('-')}`;
+}
+
 export default function ChatScreen() {
   const [booking, setBooking] = useState<Booking | null>(null);
   const [backgroundError, setBackgroundError] = useState<string | null>(null);
@@ -86,6 +97,7 @@ export default function ChatScreen() {
   }>();
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const title = useMemo(() => {
     if (bookingId === 'direct') {
@@ -301,58 +313,115 @@ export default function ChatScreen() {
     }
   };
 
+  const startCall = async (type: 'audio' | 'video') => {
+    if (!bookingId || !user || !receiverId) {
+      Alert.alert('Chua the goi', 'Can tai thong tin cuoc chat truoc khi bat dau cuoc goi.');
+      return;
+    }
+
+    const roomId = callRoomId(bookingId, user.id, receiverId);
+    const callText = type === 'audio' ? 'Da bat dau cuoc goi am thanh trong app.' : 'Da bat dau video call trong app.';
+
+    try {
+      if (bookingId === 'direct') {
+        await messageService.sendBetweenUsers(user.id, receiverId, {
+          message: callText,
+          messageType: 'text',
+        });
+      } else {
+        await messageService.send(bookingId, {
+          message: callText,
+          messageType: 'text',
+          receiverId,
+          senderId: user.id,
+        });
+      }
+    } catch {
+      // Cuoc goi van co the bat dau ke ca khi tin thong bao khong gui duoc.
+    }
+
+    router.push({
+      pathname: '/call/[roomId]',
+      params: {
+        roomId,
+        title,
+        type,
+      },
+    });
+  };
+
   if (isLoading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator />
-      </View>
+      <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
+        <View style={styles.centered}>
+          <ActivityIndicator />
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.screen}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Text style={styles.backText}>Quay lai</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.subtitle}>{bookingId === 'direct' ? 'Trao doi truc tiep' : `Booking #${bookingId}`}</Text>
-      </View>
-
-      <FlatList
-        contentContainerStyle={styles.messages}
-        data={messages}
-        keyExtractor={(item) => String(item.id)}
-        ref={listRef}
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadChat(true)} />}
-        renderItem={({ item }) => <MessageBubble currentUserId={user?.id || 0} item={item} />}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>Chua co tin nhan</Text>
-            <Text style={styles.emptyText}>Hay gui loi chao dau tien cho booking nay.</Text>
+    <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? Math.max(insets.top, 16) : 0}
+        style={styles.screen}
+      >
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Text style={styles.backText}>Quay lai</Text>
+          </TouchableOpacity>
+          <View style={styles.headerMain}>
+            <View style={styles.headerTitleBlock}>
+              <Text numberOfLines={1} style={styles.title}>{title}</Text>
+              <Text style={styles.subtitle}>{bookingId === 'direct' ? 'Trao doi truc tiep' : `Booking #${bookingId}`}</Text>
+            </View>
+            <View style={styles.callActions}>
+              <TouchableOpacity activeOpacity={0.84} onPress={() => startCall('audio')} style={styles.callButton}>
+                <Ionicons color="#ff8128" name="call-outline" size={20} />
+              </TouchableOpacity>
+              <TouchableOpacity activeOpacity={0.84} onPress={() => startCall('video')} style={styles.callButton}>
+                <Ionicons color="#ff8128" name="videocam-outline" size={21} />
+              </TouchableOpacity>
+            </View>
           </View>
-        }
-      />
-
-      {backgroundError ? (
-        <View style={styles.syncError}>
-          <Text style={styles.syncErrorText}>{backgroundError}</Text>
         </View>
-      ) : null}
 
-      <View style={styles.composer}>
-        <TextInput
-          multiline
-          onChangeText={setInput}
-          placeholder="Nhap tin nhan..."
-          style={styles.input}
-          value={input}
+        <FlatList
+          contentContainerStyle={styles.messages}
+          data={messages}
+          keyExtractor={(item) => String(item.id)}
+          ref={listRef}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadChat(true)} />}
+          renderItem={({ item }) => <MessageBubble currentUserId={user?.id || 0} item={item} />}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>Chua co tin nhan</Text>
+              <Text style={styles.emptyText}>Hay gui loi chao dau tien cho booking nay.</Text>
+            </View>
+          }
         />
-        <TouchableOpacity disabled={isSending || !input.trim()} onPress={handleSend} style={styles.sendButton}>
-          <Text style={styles.sendText}>{isSending ? '...' : 'Gui'}</Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+
+        {backgroundError ? (
+          <View style={styles.syncError}>
+            <Text style={styles.syncErrorText}>{backgroundError}</Text>
+          </View>
+        ) : null}
+
+        <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+          <TextInput
+            multiline
+            onChangeText={setInput}
+            placeholder="Nhap tin nhan..."
+            style={styles.input}
+            value={input}
+          />
+          <TouchableOpacity disabled={isSending || !input.trim()} onPress={handleSend} style={styles.sendButton}>
+            <Text style={styles.sendText}>{isSending ? '...' : 'Gui'}</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
@@ -410,6 +479,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
+  headerMain: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+  },
+  headerTitleBlock: {
+    flex: 1,
+  },
+  callActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  callButton: {
+    alignItems: 'center',
+    backgroundColor: '#fff1e8',
+    borderColor: '#fed7aa',
+    borderRadius: 18,
+    borderWidth: 1,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
   input: {
     backgroundColor: '#f7f8fa',
     borderColor: '#d8dde3',
@@ -449,6 +541,10 @@ const styles = StyleSheet.create({
   },
   screen: {
     backgroundColor: '#f7f8fa',
+    flex: 1,
+  },
+  safeArea: {
+    backgroundColor: '#fff',
     flex: 1,
   },
   sendButton: {
@@ -504,6 +600,5 @@ const styles = StyleSheet.create({
     color: '#111827',
     fontSize: 22,
     fontWeight: '800',
-    marginTop: 8,
   },
 });

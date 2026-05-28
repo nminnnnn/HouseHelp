@@ -151,6 +151,7 @@ const ACCESS_POLICIES = [
 
   { methods: ['POST'], pattern: /^\/api\/quick-booking\/create$/, roles: ['customer'] },
   { methods: ['POST'], pattern: /^\/api\/bookings$/, roles: ['customer'] },
+  { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/cancel$/, roles: ['customer'] },
   { methods: ['POST'], pattern: /^\/api\/reviews$/, roles: ['customer'] },
   { methods: ['POST'], pattern: /^\/api\/reports$/, roles: ['customer'] },
   { methods: ['POST'], pattern: /^\/api\/coupons\/use$/, roles: ['customer'] },
@@ -159,6 +160,7 @@ const ACCESS_POLICIES = [
   { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/confirm$/, roles: ['housekeeper'] },
   { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/reject$/, roles: ['housekeeper'] },
   { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/complete$/, roles: ['housekeeper'] },
+  { methods: ['PUT'], pattern: /^\/api\/housekeepers\/\d+\/availability$/, roles: ['housekeeper', 'admin'] },
   { methods: ['POST'], pattern: /^\/api\/verification\/submit$/, roles: ['housekeeper'] },
 
   { methods: ['GET'], pattern: /^\/api\/users$/, roles: ['admin'] },
@@ -393,6 +395,48 @@ app.get('/api/housekeepers', (req, res) => {
   }
 });
 
+// API: Housekeeper toggle tam nghi / nhan viec
+app.put('/api/housekeepers/:userId/availability', (req, res) => {
+  const { userId } = req.params;
+  const { available } = req.body;
+
+  if (available === undefined) {
+    return res.status(400).json({ error: 'available is required' });
+  }
+
+  if (req.user && req.user.role !== 'admin' && Number(req.user.id) !== Number(userId)) {
+    return res.status(403).json({ error: 'Ban chi co the cap nhat trang thai cua chinh minh' });
+  }
+
+  const value = available ? 1 : 0;
+  db.query(
+    'UPDATE housekeepers SET available = ?, lastOnline = NOW(), updatedAt = NOW() WHERE userId = ?',
+    [value, userId],
+    (err, result) => {
+      if (err) {
+        console.error('Error updating housekeeper availability:', err);
+        return res.status(500).json({ error: err.message });
+      }
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ error: 'Housekeeper not found' });
+      }
+
+      db.query(
+        'SELECT h.*, u.fullName, u.email, u.phone, u.avatar FROM housekeepers h JOIN users u ON h.userId = u.id WHERE h.userId = ?',
+        [userId],
+        (selectErr, rows) => {
+          if (selectErr) {
+            console.error('Error loading updated housekeeper availability:', selectErr);
+            return res.status(500).json({ error: selectErr.message });
+          }
+
+          res.json(rows[0] || { userId: Number(userId), available: value });
+        }
+      );
+    }
+  );
+});
 // API: Lấy thông tin housekeeper theo ID
 app.get('/api/housekeepers/:id', (req, res) => {
   const housekeeperId = req.params.id;
@@ -2300,6 +2344,90 @@ app.post('/api/bookings', (req, res) => {
   });
 });
 
+// API: Customer huy booking dang cho xac nhan
+app.post('/api/bookings/:id/cancel', (req, res) => {
+  const bookingId = req.params.id;
+
+  db.query('SELECT * FROM bookings WHERE id = ?', [bookingId], (selectErr, rows) => {
+    if (selectErr) {
+      console.error('Error loading booking for cancel:', selectErr);
+      return res.status(500).json({ error: selectErr.message });
+    }
+
+    if (!rows.length) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    const booking = rows[0];
+    if (!sameUser(booking.customerId, req.user.id)) {
+      return res.status(403).json({ error: 'Ban chi co the huy booking cua chinh minh' });
+    }
+
+    if (booking.status !== 'pending') {
+      return res.status(400).json({ error: 'Chi co the huy booking dang cho xac nhan' });
+    }
+
+    db.query(
+      'UPDATE bookings SET status = ?, updatedAt = NOW() WHERE id = ? AND customerId = ? AND status = ?',
+      ['cancelled', bookingId, req.user.id, 'pending'],
+      (updateErr, result) => {
+        if (updateErr) {
+          console.error('Error cancelling booking:', updateErr);
+          return res.status(500).json({ error: updateErr.message });
+        }
+
+        if (result.affectedRows === 0) {
+          return res.status(400).json({ error: 'Booking khong the huy' });
+        }
+
+        db.query('SELECT * FROM bookings WHERE id = ?', [bookingId], (reloadErr, bookingRows) => {
+          if (reloadErr || !bookingRows.length) {
+            return res.status(500).json({ error: 'Error fetching cancelled booking' });
+          }
+
+          const cancelledBooking = bookingRows[0];
+          db.query('SELECT userId FROM housekeepers WHERE id = ?', [cancelledBooking.housekeeperId], (hkErr, hkRows) => {
+            if (!hkErr && hkRows.length) {
+              const housekeeperUserId = hkRows[0].userId;
+              const title = 'Booking da bi huy';
+              const message = `${cancelledBooking.customerName || 'Khach hang'} da huy booking ${cancelledBooking.service || ''}`.trim();
+              const notifSql = 'INSERT INTO notifications (userId, type, title, message, bookingId, data, createdAt, read_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
+              db.query(notifSql, [
+                housekeeperUserId,
+                'booking_cancelled',
+                title,
+                message,
+                bookingId,
+                JSON.stringify(cancelledBooking),
+                new Date(),
+                0,
+              ], (notifErr, notifResult) => {
+                if (notifErr) {
+                  console.error('Error saving cancel notification:', notifErr);
+                  return;
+                }
+
+                sendNotificationToUser(housekeeperUserId, {
+                  id: notifResult?.insertId || Date.now(),
+                  userId: housekeeperUserId,
+                  type: 'booking_cancelled',
+                  title,
+                  message,
+                  bookingId,
+                  booking: cancelledBooking,
+                  timestamp: new Date(),
+                  read: false,
+                });
+              });
+            }
+          });
+
+          res.json({ message: 'Booking cancelled successfully', booking: cancelledBooking });
+        });
+      }
+    );
+  });
+});
 // API: Housekeeper xác nhận booking
 app.post('/api/bookings/:id/confirm', (req, res) => {
   const bookingId = req.params.id;

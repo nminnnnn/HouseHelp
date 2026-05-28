@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -11,7 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CustomerBottomNav } from '../components/customer-bottom-nav';
 import { authService } from '../lib/auth';
@@ -61,7 +61,9 @@ export default function ProfileScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [userId, setUserId] = useState<number | null>(null);
+  const { refresh } = useLocalSearchParams<{ refresh?: string }>();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const loadProfile = useCallback(async () => {
     try {
@@ -85,7 +87,7 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     loadProfile();
-  }, [loadProfile]);
+  }, [loadProfile, refresh]);
 
   const updateField = (key: keyof UserProfile, value: string) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -115,16 +117,22 @@ export default function ProfileScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator color="#ff8128" />
-      </View>
+      <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
+        <View style={styles.centered}>
+          <ActivityIndicator color="#ff8128" />
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (isEditing) {
     return (
-      <SafeAreaView edges={['top']} style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.editorContent} keyboardShouldPersistTaps="handled" style={styles.screen}>
+      <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
+        <ScrollView
+          contentContainerStyle={[styles.editorContent, { paddingBottom: Math.max(insets.bottom + 40, 56) }]}
+          keyboardShouldPersistTaps="handled"
+          style={styles.screen}
+        >
           <TouchableOpacity onPress={() => setIsEditing(false)} style={styles.backButton}>
             <Ionicons color="#ff8128" name="chevron-back" size={22} />
             <Text style={styles.backText}>Account</Text>
@@ -165,9 +173,12 @@ export default function ProfileScreen() {
   }
 
   return (
-    <SafeAreaView edges={['top']} style={styles.safeArea}>
+    <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
       <View style={styles.screen}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 112, 128) }]}
+          showsVerticalScrollIndicator={false}
+        >
           <Text style={styles.title}>Account</Text>
 
           <View style={styles.identity}>

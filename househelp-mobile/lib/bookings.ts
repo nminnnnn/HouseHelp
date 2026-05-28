@@ -69,6 +69,18 @@ export const bookingService = {
     return response.data;
   },
 
+  cancel: async (bookingId: number) => {
+    const response = await api.post<{ message: string; booking: Booking }>(`/bookings/${bookingId}/cancel`);
+    return response.data;
+  },
+
+  complete: async (bookingId: number, housekeeperId: number) => {
+    const response = await api.post<{ message: string; booking: Booking }>(`/bookings/${bookingId}/complete`, {
+      housekeeperId,
+    });
+    return response.data;
+  },
+
   confirmPayment: async (bookingId: number, payload: ConfirmPaymentPayload) => {
     const response = await api.post<{ message: string; booking: Booking; paymentStatus: string }>(
       `/bookings/${bookingId}/confirm-payment`,

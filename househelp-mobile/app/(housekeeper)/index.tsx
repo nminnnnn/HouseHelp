@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -10,16 +11,19 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { authService, type AuthUser } from '../../lib/auth';
 import { bookingService, type Booking } from '../../lib/bookings';
+import { housekeeperService, type Housekeeper } from '../../lib/housekeepers';
 
-type FilterKey = 'all' | 'pending' | 'confirmed' | 'completed' | 'rejected';
+type FilterKey = 'all' | 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'rejected';
 
 const filters: { key: FilterKey; label: string }[] = [
   { key: 'all', label: 'Tat ca' },
   { key: 'pending', label: 'Cho xu ly' },
   { key: 'confirmed', label: 'Da nhan' },
+  { key: 'in_progress', label: 'Dang lam' },
   { key: 'completed', label: 'Hoan thanh' },
   { key: 'rejected', label: 'Tu choi' },
 ];
@@ -50,16 +54,19 @@ function JobCard({
   item,
   isUpdating,
   onChat,
+  onComplete,
   onConfirm,
   onReject,
 }: {
   item: Booking;
   isUpdating: boolean;
   onChat: () => void;
+  onComplete: () => void;
   onConfirm: () => void;
   onReject: () => void;
 }) {
   const isPending = item.status === 'pending';
+  const canComplete = item.status === 'confirmed' || item.status === 'in_progress';
 
   return (
     <View style={styles.card}>
@@ -95,6 +102,12 @@ function JobCard({
           </TouchableOpacity>
         </View>
       ) : null}
+
+      {canComplete ? (
+        <TouchableOpacity disabled={isUpdating} onPress={onComplete} style={styles.completeButton}>
+          <Text style={styles.completeText}>{isUpdating ? 'Dang xu ly' : 'Hoan thanh cong viec'}</Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
@@ -105,9 +118,12 @@ export default function HousekeeperDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isTogglingAvailability, setIsTogglingAvailability] = useState(false);
+  const [profile, setProfile] = useState<Housekeeper | null>(null);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const loadBookings = useCallback(async (refreshing = false) => {
     try {
@@ -126,8 +142,12 @@ export default function HousekeeperDashboard() {
       }
 
       setUser(storedUser);
-      const data = await bookingService.getForUser(storedUser.id);
+      const [data, housekeeperProfile] = await Promise.all([
+        bookingService.getForUser(storedUser.id),
+        housekeeperService.getProfileByUserId(storedUser.id),
+      ]);
       setBookings(data);
+      setProfile(housekeeperProfile);
     } catch (loadError: any) {
       setError(loadError.response?.data?.message || loadError.response?.data?.error || 'Khong the tai booking.');
     } finally {
@@ -153,6 +173,25 @@ export default function HousekeeperDashboard() {
   const handleLogout = async () => {
     await authService.logout();
     router.replace('/(auth)/login');
+  };
+
+  const handleToggleAvailability = async () => {
+    if (!user) return;
+
+    try {
+      setIsTogglingAvailability(true);
+      const nextAvailable = !profile?.available;
+      const targetUserId = profile?.userId || user.id;
+      const updatedProfile = await housekeeperService.updateAvailability(targetUserId, nextAvailable);
+      setProfile((current) => ({ ...(current || updatedProfile), ...updatedProfile, available: nextAvailable }));
+    } catch (toggleError: any) {
+      Alert.alert(
+        'Khong cap nhat duoc',
+        toggleError.response?.data?.message || toggleError.response?.data?.error || 'Vui long thu lai.',
+      );
+    } finally {
+      setIsTogglingAvailability(false);
+    }
   };
 
   const handleConfirm = async (booking: Booking) => {
@@ -194,15 +233,41 @@ export default function HousekeeperDashboard() {
     ]);
   };
 
+  const handleComplete = async (booking: Booking) => {
+    Alert.alert('Hoan thanh cong viec', 'Ban xac nhan da hoan thanh booking nay?', [
+      { text: 'Huy', style: 'cancel' },
+      {
+        text: 'Hoan thanh',
+        onPress: async () => {
+          try {
+            setUpdatingId(booking.id);
+            await bookingService.complete(booking.id, booking.housekeeperId);
+            await loadBookings(true);
+          } catch (completeError: any) {
+            Alert.alert(
+              'Khong the hoan thanh',
+              completeError.response?.data?.message || completeError.response?.data?.error || 'Vui long thu lai.',
+            );
+          } finally {
+            setUpdatingId(null);
+          }
+        },
+      },
+    ]);
+  };
+
   if (isLoading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator />
-      </View>
+      <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
+        <View style={styles.centered}>
+          <ActivityIndicator />
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
+    <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
     <View style={styles.screen}>
       <View style={styles.header}>
         <View style={styles.headerTop}>
@@ -210,9 +275,21 @@ export default function HousekeeperDashboard() {
             <Text style={styles.title}>Dashboard</Text>
             <Text style={styles.subtitle}>{user?.fullName || 'Housekeeper'}</Text>
           </View>
+          <TouchableOpacity activeOpacity={0.84} onPress={() => router.push('/chat')} style={styles.chatIconButton}>
+            <Ionicons color="#ff8128" name="chatbubbles-outline" size={25} />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.headerActions}>
+          <TouchableOpacity
+            disabled={isTogglingAvailability}
+            onPress={handleToggleAvailability}
+            style={[styles.availabilityButton, profile?.available ? styles.availableButton : styles.pausedButton]}
+          >
+            <Text style={[styles.availabilityText, profile?.available ? styles.availableText : styles.pausedText]}>
+              {isTogglingAvailability ? 'Dang cap nhat' : profile?.available ? 'Dang nhan viec' : 'Dang tam nghi'}
+            </Text>
+          </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push('/notifications')} style={styles.notificationButton}>
             <Text style={styles.notificationText}>Thong bao</Text>
           </TouchableOpacity>
@@ -255,7 +332,7 @@ export default function HousekeeperDashboard() {
       ) : null}
 
       <FlatList
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, { paddingBottom: Math.max(insets.bottom + 16, 32) }]}
         data={filteredBookings}
         keyExtractor={(item) => String(item.id)}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadBookings(true)} />}
@@ -264,6 +341,7 @@ export default function HousekeeperDashboard() {
             isUpdating={updatingId === item.id}
             item={item}
             onChat={() => router.push(`/chat/${item.id}`)}
+            onComplete={() => handleComplete(item)}
             onConfirm={() => handleConfirm(item)}
             onReject={() => handleReject(item)}
           />
@@ -276,6 +354,7 @@ export default function HousekeeperDashboard() {
         }
       />
     </View>
+    </SafeAreaView>
   );
 }
 
@@ -299,11 +378,40 @@ const styles = StyleSheet.create({
     gap: 7,
     padding: 14,
   },
+  availabilityButton: {
+    alignItems: 'center',
+    borderRadius: 8,
+    flexBasis: '100%',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  availabilityText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  availableButton: {
+    backgroundColor: '#fff1e8',
+    borderColor: '#ff8128',
+    borderWidth: 1,
+  },
+  availableText: {
+    color: '#ff8128',
+  },
   cardHeader: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: 10,
     justifyContent: 'space-between',
+  },
+  chatIconButton: {
+    alignItems: 'center',
+    backgroundColor: '#fff1e8',
+    borderColor: '#fed7aa',
+    borderRadius: 18,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
   },
   centered: {
     alignItems: 'center',
@@ -327,6 +435,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#15803d',
   },
   confirmText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  completeButton: {
+    alignItems: 'center',
+    backgroundColor: '#ff8128',
+    borderRadius: 8,
+    marginTop: 10,
+    padding: 12,
+  },
+  completeText: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '800',
@@ -392,10 +512,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     paddingBottom: 16,
     paddingHorizontal: 16,
-    paddingTop: 28,
+    paddingTop: 16,
   },
   headerTop: {
+    alignItems: 'center',
+    flexDirection: 'row',
     gap: 3,
+    justifyContent: 'space-between',
   },
   headerActions: {
     flexDirection: 'row',
@@ -481,6 +604,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
   },
+  pausedButton: {
+    backgroundColor: '#f3f4f6',
+    borderColor: '#d1d5db',
+    borderWidth: 1,
+  },
+  pausedText: {
+    color: '#4b5563',
+  },
   rejectButton: {
     backgroundColor: '#fee2e2',
   },
@@ -491,6 +622,10 @@ const styles = StyleSheet.create({
   },
   screen: {
     backgroundColor: '#f7f8fa',
+    flex: 1,
+  },
+  safeArea: {
+    backgroundColor: '#fff',
     flex: 1,
   },
   service: {

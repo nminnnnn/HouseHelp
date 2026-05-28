@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { authService } from '../lib/auth';
 import { notificationService, type AppNotification } from '../lib/notifications';
@@ -64,6 +64,7 @@ export default function NotificationsScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const unreadCount = useMemo(() => notifications.filter(isUnread).length, [notifications]);
 
@@ -137,7 +138,7 @@ export default function NotificationsScreen() {
 
   if (isLoading) {
     return (
-      <SafeAreaView edges={['top']} style={styles.safeArea}>
+      <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
         <View style={styles.centered}>
           <ActivityIndicator color="#ff8128" />
         </View>
@@ -146,7 +147,7 @@ export default function NotificationsScreen() {
   }
 
   return (
-    <SafeAreaView edges={['top']} style={styles.safeArea}>
+    <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
       <View style={styles.screen}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
@@ -163,7 +164,7 @@ export default function NotificationsScreen() {
       ) : null}
 
       <FlatList
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, { paddingBottom: Math.max(insets.bottom + 16, 24) }]}
         data={notifications}
         keyExtractor={(item) => String(item.id)}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadNotifications(true)} tintColor="#ff8128" />}
