@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { CustomerBottomNav } from '../components/customer-bottom-nav';
 import { authService, type AuthUser } from '../lib/auth';
@@ -31,6 +32,8 @@ const fallbackSuggestions = [
   'Ho tro khieu nai',
 ];
 
+const CHATBOT_STORAGE_KEY = 'chatbot_history';
+
 function welcomeMessage(user: AuthUser | null): UiMessage {
   const name = user?.fullName ? ` ${user.fullName}` : '';
 
@@ -39,6 +42,23 @@ function welcomeMessage(user: AuthUser | null): UiMessage {
     id: 'welcome',
     type: 'assistant',
   };
+}
+
+async function loadChatbotHistory(): Promise<UiMessage[]> {
+  try {
+    const raw = await AsyncStorage.getItem(CHATBOT_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as UiMessage[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function saveChatbotHistory(messages: UiMessage[]) {
+  try {
+    await AsyncStorage.setItem(CHATBOT_STORAGE_KEY, JSON.stringify(messages));
+  } catch {
+    // ignore write failure
+  }
 }
 
 export default function MobileChatbotScreen() {
@@ -52,14 +72,26 @@ export default function MobileChatbotScreen() {
   const router = useRouter();
 
   useEffect(() => {
-    authService.checkAuthStatus().then((storedUser) => {
+    let mounted = true;
+
+    const init = async () => {
+      const storedUser = await authService.checkAuthStatus();
+      const storedMessages = await loadChatbotHistory();
+
+      if (!mounted) return;
       setUser(storedUser);
-      setMessages([welcomeMessage(storedUser)]);
-    });
+      setMessages(storedMessages.length > 0 ? storedMessages : [welcomeMessage(storedUser)]);
+    };
+
+    init();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {
     if (messages.length > 0) {
+      saveChatbotHistory(messages);
       requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
     }
   }, [messages]);
