@@ -121,6 +121,7 @@ export default function HousekeeperDashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isTogglingAvailability, setIsTogglingAvailability] = useState(false);
   const [profile, setProfile] = useState<Housekeeper | null>(null);
+  const [showEarnings, setShowEarnings] = useState(false);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
   const router = useRouter();
@@ -271,102 +272,127 @@ export default function HousekeeperDashboard() {
 
   return (
     <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
-    <View style={styles.screen}>
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <View>
-            <Text style={styles.title}>Dashboard</Text>
-            <Text style={styles.subtitle}>{user?.fullName || 'Housekeeper'}</Text>
-          </View>
-          <TouchableOpacity activeOpacity={0.84} onPress={() => router.push('/chat')} style={styles.chatIconButton}>
-            <Ionicons color="#ff8128" name="chatbubbles-outline" size={25} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            disabled={isTogglingAvailability}
-            onPress={handleToggleAvailability}
-            style={[styles.availabilityButton, profile?.available ? styles.availableButton : styles.pausedButton]}
-          >
-            <Text style={[styles.availabilityText, profile?.available ? styles.availableText : styles.pausedText]}>
-              {isTogglingAvailability ? 'Dang cap nhat' : profile?.available ? 'Dang nhan viec' : 'Dang tam nghi'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/notifications')} style={styles.notificationButton}>
-            <Text style={styles.notificationText}>Thong bao</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/profile')} style={styles.profileHeaderButton}>
-            <Text style={styles.profileHeaderText}>Tai khoan</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/(housekeeper)/verification')} style={styles.verifyHeaderButton}>
-            <Text style={styles.verifyHeaderText}>Xac minh</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-            <Text style={styles.logoutText}>Dang xuat</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.summaryRow}>
-          <View style={styles.summaryBox}>
-            <Text style={styles.summaryValue}>{bookings.length}</Text>
-            <Text style={styles.summaryLabel}>Tong booking</Text>
-          </View>
-          <View style={styles.summaryBox}>
-            <Text style={styles.summaryValue}>{pendingCount}</Text>
-            <Text style={styles.summaryLabel}>Cho xu ly</Text>
-          </View>
-        </View>
-
-        <View style={styles.earningsCard}>
-          <View style={styles.earningsHeader}>
-            <Text style={styles.earningsTitle}>Thu nhap & doi soat</Text>
-            <Text style={styles.earningsBadge}>Platform payout</Text>
-          </View>
-          <View style={styles.earningsGrid}>
-            <View style={styles.earningsItem}>
-              <Text style={styles.earningsValue}>{formatPrice(earnings?.pendingPayout)}</Text>
-              <Text style={styles.earningsLabel}>MoMo dang tam giu</Text>
-            </View>
-            <View style={styles.earningsItem}>
-              <Text style={styles.earningsValue}>{formatPrice(earnings?.paidOut)}</Text>
-              <Text style={styles.earningsLabel}>Da chi tra</Text>
-            </View>
-            <View style={styles.earningsItem}>
-              <Text style={styles.earningsValue}>{formatPrice(earnings?.cashCollected)}</Text>
-              <Text style={styles.earningsLabel}>Tien mat da thu</Text>
-            </View>
-            <View style={styles.earningsItem}>
-              <Text style={styles.earningsValue}>{formatPrice(earnings?.cashPlatformFeeDue)}</Text>
-              <Text style={styles.earningsLabel}>Phi platform can doi soat</Text>
-            </View>
-          </View>
-        </View>
-      </View>
-
-      <View style={styles.filterRow}>
-        {filters.map((filter) => (
-          <TouchableOpacity
-            key={filter.key}
-            onPress={() => setActiveFilter(filter.key)}
-            style={[styles.filterButton, activeFilter === filter.key && styles.filterButtonActive]}
-          >
-            <Text style={[styles.filterText, activeFilter === filter.key && styles.filterTextActive]}>{filter.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {error ? (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      ) : null}
-
+      <View style={styles.screen}>
       <FlatList
         contentContainerStyle={[styles.list, { paddingBottom: Math.max(insets.bottom + 16, 32) }]}
         data={filteredBookings}
         keyExtractor={(item) => String(item.id)}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadBookings(true)} />}
+        ListHeaderComponent={
+          <View style={styles.listHeader}>
+            <View style={styles.header}>
+              <View style={styles.headerTop}>
+                <View>
+                  <Text style={styles.title}>Dashboard</Text>
+                  <Text style={styles.subtitle}>{user?.fullName || 'Housekeeper'}</Text>
+                </View>
+                <TouchableOpacity activeOpacity={0.84} onPress={() => router.push('/chat')} style={styles.chatIconButton}>
+                  <Ionicons color="#ff8128" name="chatbubbles-outline" size={25} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.headerActions}>
+                <TouchableOpacity
+                  disabled={isTogglingAvailability}
+                  onPress={handleToggleAvailability}
+                  style={[styles.availabilityButton, profile?.available ? styles.availableButton : styles.pausedButton]}
+                >
+                  <Text style={[styles.availabilityText, profile?.available ? styles.availableText : styles.pausedText]}>
+                    {isTogglingAvailability ? 'Dang cap nhat' : profile?.available ? 'Dang nhan viec' : 'Dang tam nghi'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => router.push({ pathname: '/notifications', params: { returnTo: 'housekeeper' } })}
+                  style={styles.notificationButton}
+                >
+                  <Text style={styles.notificationText}>Thong bao</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => router.push({ pathname: '/profile', params: { returnTo: 'housekeeper' } })}
+                  style={styles.profileHeaderButton}
+                >
+                  <Text style={styles.profileHeaderText}>Tai khoan</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push('/(housekeeper)/verification')} style={styles.verifyHeaderButton}>
+                  <Text style={styles.verifyHeaderText}>Xac minh</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
+                  <Text style={styles.logoutText}>Dang xuat</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.summaryRow}>
+                <View style={styles.summaryBox}>
+                  <Text style={styles.summaryValue}>{bookings.length}</Text>
+                  <Text style={styles.summaryLabel}>Tong booking</Text>
+                </View>
+                <View style={styles.summaryBox}>
+                  <Text style={styles.summaryValue}>{pendingCount}</Text>
+                  <Text style={styles.summaryLabel}>Cho xu ly</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                activeOpacity={0.86}
+                onPress={() => setShowEarnings((current) => !current)}
+                style={styles.earningsToggle}
+              >
+                <View>
+                  <Text style={styles.earningsToggleTitle}>Thu nhap & doi soat</Text>
+                  <Text style={styles.earningsToggleSubtitle}>
+                    {showEarnings ? 'An thong tin doi soat' : 'Bam de xem thong tin chi tiet'}
+                  </Text>
+                </View>
+                <Ionicons color="#ff8128" name={showEarnings ? 'chevron-up' : 'chevron-down'} size={22} />
+              </TouchableOpacity>
+
+              {showEarnings ? (
+                <View style={styles.earningsCard}>
+                  <View style={styles.earningsHeader}>
+                    <Text style={styles.earningsTitle}>Chi tiet thu nhap</Text>
+                    <Text style={styles.earningsBadge}>Platform payout</Text>
+                  </View>
+                  <View style={styles.earningsGrid}>
+                    <View style={styles.earningsItem}>
+                      <Text style={styles.earningsValue}>{formatPrice(earnings?.pendingPayout)}</Text>
+                      <Text style={styles.earningsLabel}>MoMo dang tam giu</Text>
+                    </View>
+                    <View style={styles.earningsItem}>
+                      <Text style={styles.earningsValue}>{formatPrice(earnings?.paidOut)}</Text>
+                      <Text style={styles.earningsLabel}>Da chi tra</Text>
+                    </View>
+                    <View style={styles.earningsItem}>
+                      <Text style={styles.earningsValue}>{formatPrice(earnings?.cashCollected)}</Text>
+                      <Text style={styles.earningsLabel}>Tien mat da thu</Text>
+                    </View>
+                    <View style={styles.earningsItem}>
+                      <Text style={styles.earningsValue}>{formatPrice(earnings?.cashPlatformFeeDue)}</Text>
+                      <Text style={styles.earningsLabel}>Phi platform can doi soat</Text>
+                    </View>
+                  </View>
+                </View>
+              ) : null}
+            </View>
+
+            <View style={styles.filterRow}>
+              {filters.map((filter) => (
+                <TouchableOpacity
+                  key={filter.key}
+                  onPress={() => setActiveFilter(filter.key)}
+                  style={[styles.filterButton, activeFilter === filter.key && styles.filterButtonActive]}
+                >
+                  <Text style={[styles.filterText, activeFilter === filter.key && styles.filterTextActive]}>{filter.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {error ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+          </View>
+        }
         renderItem={({ item }) => (
           <JobCard
             isUpdating={updatingId === item.id}
@@ -384,7 +410,7 @@ export default function HousekeeperDashboard() {
           </View>
         }
       />
-    </View>
+      </View>
     </SafeAreaView>
   );
 }
@@ -546,6 +572,28 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '900',
   },
+  earningsToggle: {
+    alignItems: 'center',
+    backgroundColor: '#fff7ed',
+    borderColor: '#fed7aa',
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 14,
+    padding: 14,
+  },
+  earningsToggleSubtitle: {
+    color: '#6b7280',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  earningsToggleTitle: {
+    color: '#172033',
+    fontSize: 16,
+    fontWeight: '900',
+  },
   earningsValue: {
     color: '#15803d',
     fontSize: 15,
@@ -614,6 +662,9 @@ const styles = StyleSheet.create({
     gap: 12,
     padding: 16,
     paddingTop: 12,
+  },
+  listHeader: {
+    gap: 12,
   },
   logoutButton: {
     alignItems: 'center',

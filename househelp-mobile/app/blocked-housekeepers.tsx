@@ -7,14 +7,36 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { authService, type AuthUser } from '../lib/auth';
 import { housekeeperPreferenceService } from '../lib/housekeeper-preferences';
 import { housekeeperService, type Housekeeper } from '../lib/housekeepers';
+import { useLanguage } from '../lib/language';
+
+const copy = {
+  en: {
+    account: 'Account',
+    emptyText: 'You can block from a housekeeper profile if you do not want to book them again.',
+    emptyTitle: 'No blocked housekeepers yet',
+    title: 'Block List',
+    subtitle: 'Blocked housekeepers will not appear in your booking list.',
+    unblock: 'Unblock',
+  },
+  vi: {
+    account: 'Tài khoản',
+    emptyText: 'Bạn có thể chặn từ màn hình hồ sơ housekeeper nếu không muốn đặt lại.',
+    emptyTitle: 'Chưa có housekeeper bị chặn',
+    title: 'Danh sách chặn',
+    subtitle: 'Housekeeper bị chặn sẽ không hiện trong danh sách đặt lịch.',
+    unblock: 'Bỏ chặn',
+  },
+} as const;
 
 export default function BlockedHousekeepersScreen() {
   const [blocked, setBlocked] = useState<Housekeeper[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
+  const { language } = useLanguage();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const text = copy[language];
 
   const loadData = useCallback(async (refreshing = false) => {
     try {
@@ -74,17 +96,17 @@ export default function BlockedHousekeepersScreen() {
       >
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons color="#ff8128" name="chevron-back" size={22} />
-          <Text style={styles.backText}>Account</Text>
+          <Text style={styles.backText}>{text.account}</Text>
         </TouchableOpacity>
 
-        <Text style={styles.title}>Block List</Text>
-        <Text style={styles.subtitle}>Housekeeper bi chan se khong hien trong danh sach dat lich.</Text>
+        <Text style={styles.title}>{text.title}</Text>
+        <Text style={styles.subtitle}>{text.subtitle}</Text>
 
         {blocked.length === 0 ? (
           <View style={styles.empty}>
             <Ionicons color="#ff9a28" name="ban-outline" size={64} />
-            <Text style={styles.emptyTitle}>Chua co housekeeper bi chan</Text>
-            <Text style={styles.emptyText}>Ban co the chan tu man hinh ho so cua housekeeper neu khong muon dat lai.</Text>
+            <Text style={styles.emptyTitle}>{text.emptyTitle}</Text>
+            <Text style={styles.emptyText}>{text.emptyText}</Text>
           </View>
         ) : (
           <View style={styles.list}>
@@ -98,7 +120,7 @@ export default function BlockedHousekeepersScreen() {
                   <Text numberOfLines={1} style={styles.meta}>{housekeeper.services || 'House cleaning'}</Text>
                 </View>
                 <TouchableOpacity onPress={() => unblock(housekeeper.id)} style={styles.unblockButton}>
-                  <Text style={styles.unblockText}>Bo chan</Text>
+                  <Text style={styles.unblockText}>{text.unblock}</Text>
                 </TouchableOpacity>
               </View>
             ))}

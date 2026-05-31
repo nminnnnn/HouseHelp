@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -12,28 +13,80 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import MapView, { Marker, type MapPressEvent, type Region } from 'react-native-maps';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CustomerBottomNav } from '../components/customer-bottom-nav';
-import { authService } from '../lib/auth';
-import { storage } from '../lib/storage';
+import { authService, type AuthUser } from '../lib/auth';
+import { useLanguage } from '../lib/language';
 import { profileService, type UserProfile } from '../lib/profile';
+import { storage, type AppLanguage } from '../lib/storage';
+import { verificationService, type VerificationStatus } from '../lib/verification';
 
 const accountRows = [
-  { action: 'edit', label: 'Personal Profile', icon: 'person' },
-  { action: 'addresses', label: 'Saved Addresses', icon: 'location' },
-  { action: 'transactions', label: 'Transaction history', icon: 'time' },
-  { action: 'rewards', label: 'My Rewards', icon: 'gift' },
-  { action: 'favorites', label: 'Favorite Housekeepers', icon: 'heart' },
-  { action: 'blockList', label: 'Block List', icon: 'ban' },
-  { action: 'business', label: 'Create a Business account', icon: 'business' },
+  { action: 'edit', icon: 'person', label: { en: 'Personal Profile', vi: 'Hồ sơ cá nhân' } },
+  { action: 'addresses', icon: 'location', label: { en: 'Saved Addresses', vi: 'Địa chỉ đã lưu' } },
+  { action: 'transactions', icon: 'time', label: { en: 'Transaction History', vi: 'Lịch sử giao dịch' } },
+  { action: 'rewards', icon: 'gift', label: { en: 'My Rewards', vi: 'Ưu đãi của tôi' } },
+  { action: 'favorites', icon: 'heart', label: { en: 'Favorite Housekeepers', vi: 'Người giúp việc yêu thích' } },
+  { action: 'blockList', icon: 'ban', label: { en: 'Block List', vi: 'Danh sách chặn' } },
+  { action: 'business', icon: 'business', label: { en: 'Create a Business Account', vi: 'Tạo tài khoản người giúp việc' } },
 ];
 
 const utilityRows = [
-  { action: 'pay', label: 'HouseHelp Pay', icon: 'wallet' },
-  { action: 'language', label: 'Language', icon: 'globe' },
-  { action: 'help', label: 'Help Center', icon: 'help-circle' },
+  { action: 'pay', icon: 'wallet', label: { en: 'HouseHelp Pay', vi: 'Thanh toán HouseHelp' } },
+  { action: 'language', icon: 'globe', label: { en: 'Language', vi: 'Ngôn ngữ' } },
+  { action: 'help', icon: 'help-circle', label: { en: 'Help Center', vi: 'Trung tâm trợ giúp' } },
 ];
+
+const copy = {
+  en: {
+    account: 'Account',
+    chooseAddress: 'Choose address on map',
+    chooseAddressTitle: 'Choose address',
+    chooseAddressSubtitle: 'Search for an address or tap the map to drop a pin.',
+    close: 'Close',
+    currentLanguage: 'Current language',
+    dashboard: 'Dashboard',
+    doneAddress: 'Use this address',
+    editProfile: 'Personal Profile',
+    fullName: 'Full name',
+    language: 'Language',
+    languageHint: 'Choose the display language for the mobile app.',
+    logout: 'Log out',
+    memberTier: 'Member tier',
+    phone: 'Phone number',
+    profileSaved: 'Profile has been updated.',
+    profileSaveTitle: 'Saved',
+    rewardsEmpty: 'Reward points will appear after completed bookings or promotions.',
+    saveProfile: 'Save profile',
+    selectLanguage: 'Select language',
+    useCurrentLocation: 'Use current location',
+  },
+  vi: {
+    account: 'Tài khoản',
+    chooseAddress: 'Chọn địa chỉ trên bản đồ',
+    chooseAddressTitle: 'Chọn địa chỉ',
+    chooseAddressSubtitle: 'Tìm địa chỉ hoặc chạm trên bản đồ để đặt ghim.',
+    close: 'Đóng',
+    currentLanguage: 'Ngôn ngữ hiện tại',
+    dashboard: 'Dashboard',
+    doneAddress: 'Dùng địa chỉ này',
+    editProfile: 'Hồ sơ cá nhân',
+    fullName: 'Họ tên',
+    language: 'Ngôn ngữ',
+    languageHint: 'Chọn ngôn ngữ hiển thị cho ứng dụng mobile.',
+    logout: 'Đăng xuất',
+    memberTier: 'Hạng thành viên',
+    phone: 'Số điện thoại',
+    profileSaved: 'Hồ sơ đã được cập nhật.',
+    profileSaveTitle: 'Đã lưu',
+    rewardsEmpty: 'Điểm thưởng sẽ xuất hiện sau khi bạn hoàn thành booking hoặc nhận ưu đãi.',
+    saveProfile: 'Lưu hồ sơ',
+    selectLanguage: 'Chọn ngôn ngữ',
+    useCurrentLocation: 'Dùng vị trí hiện tại',
+  },
+} as const;
 
 type AccountAction =
   | 'addresses'
@@ -70,16 +123,36 @@ function AccountRow({ label, icon, onPress }: { label: string; icon: string; onP
   );
 }
 
+function formatCoordinate(value: number) {
+  return value.toFixed(6);
+}
+
 export default function ProfileScreen() {
   const [form, setForm] = useState<Partial<UserProfile>>({});
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isMapLoading, setIsMapLoading] = useState(false);
+  const [isMapVisible, setIsMapVisible] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const { language, setLanguage } = useLanguage();
+  const [mapQuery, setMapQuery] = useState('');
+  const [mapRegion, setMapRegion] = useState<Region>({
+    latitude: 16.4637,
+    longitude: 107.5909,
+    latitudeDelta: 0.025,
+    longitudeDelta: 0.025,
+  });
+  const [selectedLocation, setSelectedLocation] = useState<{ address: string; latitude: number; longitude: number } | null>(null);
   const [activePanel, setActivePanel] = useState<PanelAction | null>(null);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [verificationStatus, setVerificationStatus] = useState<VerificationStatus | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
-  const { refresh } = useLocalSearchParams<{ refresh?: string }>();
+  const { refresh, returnTo } = useLocalSearchParams<{ refresh?: string; returnTo?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const isHousekeeperAccount = currentUser?.role === 'housekeeper' || returnTo === 'housekeeper';
+  const isIdentityVerified = Boolean(verificationStatus?.isVerified && verificationStatus?.isApproved);
+  const text = copy[language];
 
   const loadProfile = useCallback(async () => {
     try {
@@ -91,15 +164,27 @@ export default function ProfileScreen() {
         return;
       }
 
+      setCurrentUser(user);
       setUserId(user.id);
       const profile = await profileService.getProfile(user.id);
       setForm({ ...user, ...profile });
+
+      if (user.role === 'housekeeper' || returnTo === 'housekeeper') {
+        const nextVerificationStatus = await verificationService.getStatus(user.id);
+        setVerificationStatus(nextVerificationStatus);
+      } else {
+        setVerificationStatus(null);
+      }
     } catch (error: any) {
-      Alert.alert('Khong tai duoc profile', error.response?.data?.message || error.response?.data?.error || 'Thu lai sau.');
+      Alert.alert('Không tải được hồ sơ', error.response?.data?.message || error.response?.data?.error || 'Thử lại sau.');
     } finally {
       setIsLoading(false);
     }
-  }, [router]);
+  }, [returnTo, router]);
+
+  const goBackToRoleHome = () => {
+    router.replace(isHousekeeperAccount ? '/(housekeeper)' : '/(customer)');
+  };
 
   useEffect(() => {
     loadProfile();
@@ -109,21 +194,145 @@ export default function ProfileScreen() {
     setForm((current) => ({ ...current, [key]: value }));
   };
 
+  const reverseGeocode = useCallback(async (latitude: number, longitude: number) => {
+    try {
+      const results = await Location.reverseGeocodeAsync({ latitude, longitude });
+      const place: any = results[0];
+      const parts = [place?.name, place?.street, place?.district, place?.city, place?.region].filter(Boolean);
+
+      return parts.length ? parts.join(', ') : `Vi tri da chon ${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}`;
+    } catch {
+      return `Vi tri da chon ${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}`;
+    }
+  }, []);
+
+  const chooseCoordinate = useCallback(async (latitude: number, longitude: number, addressOverride?: string) => {
+    setMapRegion((current) => ({ ...current, latitude, longitude }));
+    const address = addressOverride || await reverseGeocode(latitude, longitude);
+    setSelectedLocation({ address, latitude, longitude });
+    updateField('address', address);
+  }, [reverseGeocode]);
+
+  const openMapPicker = useCallback(async () => {
+    setIsMapVisible(true);
+
+    try {
+      setIsMapLoading(true);
+      const permission = await Location.requestForegroundPermissionsAsync();
+
+      if (permission.status === 'granted') {
+        const current = await Location.getCurrentPositionAsync({});
+        await chooseCoordinate(current.coords.latitude, current.coords.longitude);
+      }
+    } catch {
+      Alert.alert('Không lấy được vị trí', 'Bạn có thể tìm địa chỉ hoặc chạm trực tiếp trên bản đồ.');
+    } finally {
+      setIsMapLoading(false);
+    }
+  }, [chooseCoordinate]);
+
+  const centerOnDeviceLocation = useCallback(async () => {
+    try {
+      setIsMapLoading(true);
+      const permission = await Location.requestForegroundPermissionsAsync();
+
+      if (permission.status !== 'granted') {
+        Alert.alert('Cần quyền vị trí', 'Vui lòng cho phép truy cập vị trí để dùng chức năng này.');
+        return;
+      }
+
+      const current = await Location.getCurrentPositionAsync({});
+      await chooseCoordinate(current.coords.latitude, current.coords.longitude);
+    } finally {
+      setIsMapLoading(false);
+    }
+  }, [chooseCoordinate]);
+
+  const searchAddressOnMap = async () => {
+    const query = mapQuery.trim();
+
+    if (!query) {
+      Alert.alert('Nhập địa chỉ', 'Vui lòng nhập địa chỉ cần tìm.');
+      return;
+    }
+
+    try {
+      setIsMapLoading(true);
+      const results = await Location.geocodeAsync(query);
+
+      if (!results.length) {
+        Alert.alert('Không tìm thấy', 'Vui lòng nhập địa chỉ cụ thể hơn.');
+        return;
+      }
+
+      await chooseCoordinate(results[0].latitude, results[0].longitude, query);
+    } catch {
+      Alert.alert('Không tìm được địa chỉ', 'Vui lòng thử lại hoặc chạm trực tiếp trên bản đồ.');
+    } finally {
+      setIsMapLoading(false);
+    }
+  };
+
+  const handleMapPress = (event: MapPressEvent) => {
+    const { latitude, longitude } = event.nativeEvent.coordinate;
+    chooseCoordinate(latitude, longitude);
+  };
+
+  const confirmSelectedAddress = () => {
+    if (selectedLocation?.address) {
+      updateField('address', selectedLocation.address);
+      setMapQuery('');
+    }
+
+    setIsMapVisible(false);
+  };
+
   const handleSave = async () => {
     if (!userId) return;
 
     try {
       setIsSaving(true);
-      const updated = await profileService.updateProfile(userId, form);
-      setForm(updated);
-      await storage.saveUser(updated);
+      const nextAddress = (selectedLocation?.address || form.address || '').trim();
+      const payload: Partial<UserProfile> = {
+        address: nextAddress,
+        bio: form.bio || '',
+        city: form.city || '',
+        district: form.district || '',
+        emergencyContact: form.emergencyContact || '',
+        emergencyContactName: form.emergencyContactName || '',
+        fullName: form.fullName || '',
+        gender: form.gender || '',
+        languages: form.languages || '',
+        phone: form.phone || '',
+      };
+
+      if (form.avatar) payload.avatar = form.avatar;
+      if (form.dateOfBirth) payload.dateOfBirth = form.dateOfBirth;
+      if (form.idCardBack) payload.idCardBack = form.idCardBack;
+      if (form.idCardFront) payload.idCardFront = form.idCardFront;
+
+      const updated = await profileService.updateProfile(userId, payload);
+      const nextForm = { ...form, ...updated, address: updated.address || nextAddress };
+      const nextAuthUser = currentUser
+        ? { ...currentUser, ...updated, address: nextForm.address, role: currentUser.role, email: currentUser.email, id: currentUser.id }
+        : nextForm;
+
+      setForm(nextForm);
+      setCurrentUser(nextAuthUser as AuthUser);
+      await storage.saveUser(nextAuthUser);
+      setSelectedLocation(null);
       setIsEditing(false);
-      Alert.alert('Da luu', 'Profile da duoc cap nhat.');
+      Alert.alert(text.profileSaveTitle, text.profileSaved);
     } catch (error: any) {
-      Alert.alert('Khong luu duoc', error.response?.data?.message || error.response?.data?.error || 'Thu lai sau.');
+      Alert.alert('Không lưu được', error.response?.data?.message || error.response?.data?.error || 'Thử lại sau.');
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleLanguageSelect = async (nextLanguage: AppLanguage) => {
+    await setLanguage(nextLanguage);
+    setActivePanel(null);
   };
 
   const handleLogout = async () => {
@@ -163,9 +372,9 @@ export default function ProfileScreen() {
   const closePanel = () => setActivePanel(null);
 
   const panelTitle = {
-    language: 'Language',
+    language: text.language,
     pay: 'HouseHelp Pay',
-    rewards: 'My Rewards',
+    rewards: language === 'vi' ? 'Ưu đãi của tôi' : 'My Rewards',
   }[activePanel || 'rewards'];
 
   const renderPanelContent = () => {
@@ -174,10 +383,10 @@ export default function ProfileScreen() {
         <>
           <View style={styles.panelCard}>
             <Text style={styles.panelCardTitle}>0 points</Text>
-            <Text style={styles.panelCardText}>Diem thuong se xuat hien sau khi ban hoan thanh booking hoac nhan uu dai.</Text>
+            <Text style={styles.panelCardText}>{text.rewardsEmpty}</Text>
           </View>
           <TouchableOpacity onPress={() => router.push('/(customer)')} style={styles.panelPrimaryButton}>
-            <Text style={styles.panelPrimaryText}>Dat dich vu</Text>
+            <Text style={styles.panelPrimaryText}>{language === 'vi' ? 'Đặt dịch vụ' : 'Book a service'}</Text>
           </TouchableOpacity>
         </>
       );
@@ -187,11 +396,11 @@ export default function ProfileScreen() {
       return (
         <>
           <View style={styles.panelCard}>
-            <Text style={styles.panelCardTitle}>Thanh toan tien mat dang bat</Text>
-            <Text style={styles.panelCardText}>HouseHelp Pay se theo doi cac thanh toan da xac nhan trong Activity.</Text>
+            <Text style={styles.panelCardTitle}>{language === 'vi' ? 'Thanh toán tiền mặt đang bật' : 'Cash payment is enabled'}</Text>
+            <Text style={styles.panelCardText}>{language === 'vi' ? 'HouseHelp Pay sẽ theo dõi các thanh toán đã xác nhận trong Activity.' : 'HouseHelp Pay tracks confirmed payments in Activity.'}</Text>
           </View>
           <TouchableOpacity onPress={() => router.push('/(customer)/bookings')} style={styles.panelPrimaryButton}>
-            <Text style={styles.panelPrimaryText}>Xem thanh toan</Text>
+            <Text style={styles.panelPrimaryText}>{language === 'vi' ? 'Xem thanh toán' : 'View payments'}</Text>
           </TouchableOpacity>
         </>
       );
@@ -199,9 +408,30 @@ export default function ProfileScreen() {
 
     if (activePanel === 'language') {
       return (
-        <View style={styles.panelCard}>
-          <Text style={styles.panelCardTitle}>Ngon ngu hien tai</Text>
-          <Text style={styles.panelCardText}>Tieng Viet/English trong mobile app se duoc cai dat o day khi co module ngon ngu rieng.</Text>
+        <View>
+          <Text style={styles.languageHint}>{text.languageHint}</Text>
+          <TouchableOpacity
+            activeOpacity={0.84}
+            onPress={() => handleLanguageSelect('vi')}
+            style={[styles.languageOption, language === 'vi' && styles.languageOptionActive]}
+          >
+            <View>
+              <Text style={[styles.languageOptionTitle, language === 'vi' && styles.languageOptionTitleActive]}>Tiếng Việt</Text>
+              <Text style={styles.languageOptionSubtitle}>Vietnamese</Text>
+            </View>
+            {language === 'vi' ? <Ionicons color="#ff8128" name="checkmark-circle" size={24} /> : null}
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.84}
+            onPress={() => handleLanguageSelect('en')}
+            style={[styles.languageOption, language === 'en' && styles.languageOptionActive]}
+          >
+            <View>
+              <Text style={[styles.languageOptionTitle, language === 'en' && styles.languageOptionTitleActive]}>English</Text>
+              <Text style={styles.languageOptionSubtitle}>Tiếng Anh</Text>
+            </View>
+            {language === 'en' ? <Ionicons color="#ff8128" name="checkmark-circle" size={24} /> : null}
+          </TouchableOpacity>
         </View>
       );
     }
@@ -229,38 +459,139 @@ export default function ProfileScreen() {
         >
           <TouchableOpacity onPress={() => setIsEditing(false)} style={styles.backButton}>
             <Ionicons color="#ff8128" name="chevron-back" size={22} />
-            <Text style={styles.backText}>Account</Text>
+            <Text style={styles.backText}>{text.account}</Text>
           </TouchableOpacity>
 
-          <Text style={styles.title}>Personal Profile</Text>
+          <Text style={styles.title}>{text.editProfile}</Text>
           <Text style={styles.subtitle}>{form.email}</Text>
 
-          <Text style={styles.label}>Ho ten</Text>
+          {isHousekeeperAccount ? (
+            <View style={[styles.verificationBox, isIdentityVerified && styles.verificationBoxApproved]}>
+              <View style={styles.verificationTextWrap}>
+                <Text style={styles.verificationTitle}>
+                  {isIdentityVerified
+                    ? (language === 'vi' ? 'Đã xác thực danh tính' : 'Identity verified')
+                    : (language === 'vi' ? 'Chưa xác thực danh tính' : 'Identity not verified')}
+                </Text>
+                <Text style={styles.verificationText}>
+                  {isIdentityVerified
+                    ? (language === 'vi' ? 'Hồ sơ của bạn đã được admin duyệt.' : 'Your profile has been approved by admin.')
+                    : (language === 'vi' ? 'Cung cấp CCCD hai mặt và ảnh selfie để admin xét duyệt.' : 'Provide both ID card sides and a selfie for admin review.')}
+                </Text>
+              </View>
+              {!isIdentityVerified ? (
+                <TouchableOpacity
+                  activeOpacity={0.86}
+                  onPress={() => router.push('/(housekeeper)/verification')}
+                  style={styles.verifyButton}
+                >
+                  <Ionicons color="#fff" name="shield-checkmark-outline" size={18} />
+                  <Text style={styles.verifyButtonText}>{language === 'vi' ? 'Xác thực danh tính' : 'Verify identity'}</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
+
+          <Text style={styles.label}>{text.fullName}</Text>
           <TextInput onChangeText={(value) => updateField('fullName', value)} style={styles.input} value={form.fullName || ''} />
 
-          <Text style={styles.label}>So dien thoai</Text>
+          <Text style={styles.label}>{text.phone}</Text>
           <TextInput keyboardType="phone-pad" onChangeText={(value) => updateField('phone', value)} style={styles.input} value={form.phone || ''} />
 
-          <Text style={styles.label}>Dia chi</Text>
+          <Text style={styles.label}>{language === 'vi' ? 'Địa chỉ' : 'Address'}</Text>
           <TextInput onChangeText={(value) => updateField('address', value)} style={styles.input} value={form.address || ''} />
+          <TouchableOpacity activeOpacity={0.86} onPress={openMapPicker} style={styles.mapButton}>
+            <Ionicons color="#ff8128" name="map-outline" size={18} />
+            <Text style={styles.mapButtonText}>{text.chooseAddress}</Text>
+          </TouchableOpacity>
 
-          <View style={styles.editorRow}>
-            <View style={styles.editorColumn}>
-              <Text style={styles.label}>Thanh pho</Text>
-              <TextInput onChangeText={(value) => updateField('city', value)} style={styles.input} value={form.city || ''} />
-            </View>
-            <View style={styles.editorColumn}>
-              <Text style={styles.label}>Quan/Huyen</Text>
-              <TextInput onChangeText={(value) => updateField('district', value)} style={styles.input} value={form.district || ''} />
-            </View>
-          </View>
-
-          <Text style={styles.label}>Gioi thieu</Text>
+          <Text style={styles.label}>{language === 'vi' ? 'Giới thiệu' : 'Bio'}</Text>
           <TextInput multiline onChangeText={(value) => updateField('bio', value)} style={[styles.input, styles.multiline]} value={form.bio || ''} />
 
           <TouchableOpacity disabled={isSaving} onPress={handleSave} style={styles.primaryButton}>
-            {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Luu profile</Text>}
+            {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>{text.saveProfile}</Text>}
           </TouchableOpacity>
+
+          <Modal animationType="slide" onRequestClose={() => setIsMapVisible(false)} visible={isMapVisible}>
+            <View style={[styles.mapScreen, { paddingTop: Math.max(insets.top, 12) }]}>
+              <View style={styles.mapHeader}>
+                <TouchableOpacity onPress={() => setIsMapVisible(false)} style={styles.mapHeaderButton}>
+                  <Text style={styles.mapHeaderButtonText}>{text.close}</Text>
+                </TouchableOpacity>
+                <View style={styles.mapHeaderTextWrap}>
+                  <Text style={styles.mapTitle}>{text.chooseAddressTitle}</Text>
+                  <Text style={styles.mapSubtitle}>{text.chooseAddressSubtitle}</Text>
+                </View>
+              </View>
+
+              <View style={styles.mapSearchBox}>
+                <TextInput
+                  onChangeText={setMapQuery}
+                  onSubmitEditing={searchAddressOnMap}
+                  placeholder={language === 'vi' ? 'Nhập địa chỉ để tìm...' : 'Search for an address...'}
+                  returnKeyType="search"
+                  style={styles.mapSearchInput}
+                  value={mapQuery}
+                />
+                <TouchableOpacity activeOpacity={0.84} onPress={searchAddressOnMap} style={styles.mapSearchButton}>
+                  <Text style={styles.mapSearchButtonText}>{language === 'vi' ? 'Tìm' : 'Search'}</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity activeOpacity={0.84} onPress={centerOnDeviceLocation} style={styles.mapLocationButton}>
+                <Text style={styles.mapLocationButtonText}>{text.useCurrentLocation}</Text>
+              </TouchableOpacity>
+
+              <MapView
+                initialRegion={mapRegion}
+                onPress={handleMapPress}
+                onRegionChangeComplete={setMapRegion}
+                region={mapRegion}
+                style={styles.map}
+              >
+                {selectedLocation ? (
+                  <Marker
+                    coordinate={{
+                      latitude: selectedLocation.latitude,
+                      longitude: selectedLocation.longitude,
+                    }}
+                    draggable
+                    onDragEnd={(event) => {
+                      const { latitude, longitude } = event.nativeEvent.coordinate;
+                      chooseCoordinate(latitude, longitude);
+                    }}
+                    title={language === 'vi' ? 'Địa chỉ hồ sơ' : 'Profile address'}
+                  />
+                ) : null}
+              </MapView>
+
+              <View style={[styles.mapFooter, { paddingBottom: Math.max(insets.bottom + 16, 24) }]}>
+                {isMapLoading ? <ActivityIndicator color="#ff8128" /> : null}
+                {selectedLocation ? (
+                  <TextInput
+                    multiline
+                    onChangeText={(value) => {
+                      setSelectedLocation((current) => current ? { ...current, address: value } : current);
+                      updateField('address', value);
+                    }}
+                    placeholder={language === 'vi' ? 'Bổ sung số nhà, tầng, tòa nhà...' : 'Add house number, floor, building...'}
+                    style={styles.mapAddressInput}
+                    value={form.address || selectedLocation.address}
+                  />
+                ) : null}
+                <Text numberOfLines={2} style={styles.mapAddress}>
+                  {selectedLocation ? selectedLocation.address : (language === 'vi' ? 'Hãy tìm địa chỉ hoặc chạm vào vị trí trên bản đồ.' : 'Search for an address or tap a position on the map.')}
+                </Text>
+                <TouchableOpacity
+                  disabled={!selectedLocation}
+                  onPress={confirmSelectedAddress}
+                  style={[styles.confirmMapButton, !selectedLocation && styles.confirmMapButtonDisabled]}
+                >
+                  <Text style={styles.confirmMapText}>{text.doneAddress}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
         </ScrollView>
       </SafeAreaView>
     );
@@ -273,7 +604,14 @@ export default function ProfileScreen() {
           contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 112, 128) }]}
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.title}>Account</Text>
+          {isHousekeeperAccount ? (
+            <TouchableOpacity onPress={goBackToRoleHome} style={styles.backButton}>
+              <Ionicons color="#15803d" name="chevron-back" size={22} />
+              <Text style={[styles.backText, styles.housekeeperBackText]}>{text.dashboard}</Text>
+            </TouchableOpacity>
+          ) : null}
+
+          <Text style={styles.title}>{text.account}</Text>
 
           <View style={styles.identity}>
             <View style={styles.avatar}>
@@ -282,30 +620,30 @@ export default function ProfileScreen() {
             <View style={styles.identityInfo}>
               <Text numberOfLines={2} style={styles.name}>{form.fullName || 'HouseHelp User'}</Text>
               <TouchableOpacity activeOpacity={0.85} onPress={() => setActivePanel('rewards')} style={styles.memberPill}>
-                <Text style={styles.memberText}>Member tier</Text>
+                <Text style={styles.memberText}>{text.memberTier}</Text>
               </TouchableOpacity>
             </View>
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Account</Text>
+            <Text style={styles.sectionTitle}>{text.account}</Text>
             {accountRows.map((row) => (
               <AccountRow
                 icon={row.icon}
-                key={row.label}
-                label={row.label}
+                key={row.action}
+                label={row.label[language]}
                 onPress={() => handleAccountAction(row.action as AccountAction)}
               />
             ))}
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Utilities</Text>
+            <Text style={styles.sectionTitle}>{language === 'vi' ? 'Tiện ích' : 'Utilities'}</Text>
             {utilityRows.map((row) => (
               <AccountRow
                 icon={row.icon}
-                key={row.label}
-                label={row.label}
+                key={row.action}
+                label={row.label[language]}
                 onPress={() => handleAccountAction(row.action as AccountAction)}
               />
             ))}
@@ -313,7 +651,7 @@ export default function ProfileScreen() {
 
           <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
             <Ionicons color="#ef4444" name="log-out-outline" size={20} />
-            <Text style={styles.logoutText}>Dang xuat</Text>
+            <Text style={styles.logoutText}>{text.logout}</Text>
           </TouchableOpacity>
         </ScrollView>
         <Modal animationType="slide" onRequestClose={closePanel} transparent visible={activePanel !== null}>
@@ -330,7 +668,7 @@ export default function ProfileScreen() {
             </View>
           </View>
         </Modal>
-        <CustomerBottomNav />
+        {isHousekeeperAccount ? null : <CustomerBottomNav />}
       </View>
     </SafeAreaView>
   );
@@ -361,6 +699,9 @@ const styles = StyleSheet.create({
     color: '#ff8128',
     fontSize: 15,
     fontWeight: '900',
+  },
+  housekeeperBackText: {
+    color: '#15803d',
   },
   centered: {
     alignItems: 'center',
@@ -404,11 +745,61 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     padding: 14,
   },
+  confirmMapButton: {
+    alignItems: 'center',
+    backgroundColor: '#ff8128',
+    borderRadius: 12,
+    paddingVertical: 14,
+  },
+  confirmMapButtonDisabled: {
+    backgroundColor: '#f3c09d',
+  },
+  confirmMapText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '900',
+  },
   label: {
     color: '#374151',
     fontSize: 14,
     fontWeight: '900',
     marginBottom: 7,
+  },
+  languageHint: {
+    color: '#687386',
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 22,
+    marginBottom: 14,
+  },
+  languageOption: {
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderColor: '#eceef2',
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    padding: 14,
+  },
+  languageOptionActive: {
+    backgroundColor: '#fff1e8',
+    borderColor: '#ff8128',
+  },
+  languageOptionSubtitle: {
+    color: '#687386',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  languageOptionTitle: {
+    color: '#172033',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  languageOptionTitleActive: {
+    color: '#ff8128',
   },
   logoutButton: {
     alignItems: 'center',
@@ -442,6 +833,142 @@ const styles = StyleSheet.create({
   multiline: {
     minHeight: 92,
     textAlignVertical: 'top',
+  },
+  map: {
+    flex: 1,
+  },
+  mapAddress: {
+    color: '#111827',
+    fontSize: 14,
+    fontWeight: '800',
+    lineHeight: 20,
+  },
+  mapAddressInput: {
+    backgroundColor: '#f7f8fa',
+    borderColor: '#d8dde3',
+    borderRadius: 12,
+    borderWidth: 1,
+    color: '#111827',
+    fontSize: 14,
+    minHeight: 66,
+    padding: 12,
+    textAlignVertical: 'top',
+  },
+  mapButton: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#fff1e8',
+    borderColor: '#fed7aa',
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+    marginTop: -4,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+  },
+  mapButtonText: {
+    color: '#ff8128',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  mapFooter: {
+    backgroundColor: '#fff',
+    borderTopColor: '#e5e7eb',
+    borderTopWidth: 1,
+    gap: 12,
+    padding: 16,
+    paddingBottom: 24,
+  },
+  mapHeader: {
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderBottomColor: '#e5e7eb',
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  mapHeaderButton: {
+    borderColor: '#fed7aa',
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 13,
+    paddingVertical: 8,
+  },
+  mapHeaderButtonText: {
+    color: '#ff8128',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  mapHeaderTextWrap: {
+    flex: 1,
+  },
+  mapLocationButton: {
+    alignItems: 'center',
+    backgroundColor: '#ffedd5',
+    borderColor: '#fed7aa',
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 10,
+    marginHorizontal: 16,
+    paddingVertical: 12,
+  },
+  mapLocationButtonText: {
+    color: '#c2410c',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  mapScreen: {
+    backgroundColor: '#fff',
+    flex: 1,
+  },
+  mapSearchBox: {
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderBottomColor: '#e5e7eb',
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  mapSearchButton: {
+    alignItems: 'center',
+    backgroundColor: '#ff8128',
+    borderRadius: 12,
+    minWidth: 56,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  mapSearchButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  mapSearchInput: {
+    backgroundColor: '#f7f8fa',
+    borderColor: '#d8dde3',
+    borderRadius: 12,
+    borderWidth: 1,
+    color: '#111827',
+    flex: 1,
+    fontSize: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  mapSubtitle: {
+    color: '#6b7280',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  mapTitle: {
+    color: '#111827',
+    fontSize: 18,
+    fontWeight: '900',
   },
   modalBackdrop: {
     flex: 1,
@@ -524,6 +1051,48 @@ const styles = StyleSheet.create({
   primaryText: {
     color: '#fff',
     fontSize: 16,
+    fontWeight: '900',
+  },
+  verificationBox: {
+    backgroundColor: '#fff7ed',
+    borderColor: '#fed7aa',
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 12,
+    marginBottom: 18,
+    padding: 14,
+  },
+  verificationBoxApproved: {
+    backgroundColor: '#ecfdf5',
+    borderColor: '#bbf7d0',
+  },
+  verificationText: {
+    color: '#687386',
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  verificationTextWrap: {
+    gap: 4,
+  },
+  verificationTitle: {
+    color: '#172033',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  verifyButton: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#ff8128',
+    borderRadius: 12,
+    flexDirection: 'row',
+    gap: 7,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+  },
+  verifyButtonText: {
+    color: '#fff',
+    fontSize: 14,
     fontWeight: '900',
   },
   rowButton: {

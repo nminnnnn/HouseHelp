@@ -23,25 +23,32 @@ import { housekeeperPreferenceService } from '../../../lib/housekeeper-preferenc
 import { housekeeperService, type Housekeeper } from '../../../lib/housekeepers';
 import { profileService } from '../../../lib/profile';
 
+const HCM_UTC_OFFSET_HOURS = 7;
+const MIN_BOOKING_NOTICE_HOURS = 3;
+
+function hcmNow() {
+  return new Date(Date.now() + HCM_UTC_OFFSET_HOURS * 60 * 60 * 1000);
+}
+
 function todayDate() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
+  const now = hcmNow();
+  const year = now.getUTCFullYear();
+  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(now.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
 function toDateValue(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
 function dateOptions() {
   return Array.from({ length: 14 }, (_, index) => {
-    const date = new Date();
-    date.setDate(date.getDate() + index);
+    const date = hcmNow();
+    date.setUTCDate(date.getUTCDate() + index);
 
     return {
       label: index === 0
@@ -55,6 +62,10 @@ function dateOptions() {
 const timeOptions = ['07:00', '08:00', '09:00', '10:00', '13:00', '14:00', '15:00', '16:00', '18:00'];
 const bookingSteps = ['Dich vu', 'Dia chi', 'Ngay gio', 'Thoi luong', 'Xac nhan'] as const;
 const PICK_HOUSEKEEPER_FEE = 15000;
+const paymentMethods = [
+  { key: 'cash', label: 'Tien mat' },
+  { key: 'momo', label: 'MoMo' },
+] as const;
 
 type BookingStep = (typeof bookingSteps)[number];
 
@@ -91,6 +102,38 @@ function isValidTimeFrame(value: string) {
   return value.trim().length >= 3;
 }
 
+function parseStartTime(value: string) {
+  const match = value.trim().match(/(\d{1,2})(?::|h)?(\d{2})?/i);
+
+  if (!match) {
+    return null;
+  }
+
+  const hour = Number(match[1]);
+  const minute = Number(match[2] || 0);
+
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return null;
+  }
+
+  return { hour, minute };
+}
+
+function bookingStartUtcMs(dateValue: string, timeValue: string) {
+  const [year, month, day] = dateValue.split('-').map(Number);
+  const start = parseStartTime(timeValue);
+
+  if (!year || !month || !day || !start) {
+    return null;
+  }
+
+  return Date.UTC(year, month - 1, day, start.hour - HCM_UTC_OFFSET_HOURS, start.minute, 0, 0);
+}
+
+function minBookingStartUtcMs() {
+  return Date.now() + MIN_BOOKING_NOTICE_HOURS * 60 * 60 * 1000;
+}
+
 type SelectedLocation = {
   address: string;
   latitude: number;
@@ -123,7 +166,9 @@ export default function CreateBookingScreen() {
     latitudeDelta: 0.025,
     longitudeDelta: 0.025,
   });
+  const [nowTick, setNowTick] = useState(Date.now());
   const [notes, setNotes] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'momo'>('cash');
   const [selectedLocation, setSelectedLocation] = useState<SelectedLocation | null>(null);
   const [service, setService] = useState('');
   const [time, setTime] = useState('08:00');
@@ -187,6 +232,12 @@ export default function CreateBookingScreen() {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    const intervalId = setInterval(() => setNowTick(Date.now()), 60000);
+
+    return () => clearInterval(intervalId);
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       loadSelectedAddress(user);
@@ -200,7 +251,14 @@ export default function CreateBookingScreen() {
   const totalPrice = basePrice + PICK_HOUSEKEEPER_FEE;
   const unitPrice = useMemo(() => parsePrice(housekeeper?.price), [housekeeper?.price]);
   const serviceOptions = useMemo(() => serviceList(housekeeper?.services), [housekeeper?.services]);
-  const availableDates = useMemo(() => dateOptions(), []);
+  const availableDates = useMemo(() => {
+    void nowTick;
+    return dateOptions();
+  }, [nowTick]);
+  const isTimeOptionDisabled = useCallback((timeValue: string) => {
+    const startUtcMs = bookingStartUtcMs(date, timeValue);
+    return !startUtcMs || startUtcMs < nowTick + MIN_BOOKING_NOTICE_HOURS * 60 * 60 * 1000;
+  }, [date, nowTick]);
 
   const reverseGeocode = useCallback(async (latitude: number, longitude: number) => {
     try {
@@ -348,8 +406,18 @@ export default function CreateBookingScreen() {
         return false;
       }
 
-      if (date < todayDate()) {
-        Alert.alert('Ngay khong hop le', 'Vui long chon ngay hom nay hoac mot ngay trong tuong lai.');
+      const startUtcMs = bookingStartUtcMs(date, time);
+
+      if (!startUtcMs) {
+        Alert.alert('Khung gio chua hop le', 'Vui long nhap gio bat dau hop le, vi du: 08:00-11:00 hoac 8h den 11h.');
+        return false;
+      }
+
+      if (startUtcMs < minBookingStartUtcMs()) {
+        Alert.alert(
+          'Lich qua gan',
+          `Vui long chon lich cach thoi diem hien tai it nhat ${MIN_BOOKING_NOTICE_HOURS} tieng theo gio Ho Chi Minh (UTC+7).`,
+        );
         return false;
       }
     }
@@ -407,8 +475,18 @@ export default function CreateBookingScreen() {
       return;
     }
 
-    if (date < todayDate()) {
-      Alert.alert('Ngay khong hop le', 'Vui long chon ngay hom nay hoac mot ngay trong tuong lai.');
+    const startUtcMs = bookingStartUtcMs(date, time);
+
+    if (!startUtcMs) {
+      Alert.alert('Khung gio chua hop le', 'Vui long nhap gio bat dau hop le, vi du: 08:00-11:00 hoac 8h den 11h.');
+      return;
+    }
+
+    if (startUtcMs < minBookingStartUtcMs()) {
+      Alert.alert(
+        'Lich qua gan',
+        `Vui long chon lich cach thoi diem hien tai it nhat ${MIN_BOOKING_NOTICE_HOURS} tieng theo gio Ho Chi Minh (UTC+7).`,
+      );
       return;
     }
 
@@ -425,6 +503,7 @@ export default function CreateBookingScreen() {
         housekeeperName: housekeeper.fullName,
         location: location.trim(),
         notes: notes.trim() || undefined,
+        paymentMethod,
         service: recurring === 'monthly' ? `${service.trim()} monthly` : service.trim(),
         time: time.trim(),
         totalPrice,
@@ -573,15 +652,17 @@ export default function CreateBookingScreen() {
           <View style={styles.timeGrid}>
             {timeOptions.map((item) => {
               const isSelected = item === time;
+              const isDisabled = isTimeOptionDisabled(item);
 
               return (
                 <TouchableOpacity
                   activeOpacity={0.82}
+                  disabled={isDisabled}
                   key={item}
                   onPress={() => setTime(item)}
-                  style={[styles.timeOption, isSelected && styles.timeOptionActive]}
+                  style={[styles.timeOption, isDisabled && styles.timeOptionDisabled, isSelected && !isDisabled && styles.timeOptionActive]}
                 >
-                  <Text style={[styles.timeOptionText, isSelected && styles.timeOptionTextActive]}>{item}</Text>
+                  <Text style={[styles.timeOptionText, isDisabled && styles.timeOptionTextDisabled, isSelected && !isDisabled && styles.timeOptionTextActive]}>{item}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -641,6 +722,23 @@ export default function CreateBookingScreen() {
           <View style={styles.reviewRow}>
             <Text style={styles.reviewLabel}>Dia chi</Text>
             <Text numberOfLines={3} style={styles.reviewValue}>{location.trim() || 'Chua nhap'}</Text>
+          </View>
+          <Text style={styles.paymentTitle}>Phuong thuc thanh toan</Text>
+          <View style={styles.paymentMethodRow}>
+            {paymentMethods.map((method) => {
+              const selected = paymentMethod === method.key;
+
+              return (
+                <TouchableOpacity
+                  activeOpacity={0.84}
+                  key={method.key}
+                  onPress={() => setPaymentMethod(method.key)}
+                  style={[styles.paymentMethodButton, selected && styles.paymentMethodButtonActive]}
+                >
+                  <Text style={[styles.paymentMethodLabel, selected && styles.paymentMethodLabelActive]}>{method.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
           {notes.trim() ? (
             <View style={styles.reviewRow}>
@@ -1052,6 +1150,39 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
   },
+  paymentMethodButton: {
+    alignItems: 'center',
+    backgroundColor: '#f7f8fa',
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 48,
+    padding: 12,
+  },
+  paymentMethodButtonActive: {
+    backgroundColor: '#fff1e8',
+    borderColor: '#ff8128',
+  },
+  paymentMethodLabel: {
+    color: '#667085',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  paymentMethodLabelActive: {
+    color: '#ff8128',
+  },
+  paymentMethodRow: {
+    flexDirection: 'row',
+    gap: 9,
+  },
+  paymentTitle: {
+    color: '#111827',
+    fontSize: 15,
+    fontWeight: '900',
+    marginTop: 4,
+  },
   recurringBadge: {
     alignSelf: 'flex-start',
     backgroundColor: '#fff1e8',
@@ -1271,6 +1402,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#ff8128',
     borderColor: '#ff8128',
   },
+  timeOptionDisabled: {
+    backgroundColor: '#f3f4f6',
+    borderColor: '#e5e7eb',
+    opacity: 0.55,
+  },
   timeOptionText: {
     color: '#111827',
     fontSize: 14,
@@ -1278,6 +1414,9 @@ const styles = StyleSheet.create({
   },
   timeOptionTextActive: {
     color: '#fff',
+  },
+  timeOptionTextDisabled: {
+    color: '#9ca3af',
   },
   title: {
     color: '#111827',

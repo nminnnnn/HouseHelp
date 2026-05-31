@@ -2,6 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const TOKEN_KEY = 'user_token';
 const USER_KEY = 'user_info';
+const LANGUAGE_KEY = 'app_language';
+export type AppLanguage = 'vi' | 'en';
 
 export const storage = {
   saveToken: async (token: string) => {
@@ -16,6 +18,13 @@ export const storage = {
   getUser: async <T = unknown>() => {
     const user = await AsyncStorage.getItem(USER_KEY);
     return user ? (JSON.parse(user) as T) : null;
+  },
+  saveLanguage: async (language: AppLanguage) => {
+    await AsyncStorage.setItem(LANGUAGE_KEY, language);
+  },
+  getLanguage: async () => {
+    const language = await AsyncStorage.getItem(LANGUAGE_KEY);
+    return language === 'en' ? 'en' : 'vi';
   },
   clearAll: async () => {
     await AsyncStorage.removeItem(TOKEN_KEY);

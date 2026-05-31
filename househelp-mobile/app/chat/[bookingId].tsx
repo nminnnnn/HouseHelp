@@ -80,6 +80,34 @@ function callRoomId(bookingId: string, userId?: number, receiverId?: number | nu
   return `househelp-direct-${ids.join('-')}`;
 }
 
+function emitCallInvite(payload: {
+  bookingId: string;
+  callerName: string;
+  callType: 'audio' | 'video';
+  roomName: string;
+  targetUserId: number;
+}, user: AuthUser) {
+  const socket = getSocket();
+  const joinPayload = {
+    role: user.role,
+    userId: user.id,
+    userName: user.fullName || user.email,
+  };
+
+  const sendInvite = () => {
+    socket.emit('join', joinPayload);
+    socket.emit('call_invite', payload);
+  };
+
+  if (socket.connected) {
+    sendInvite();
+    return;
+  }
+
+  socket.once('connect', sendInvite);
+  socket.connect();
+}
+
 export default function ChatScreen() {
   const [booking, setBooking] = useState<Booking | null>(null);
   const [backgroundError, setBackgroundError] = useState<string | null>(null);
@@ -320,7 +348,15 @@ export default function ChatScreen() {
     }
 
     const roomId = callRoomId(bookingId, user.id, receiverId);
-    const callText = type === 'audio' ? 'Da bat dau cuoc goi am thanh trong app.' : 'Da bat dau video call trong app.';
+    const callText = type === 'audio' ? 'Da bat dau cuoc goi am thanh.' : 'Da bat dau video call.';
+
+    emitCallInvite({
+      bookingId,
+      callerName: user.fullName || user.email || 'Khach hang',
+      callType: type,
+      roomName: roomId,
+      targetUserId: receiverId,
+    }, user);
 
     try {
       if (bookingId === 'direct') {
@@ -343,7 +379,9 @@ export default function ChatScreen() {
     router.push({
       pathname: '/call/[roomId]',
       params: {
+        bookingId,
         roomId,
+        targetUserId: String(receiverId),
         title,
         type,
       },

@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -63,6 +63,7 @@ export default function NotificationsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -150,7 +151,10 @@ export default function NotificationsScreen() {
     <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
       <View style={styles.screen}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity
+            onPress={() => (returnTo === 'housekeeper' ? router.replace('/(housekeeper)') : router.back())}
+            style={styles.backButton}
+          >
             <Text style={styles.backText}>Quay lai</Text>
           </TouchableOpacity>
           <Text style={styles.title}>Thong bao</Text>

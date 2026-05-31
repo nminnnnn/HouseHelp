@@ -18,6 +18,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CustomerBottomNav } from '../components/customer-bottom-nav';
 import { authService, type AuthUser } from '../lib/auth';
 import { chatbotService, type ChatbotMessage } from '../lib/chatbot';
+import { useLanguage } from '../lib/language';
+import type { AppLanguage } from '../lib/storage';
 
 type UiMessage = {
   id: string;
@@ -25,20 +27,36 @@ type UiMessage = {
   content: string;
 };
 
-const fallbackSuggestions = [
-  'Tu van dich vu don dep',
-  'Tinh chi phi thue giup viec',
-  'Huong dan dat lich',
-  'Ho tro khieu nai',
-];
+const copy = {
+  en: {
+    back: 'Home',
+    error: 'Chatbot is having connection issues. Please try again later.',
+    fallback: 'I do not have a suitable answer yet. Please try asking another way.',
+    placeholder: 'Ask a question...',
+    subtitle: 'HouseHelp assistant',
+    suggestions: ['Cleaning service advice', 'Estimate service cost', 'Booking guide', 'Complaint support'],
+    timeout: 'Chatbot took too long to respond. Please try again in a few seconds.',
+    welcome: (name: string) => `Hi${name}! I am HouseHelp chatbot. Do you need service advice, cost estimates, or booking help?`,
+  },
+  vi: {
+    back: 'Trang chủ',
+    error: 'Chatbot đang gặp sự cố kết nối. Bạn thử lại sau nhé.',
+    fallback: 'Tôi chưa có câu trả lời phù hợp. Bạn thử hỏi theo cách khác nhé.',
+    placeholder: 'Nhập câu hỏi...',
+    subtitle: 'Trợ lý HouseHelp',
+    suggestions: ['Tư vấn dịch vụ dọn dẹp', 'Tính chi phí thuê giúp việc', 'Hướng dẫn đặt lịch', 'Hỗ trợ khiếu nại'],
+    timeout: 'Chatbot phản hồi quá lâu. Bạn thử lại sau ít giây.',
+    welcome: (name: string) => `Xin chào${name}! Tôi là chatbot HouseHelp. Bạn cần tư vấn dịch vụ, ước tính chi phí hay hướng dẫn đặt lịch?`,
+  },
+} as const;
 
 const CHATBOT_STORAGE_KEY = 'chatbot_history';
 
-function welcomeMessage(user: AuthUser | null): UiMessage {
+function welcomeMessage(user: AuthUser | null, language: AppLanguage): UiMessage {
   const name = user?.fullName ? ` ${user.fullName}` : '';
 
   return {
-    content: `Xin chao${name}! Toi la chatbot HouseHelp. Ban can tu van dich vu, uoc tinh chi phi hay huong dan dat lich?`,
+    content: copy[language].welcome(name),
     id: 'welcome',
     type: 'assistant',
   };
@@ -65,7 +83,9 @@ export default function MobileChatbotScreen() {
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [messages, setMessages] = useState<UiMessage[]>([]);
-  const [suggestions, setSuggestions] = useState<string[]>(fallbackSuggestions);
+  const { language } = useLanguage();
+  const text = copy[language];
+  const [suggestions, setSuggestions] = useState<string[]>(text.suggestions);
   const [user, setUser] = useState<AuthUser | null>(null);
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList<UiMessage>>(null);
@@ -80,14 +100,14 @@ export default function MobileChatbotScreen() {
 
       if (!mounted) return;
       setUser(storedUser);
-      setMessages(storedMessages.length > 0 ? storedMessages : [welcomeMessage(storedUser)]);
+      setMessages(storedMessages.length > 0 ? storedMessages : [welcomeMessage(storedUser, language)]);
     };
 
     init();
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [language]);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -133,31 +153,31 @@ export default function MobileChatbotScreen() {
       setMessages((current) => [
         ...current,
         {
-          content: response.response || 'Toi chua co cau tra loi phu hop. Ban thu hoi theo cach khac nhe.',
+          content: response.response || copy[language].fallback,
           id: `assistant-${Date.now()}`,
           type: 'assistant',
         },
       ]);
-      setSuggestions(response.suggestions?.length ? response.suggestions : fallbackSuggestions);
+      setSuggestions(response.suggestions?.length ? response.suggestions : copy[language].suggestions);
     } catch (error: any) {
       const serverMessage =
         error.response?.data?.message ||
         error.response?.data?.error ||
-        (error.code === 'ECONNABORTED' ? 'Chatbot phan hoi qua lau. Ban thu lai sau it giay.' : null);
+        (error.code === 'ECONNABORTED' ? copy[language].timeout : null);
 
       setMessages((current) => [
         ...current,
         {
-          content: serverMessage || 'Chatbot dang gap su co ket noi. Ban thu lai sau nhe.',
+          content: serverMessage || copy[language].error,
           id: `assistant-error-${Date.now()}`,
           type: 'assistant',
         },
       ]);
-      setSuggestions(fallbackSuggestions);
+      setSuggestions(copy[language].suggestions);
     } finally {
       setIsSending(false);
     }
-  }, [conversationHistory, input, isSending, user]);
+  }, [conversationHistory, input, isSending, language, user]);
 
   return (
     <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
@@ -169,11 +189,11 @@ export default function MobileChatbotScreen() {
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.replace('/(customer)')} style={styles.backButton}>
             <Ionicons color="#ff8128" name="chevron-back" size={22} />
-            <Text style={styles.backText}>Home</Text>
+            <Text style={styles.backText}>{text.back}</Text>
           </TouchableOpacity>
           <View>
             <Text style={styles.title}>Chatbot</Text>
-            <Text style={styles.subtitle}>Tro ly HouseHelp</Text>
+            <Text style={styles.subtitle}>{text.subtitle}</Text>
           </View>
         </View>
 
@@ -208,7 +228,7 @@ export default function MobileChatbotScreen() {
           <TextInput
             multiline
             onChangeText={setInput}
-            placeholder="Nhap cau hoi..."
+            placeholder={text.placeholder}
             style={styles.input}
             value={input}
           />

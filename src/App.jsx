@@ -17,6 +17,7 @@ import { BookingProvider } from "./contexts/BookingContext";
 import { NotificationProvider } from "./contexts/NotificationContext";
 import ToastContainer from "./components/ToastContainer";
 import ChatbotButton from "./components/Chatbot/ChatbotButton";
+import IncomingCallListener from "./components/Call/IncomingCallListener";
 import './App.css';
 
 // Component wrapper để handle admin redirect
@@ -70,6 +71,7 @@ export default function App() {
               <Route path="/settings/language" element={<SettingLanguage />} />
               <Route path="*" element={<Navigate to="/login" replace />} />
             </Routes>
+            <IncomingCallListener />
             <ToastContainer />
             <ChatbotButton />
           </NotificationProvider>

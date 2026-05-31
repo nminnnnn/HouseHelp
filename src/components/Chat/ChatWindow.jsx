@@ -7,6 +7,14 @@ import CallWindow from '../Call/CallWindow';
 import CallService from '../../services/CallService';
 import './ChatWindow.css';
 
+const JITSI_BASE_URL = (import.meta.env.VITE_JITSI_URL || 'https://meet.ffmuc.net').replace(/\/+$/, '');
+
+function safeJitsiRoom(roomName) {
+  return String(roomName || 'househelp-call')
+    .replace(/[^a-zA-Z0-9-_]/g, '-')
+    .slice(0, 80);
+}
+
 const ChatWindow = ({ bookingId, directUserId, otherUser, onClose }) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState([]);
@@ -86,7 +94,12 @@ const ChatWindow = ({ bookingId, directUserId, otherUser, onClose }) => {
     console.log('🔌 Initialized CallService for user:', user.id, userName);
     
     socketRef.current.on('connect', () => {
-      console.log('✅ WebSocket connected');
+      console.log('WebSocket connected');
+      socketRef.current.emit('join', {
+        userId: user.id,
+        role: user.role,
+        userName: user.fullName || user.email,
+      });
     });
 
     socketRef.current.on('connect_error', (error) => {
@@ -138,6 +151,14 @@ const ChatWindow = ({ bookingId, directUserId, otherUser, onClose }) => {
           }
         });
       }
+    });
+    socketRef.current.on('incoming_call', (payload) => {
+      console.log('[ChatWindow] incoming_call', payload);
+      if (!payload?.roomName) {
+        return;
+      }
+
+      setIncomingCall(payload);
     });
 
     // Listen for message deletion
@@ -453,6 +474,29 @@ const ChatWindow = ({ bookingId, directUserId, otherUser, onClose }) => {
     setIncomingCall(null);
   };
 
+  const acceptJitsiCall = () => {
+    if (!incomingCall?.roomName) return;
+
+    socketRef.current?.emit('call_accepted', {
+      bookingId: incomingCall.bookingId,
+      roomName: incomingCall.roomName,
+      targetUserId: incomingCall.callerId,
+    });
+    window.open(`${JITSI_BASE_URL}/${safeJitsiRoom(incomingCall.roomName)}`, '_blank', 'noopener,noreferrer');
+    setIncomingCall(null);
+  };
+
+  const rejectJitsiCall = () => {
+    if (!incomingCall) return;
+
+    socketRef.current?.emit('call_rejected', {
+      bookingId: incomingCall.bookingId,
+      roomName: incomingCall.roomName,
+      targetUserId: incomingCall.callerId,
+    });
+    setIncomingCall(null);
+  };
+
   // Listen for incoming calls
   useEffect(() => {
     const handleCallEvent = (event, data) => {
@@ -476,6 +520,25 @@ const ChatWindow = ({ bookingId, directUserId, otherUser, onClose }) => {
 
   return (
     <div className="chat-window">
+      {incomingCall?.roomName ? (
+        <div className="incoming-call">
+          <div className="incoming-call__ring" aria-hidden="true">CALL</div>
+          <div className="incoming-call__content">
+            <p className="incoming-call__eyebrow">Cuoc goi video</p>
+            <h3>{incomingCall.callerName || 'Khach hang'} dang goi cho ban</h3>
+            {incomingCall.bookingId ? <p>Booking #{incomingCall.bookingId}</p> : null}
+          </div>
+          <div className="incoming-call__actions">
+            <button className="incoming-call__accept" type="button" onClick={acceptJitsiCall}>
+              Nghe may
+            </button>
+            <button className="incoming-call__reject" type="button" onClick={rejectJitsiCall}>
+              Tu choi
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {/* Chat Header */}
       <div className="chat-header">
         <div className="chat-user-info">

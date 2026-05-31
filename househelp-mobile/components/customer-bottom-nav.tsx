@@ -3,15 +3,18 @@ import { usePathname, useRouter } from 'expo-router';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useLanguage } from '../lib/language';
+
 const items = [
-  { label: 'Home', href: '/(customer)' as const, icon: 'home-outline', activeIcon: 'home' },
-  { label: 'Activity', href: '/(customer)/bookings' as const, icon: 'reader-outline', activeIcon: 'reader' },
-  { label: 'Chatbot', href: '/chatbot' as const, icon: 'chatbox-ellipses-outline', activeIcon: 'chatbox-ellipses', center: true },
-  { label: 'Chat', href: '/chat' as const, icon: 'chatbubbles-outline', activeIcon: 'chatbubbles' },
-  { label: 'Account', href: '/profile' as const, icon: 'person-outline', activeIcon: 'person' },
+  { label: { en: 'Home', vi: 'Trang chủ' }, href: '/(customer)' as const, icon: 'home-outline', activeIcon: 'home' },
+  { label: { en: 'Activity', vi: 'Hoạt động' }, href: '/(customer)/bookings' as const, icon: 'reader-outline', activeIcon: 'reader' },
+  { label: { en: 'Chatbot', vi: 'Chatbot' }, href: '/chatbot' as const, icon: 'chatbox-ellipses-outline', activeIcon: 'chatbox-ellipses', center: true },
+  { label: { en: 'Chat', vi: 'Chat' }, href: '/chat' as const, icon: 'chatbubbles-outline', activeIcon: 'chatbubbles' },
+  { label: { en: 'Account', vi: 'Tài khoản' }, href: '/profile' as const, icon: 'person-outline', activeIcon: 'person' },
 ];
 
 export function CustomerBottomNav() {
+  const { language } = useLanguage();
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
   const router = useRouter();
@@ -34,7 +37,7 @@ export function CustomerBottomNav() {
         return (
           <TouchableOpacity
             activeOpacity={0.82}
-            key={item.label}
+            key={item.href}
             onPress={() => goTo(item.href)}
             style={[styles.item, item.center && styles.centerItem]}
           >
@@ -51,7 +54,7 @@ export function CustomerBottomNav() {
               </Text>
             ) : (
               <Text numberOfLines={1} style={[styles.label, isActive && styles.activeLabel]}>
-                {item.label}
+                {item.label[language]}
               </Text>
             )}
           </TouchableOpacity>

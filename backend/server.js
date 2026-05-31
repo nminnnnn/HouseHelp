@@ -1798,30 +1798,45 @@ app.get('/api/users/:id/profile', (req, res) => {
 // API: C?p nh?t profile user
 app.put('/api/users/:id/profile', (req, res) => {
   const userId = req.params.id;
-  const {
-    fullName, phone, dateOfBirth, gender, address, city, district,
-    bio, languages, emergencyContact, emergencyContactName, avatar,
-    idCardFront, idCardBack
-  } = req.body;
 
   console.log('=== UPDATE USER PROFILE ===');
   console.log('User ID:', userId);
   console.log('Request Body:', req.body);
 
-  const sql = `
-    UPDATE users SET 
-      fullName = ?, phone = ?, dateOfBirth = ?, gender = ?, address = ?, 
-      city = ?, district = ?, bio = ?, languages = ?, emergencyContact = ?, 
-      emergencyContactName = ?, avatar = ?, idCardFront = ?, idCardBack = ?, 
-      updatedAt = NOW()
-    WHERE id = ?
-  `;
-
-  const params = [
-    fullName, phone, dateOfBirth, gender, address, city, district,
-    bio, languages, emergencyContact, emergencyContactName, avatar,
-    idCardFront, idCardBack, userId
+  const allowedFields = [
+    'fullName',
+    'phone',
+    'dateOfBirth',
+    'gender',
+    'address',
+    'city',
+    'district',
+    'bio',
+    'languages',
+    'emergencyContact',
+    'emergencyContactName',
+    'avatar',
+    'idCardFront',
+    'idCardBack'
   ];
+
+  const updates = [];
+  const params = [];
+
+  allowedFields.forEach((field) => {
+    if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+      updates.push(`${field} = ?`);
+      params.push(req.body[field] === undefined ? null : req.body[field]);
+    }
+  });
+
+  if (updates.length === 0) {
+    return res.status(400).json({ error: 'Không có thông tin c?n c?p nh?t' });
+  }
+
+  updates.push('updatedAt = NOW()');
+  const sql = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
+  params.push(userId);
 
   console.log('SQL:', sql);
   console.log('Params:', params);
@@ -2185,6 +2200,15 @@ app.post('/api/quick-booking/create', (req, res) => {
 
     const bookingId = result.insertId;
     const newBooking = { ...bookingData, id: bookingId };
+    const breakdown = paymentBreakdown(totalPrice);
+    db.query(
+      `INSERT INTO payments (bookingId, customerId, method, amount, platformFee, housekeeperAmount, settlementStatus, platformAccount, status, createdAt)` +
+        ` VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())`,
+      [bookingId, customerId, normalizedPaymentMethod, breakdown.amount, breakdown.platformFee, breakdown.housekeeperAmount, 'pending', PLATFORM_PAYMENT_ACCOUNT],
+      (paymentErr) => {
+        if (paymentErr) console.error('Error creating pending payment record:', paymentErr);
+      }
+    );
 
     console.log('? QUICK BOOKING CREATED:');
     console.log('- Booking ID:', bookingId);
@@ -2282,8 +2306,10 @@ app.post('/api/bookings', (req, res) => {
     customerName,
     customerEmail,
     customerPhone,
-    housekeeperName
+    housekeeperName,
+    paymentMethod
   } = req.body;
+  const normalizedPaymentMethod = normalizePaymentMethod(paymentMethod);
   
   const bookingData = {
     customerId,
@@ -2300,6 +2326,7 @@ app.post('/api/bookings', (req, res) => {
     customerEmail,
     customerPhone,
     housekeeperName,
+    paymentMethod: normalizedPaymentMethod,
     createdAt: new Date()
   };
 
@@ -2320,6 +2347,15 @@ app.post('/api/bookings', (req, res) => {
 
     const bookingId = result.insertId;
     const newBooking = { ...bookingData, id: bookingId };
+    const breakdown = paymentBreakdown(totalPrice);
+    db.query(
+      `INSERT INTO payments (bookingId, customerId, method, amount, platformFee, housekeeperAmount, settlementStatus, platformAccount, status, createdAt)` +
+        ` VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())`,
+      [bookingId, customerId, normalizedPaymentMethod, breakdown.amount, breakdown.platformFee, breakdown.housekeeperAmount, 'pending', PLATFORM_PAYMENT_ACCOUNT],
+      (paymentErr) => {
+        if (paymentErr) console.error('Error creating pending payment record:', paymentErr);
+      }
+    );
 
     console.log('?? NEW BOOKING CREATED:');
     console.log('- Booking ID:', bookingId);
@@ -2663,7 +2699,12 @@ app.get('/api/bookings/user/:id', (req, res) => {
   
   // Tìm housekeepers.id tuong ?ng v?i users.id (d? h? tr? c? 2 tru?ng h?p)
   const sql = `
-    SELECT b.* FROM bookings b
+    SELECT b.*,
+      (SELECT p.method FROM payments p WHERE p.bookingId = b.id ORDER BY p.createdAt DESC LIMIT 1) as paymentMethod,
+      (SELECT p.settlementStatus FROM payments p WHERE p.bookingId = b.id ORDER BY p.createdAt DESC LIMIT 1) as settlementStatus,
+      (SELECT p.platformFee FROM payments p WHERE p.bookingId = b.id ORDER BY p.createdAt DESC LIMIT 1) as platformFee,
+      (SELECT p.housekeeperAmount FROM payments p WHERE p.bookingId = b.id ORDER BY p.createdAt DESC LIMIT 1) as housekeeperAmount
+    FROM bookings b
     WHERE b.customerId = ?
     OR b.housekeeperId IN (SELECT h.id FROM housekeepers h WHERE h.userId = ?)
   `;
@@ -2890,6 +2931,7 @@ io.on('connection', (socket) => {
     const userIdNum = parseInt(userId);
     
     const userInfo = { socketId: socket.id, role, userId: userId, userName };
+    socket.join('user:' + userIdStr);
     activeUsers.set(userId, userInfo);
     activeUsers.set(userIdStr, userInfo);
     activeUsers.set(userIdNum, userInfo);
@@ -2939,53 +2981,99 @@ io.on('connection', (socket) => {
   });
 
   // Call signaling handlers
+  const findActiveUser = (targetUserId) => activeUsers.get(targetUserId) || activeUsers.get(String(targetUserId)) || activeUsers.get(parseInt(targetUserId));
+
+  socket.on('call_invite', ({ targetUserId, roomName, callerName, bookingId, callType }) => {
+    console.log(`Call invite from ${socket.userId} to ${targetUserId} in room ${roomName}`);
+
+    const targetUser = findActiveUser(targetUserId);
+    const targetRoom = 'user:' + String(targetUserId);
+    const targetRoomSize = io.sockets.adapter.rooms.get(targetRoom)?.size || 0;
+
+    if (!targetUser && targetRoomSize === 0) {
+      socket.emit('call_failed', { error: 'User not available', roomName, bookingId });
+      console.log(`Target user ${targetUserId} not found or offline`);
+      return;
+    }
+
+    const callData = {
+      bookingId,
+      callerId: socket.userId,
+      callerName: callerName || socket.userName || 'Nguoi dung',
+      callType: callType || 'video',
+      createdAt: new Date().toISOString(),
+      roomName,
+      targetUserId
+    };
+
+    io.to(targetRoom).emit('incoming_call', callData);
+    if (targetUser?.socketId) {
+      io.to(targetUser.socketId).emit('incoming_call', callData);
+    }
+    socket.emit('call_ringing', { bookingId, roomName, targetUserId });
+    console.log(`Call invite sent to ${targetUserId}:`, callData);
+  });
+
   socket.on('call_offer', ({ targetUserId, offer, isVideoCall, callerId }) => {
-    console.log(`?? Call offer from ${callerId || socket.userId} to ${targetUserId}`);
-    console.log(`?? Caller name: ${socket.userName}`);
-    console.log(`?? Active users:`, Array.from(activeUsers.keys()));
-    
+    console.log(`Call offer from ${callerId || socket.userId} to ${targetUserId}`);
+
     const actualCallerId = callerId || socket.userId;
-    const targetUser = activeUsers.get(targetUserId) || activeUsers.get(String(targetUserId)) || activeUsers.get(parseInt(targetUserId));
-    
+    const targetUser = findActiveUser(targetUserId);
+
     if (targetUser) {
       const callData = {
         callerId: actualCallerId,
-        callerName: socket.userName || 'Ngu?i dùng',
+        callerName: socket.userName || 'Nguoi dung',
         offer,
         isVideoCall
       };
-      
+
       io.to(targetUser.socketId).emit('incoming_call', callData);
-      console.log(`? Call offer sent to ${targetUserId}:`, callData);
+      console.log(`Call offer sent to ${targetUserId}:`, callData);
     } else {
       socket.emit('call_failed', { error: 'User not available' });
-      console.log(`? Target user ${targetUserId} not found or offline`);
-      console.log(`? Available users:`, Array.from(activeUsers.keys()));
+      console.log(`Target user ${targetUserId} not found or offline`);
     }
   });
 
   socket.on('call_answer', ({ targetUserId, answer }) => {
-    console.log(`?? Call answer from ${socket.userId} to ${targetUserId}`);
-    
-    const targetUser = activeUsers.get(targetUserId) || activeUsers.get(String(targetUserId)) || activeUsers.get(parseInt(targetUserId));
-    
+    console.log(`Call answer from ${socket.userId} to ${targetUserId}`);
+
+    const targetUser = findActiveUser(targetUserId);
+
     if (targetUser) {
       io.to(targetUser.socketId).emit('call_answer', { answer });
-      console.log(`? Call answer sent to ${targetUserId}`);
+      console.log(`Call answer sent to ${targetUserId}`);
     }
   });
 
-  socket.on('call_rejected', ({ targetUserId }) => {
-    console.log(`?? Call rejected by ${socket.userId} to ${targetUserId}`);
-    
-    const targetUser = activeUsers.get(targetUserId) || activeUsers.get(String(targetUserId)) || activeUsers.get(parseInt(targetUserId));
-    
-    if (targetUser) {
-      io.to(targetUser.socketId).emit('call_rejected', { userId: socket.userId });
-      console.log(`? Call rejection sent to ${targetUserId}`);
+  socket.on('call_accepted', ({ targetUserId, roomName, bookingId }) => {
+    console.log(`Call accepted by ${socket.userId} to ${targetUserId}`);
+
+    const targetUser = findActiveUser(targetUserId);
+    const targetRoom = 'user:' + String(targetUserId);
+    const payload = { bookingId, roomName, userId: socket.userId };
+
+    io.to(targetRoom).emit('call_accepted', payload);
+    if (targetUser?.socketId) {
+      io.to(targetUser.socketId).emit('call_accepted', payload);
     }
+    console.log(`Call accepted sent to ${targetUserId}`);
   });
 
+  socket.on('call_rejected', ({ targetUserId, roomName, bookingId }) => {
+    console.log(`Call rejected by ${socket.userId} to ${targetUserId}`);
+
+    const targetUser = findActiveUser(targetUserId);
+    const targetRoom = 'user:' + String(targetUserId);
+    const payload = { bookingId, roomName, userId: socket.userId };
+
+    io.to(targetRoom).emit('call_rejected', payload);
+    if (targetUser?.socketId) {
+      io.to(targetUser.socketId).emit('call_rejected', payload);
+    }
+    console.log(`Call rejection sent to ${targetUserId}`);
+  });
   socket.on('ice_candidate', ({ candidate, targetUserId }) => {
     const targetUser = activeUsers.get(targetUserId) || activeUsers.get(String(targetUserId)) || activeUsers.get(parseInt(targetUserId));
     
@@ -4333,11 +4421,12 @@ app.post('/api/bookings/:id/complete', (req, res) => {
               }
             );
 
-            const paymentSql = `INSERT INTO payments (bookingId, customerId, method, amount, status, createdAt) 
-                         VALUES (?, ?, ?, ?, ?, NOW())`;
+            const paymentSql = `INSERT INTO payments (bookingId, customerId, method, amount, status, createdAt)` +
+              ` SELECT ?, ?, ?, ?, ?, NOW() WHERE NOT EXISTS (` +
+              `SELECT 1 FROM payments WHERE bookingId = ? AND customerId = ? LIMIT 1)`;
             db.query(
               paymentSql,
-              [bookingId, booking.customerId, 'pending', booking.totalPrice, 'pending'],
+              [bookingId, booking.customerId, 'cash', booking.totalPrice, 'pending', bookingId, booking.customerId],
               (payErr) => {
                 if (payErr) console.error('Error creating payment record:', payErr);
               }

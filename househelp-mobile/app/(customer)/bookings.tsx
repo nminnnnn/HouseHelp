@@ -18,36 +18,101 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { CustomerBottomNav } from '../../components/customer-bottom-nav';
 import { authService } from '../../lib/auth';
 import { bookingService, type Booking } from '../../lib/bookings';
+import { useLanguage } from '../../lib/language';
+import type { AppLanguage } from '../../lib/storage';
 
 function errorMessage(error: any) {
   const value = error?.response?.data?.message || error?.response?.data?.error || error?.message;
   return typeof value === 'string' ? value : 'Khong the tai booking.';
 }
 
-const tabs = ['Upcoming', 'Schedule', 'Monthly', 'History'] as const;
+const tabs = ['upcoming', 'schedule', 'monthly', 'history'] as const;
 const paymentMethods = [
-  { key: 'cash', label: 'Tien mat', description: 'Tra truc tiep khi nhan nha sach.' },
-  { key: 'momo', label: 'MoMo', description: 'Thanh toan vao vi MoMo cua HouseHelp Platform.' },
+  { key: 'cash', label: 'Tiền mặt' },
+  { key: 'momo', label: 'MoMo',  },
 ] as const;
 const PLATFORM_FEE = 50000;
+
+const copy = {
+  en: {
+    activity: 'Activity',
+    cancel: 'Cancel',
+    confirm: 'Confirm',
+    date: 'Date',
+    emptyCta: 'Post your task now',
+    emptyText: 'Enjoy life in a crystal clean house.',
+    history: 'History',
+    housekeeper: 'Housekeeper',
+    later: 'Later',
+    location: 'Address',
+    paymentMethod: 'Payment method',
+    paymentReview: 'Payment & review',
+    platformText: 'Platform fee: {fee}. Housekeeper receives the remaining amount by cycle or withdrawal.',
+    platformTitle: 'Platform collects and reconciles',
+    rating: 'Review',
+    reviewPlaceholder: 'Review this service...',
+    tabs: { history: 'History', monthly: 'Monthly', schedule: 'Schedule', upcoming: 'Upcoming' },
+    unpaid: 'Pay',
+    paid: 'Paid',
+  },
+  vi: {
+    activity: 'Hoạt động',
+    cancel: 'Hủy',
+    confirm: 'Xác nhận',
+    date: 'Ngày',
+    emptyCta: 'Đặt dịch vụ ngay',
+    emptyText: 'Tận hưởng cuộc sống trong ngôi nhà sạch tinh tươm.',
+    history: 'Lịch sử',
+    housekeeper: 'Người giúp việc',
+    later: 'Để sau',
+    location: 'Địa chỉ',
+    paymentMethod: 'Phương thức thanh toán',
+    paymentReview: 'Thanh toán & đánh giá',
+    platformText: 'Phí platform: {fee}. Người giúp việc nhận phần còn lại theo chu kỳ hoặc khi rút tiền.',
+    platformTitle: 'Platform thu hộ và đối soát',
+    rating: 'Đánh giá',
+    reviewPlaceholder: 'Nhận xét về dịch vụ...',
+    tabs: { history: 'Lịch sử', monthly: 'Hàng tháng', schedule: 'Lịch hẹn', upcoming: 'Sắp tới' },
+    unpaid: 'Thanh toán',
+    paid: 'Đã thanh toán',
+  },
+} as const;
 
 function formatPrice(value?: number | string) {
   const price = Number(value || 0);
   return `${price.toLocaleString('vi-VN')} VND`;
 }
 
-function formatDate(booking: Booking) {
-  return booking.startDate || booking.date || 'Chua co ngay';
+function formatDate(booking: Booking, language: AppLanguage) {
+  const rawDate = booking.startDate || booking.date;
+
+  if (!rawDate) return language === 'vi' ? 'Chưa có ngày' : 'No date';
+
+  const dateOnly = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const hcmDate = dateOnly
+    ? new Date(Date.UTC(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3])))
+    : new Date(new Date(rawDate).getTime() + 7 * 60 * 60 * 1000);
+
+  if (Number.isNaN(hcmDate.getTime())) return rawDate;
+
+  const weekday = language === 'vi'
+    ? ['CN', 'Th 2', 'Th 3', 'Th 4', 'Th 5', 'Th 6', 'Th 7'][hcmDate.getUTCDay()]
+    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][hcmDate.getUTCDay()];
+  const day = String(hcmDate.getUTCDate()).padStart(2, '0');
+  const month = String(hcmDate.getUTCMonth() + 1).padStart(2, '0');
+  const year = hcmDate.getUTCFullYear();
+
+  return language === 'vi' ? `${weekday}, ${day}/${month}/${year}` : `${weekday}, ${month}/${day}/${year}`;
 }
 
-function statusLabel(status: string) {
+function statusLabel(status: string, language: AppLanguage) {
   const labels: Record<string, string> = {
-    cancelled: 'Da huy',
-    completed: 'Hoan thanh',
-    confirmed: 'Da xac nhan',
-    in_progress: 'Dang lam',
-    pending: 'Cho xac nhan',
-    rejected: 'Bi tu choi',
+    cancelled: language === 'vi' ? 'Đã hủy' : 'Cancelled',
+    completed: language === 'vi' ? 'Hoàn thành' : 'Completed',
+    confirmed: language === 'vi' ? 'Đã xác nhận' : 'Confirmed',
+    in_progress: language === 'vi' ? 'Đang làm' : 'In progress',
+    pending: language === 'vi' ? 'Chờ xác nhận' : 'Pending',
+    rejected: language === 'vi' ? 'Bị từ chối' : 'Rejected',
   };
 
   return labels[status] || status;
@@ -58,11 +123,15 @@ function BookingCard({
   onCancel,
   onChat,
   onReviewPayment,
+  text,
+  language,
 }: {
   item: Booking;
   onCancel: () => void;
   onChat: () => void;
   onReviewPayment: () => void;
+  text: (typeof copy)[AppLanguage];
+  language: AppLanguage;
 }) {
   const isCompleted = item.status === 'completed';
   const isPaid = item.paymentStatus === 'success';
@@ -72,11 +141,11 @@ function BookingCard({
     <View style={styles.card}>
       <View style={styles.cardHeader}>
         <Text numberOfLines={1} style={styles.service}>{item.service || 'Dich vu'}</Text>
-        <Text style={styles.status}>{statusLabel(item.status)}</Text>
+        <Text style={styles.status}>{statusLabel(item.status, language)}</Text>
       </View>
-      <Text style={styles.meta}>Housekeeper: {item.housekeeperName || `#${item.housekeeperId}`}</Text>
-      <Text style={styles.meta}>Ngay: {formatDate(item)} - {item.time || 'Chua co'}</Text>
-      <Text style={styles.meta}>Dia chi: {item.location || 'Chua co'}</Text>
+      <Text style={styles.meta}>{text.housekeeper}: {item.housekeeperName || `#${item.housekeeperId}`}</Text>
+      <Text style={styles.meta}>{text.date}: {formatDate(item, language)} - {item.time || 'Chưa có'}</Text>
+      <Text style={styles.meta}>{text.location}: {item.location || 'Chưa có'}</Text>
       <View style={styles.cardFooter}>
         <Text style={styles.price}>{formatPrice(item.totalPrice)}</Text>
         <View style={styles.actions}>
@@ -86,12 +155,12 @@ function BookingCard({
           </TouchableOpacity>
           {canCancel ? (
             <TouchableOpacity onPress={onCancel} style={styles.cancelBookingButton}>
-              <Text style={styles.cancelBookingText}>Huy</Text>
+              <Text style={styles.cancelBookingText}>{text.cancel}</Text>
             </TouchableOpacity>
           ) : null}
           {isCompleted ? (
             <TouchableOpacity disabled={isPaid} onPress={onReviewPayment} style={[styles.payButton, isPaid && styles.paidButton]}>
-              <Text style={[styles.payText, isPaid && styles.paidText]}>{isPaid ? 'Da thanh toan' : 'Thanh toan'}</Text>
+              <Text style={[styles.payText, isPaid && styles.paidText]}>{isPaid ? text.paid : text.unpaid}</Text>
             </TouchableOpacity>
           ) : null}
         </View>
@@ -101,7 +170,7 @@ function BookingCard({
 }
 
 export default function CustomerBookingsScreen() {
-  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>('Upcoming');
+  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>('upcoming');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -112,8 +181,10 @@ export default function CustomerBookingsScreen() {
   const [review, setReview] = useState('');
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const { refresh } = useLocalSearchParams<{ refresh?: string }>();
+  const { language } = useLanguage();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const text = copy[language];
 
   const loadBookings = useCallback(async (refreshing = false) => {
     try {
@@ -145,15 +216,15 @@ export default function CustomerBookingsScreen() {
   }, [loadBookings, refresh]);
 
   const visibleBookings = useMemo(() => {
-    if (activeTab === 'Monthly') {
+    if (activeTab === 'monthly') {
       return bookings.filter((item) => String(item.service || '').toLowerCase().includes('monthly'));
     }
 
-    if (activeTab === 'History') {
+    if (activeTab === 'history') {
       return bookings.filter((item) => ['completed', 'cancelled', 'rejected'].includes(item.status));
     }
 
-    if (activeTab === 'Schedule') {
+    if (activeTab === 'schedule') {
       return bookings.filter((item) => ['confirmed', 'in_progress'].includes(item.status));
     }
 
@@ -162,7 +233,7 @@ export default function CustomerBookingsScreen() {
 
   const openPaymentReview = (booking: Booking) => {
     setSelectedBooking(booking);
-    setPaymentMethod('cash');
+    setPaymentMethod(booking.paymentMethod === 'momo' ? 'momo' : 'cash');
     setRating(5);
     setReview('');
   };
@@ -237,9 +308,9 @@ export default function CustomerBookingsScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.header}>
-            <Text style={styles.title}>Activity</Text>
-            <TouchableOpacity onPress={() => setActiveTab('History')}>
-              <Text style={styles.history}>History</Text>
+            <Text style={styles.title}>{text.activity}</Text>
+            <TouchableOpacity onPress={() => setActiveTab('history')}>
+              {/* <Text style={styles.history}>{text.history}</Text> */}
             </TouchableOpacity>
           </View>
 
@@ -247,12 +318,10 @@ export default function CustomerBookingsScreen() {
             {tabs.map((tab) => (
               <TouchableOpacity key={tab} onPress={() => setActiveTab(tab)} style={styles.tab}>
                 <Text
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.82}
                   numberOfLines={1}
                   style={[styles.tabText, activeTab === tab && styles.activeTabText]}
                 >
-                  {tab}
+                  {text.tabs[tab]}
                 </Text>
                 {activeTab === tab ? <View style={styles.activeLine} /> : null}
               </TouchableOpacity>
@@ -271,9 +340,9 @@ export default function CustomerBookingsScreen() {
                 <Ionicons color="#ff9a28" name="book-outline" size={78} />
                 <Ionicons color="#ff8128" name="home-outline" size={38} style={styles.emptyMiniIcon} />
               </View>
-              <Text style={styles.emptyText}>Enjoy life in a crystal clean house.</Text>
+              <Text style={styles.emptyText}>{text.emptyText}</Text>
               <TouchableOpacity onPress={() => router.push('/(customer)')} style={styles.ctaButton}>
-                <Text style={styles.ctaText}>Post your task now</Text>
+                <Text style={styles.ctaText}>{text.emptyCta}</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -282,9 +351,11 @@ export default function CustomerBookingsScreen() {
                 <BookingCard
                   item={item}
                   key={String(item.id)}
+                  language={language}
                   onCancel={() => handleCancelBooking(item)}
                   onChat={() => router.push(`/chat/${item.id}`)}
                   onReviewPayment={() => openPaymentReview(item)}
+                  text={text}
                 />
               ))}
             </View>
@@ -294,17 +365,17 @@ export default function CustomerBookingsScreen() {
         <Modal animationType="slide" onRequestClose={closePaymentReview} transparent visible={!!selectedBooking}>
           <View style={styles.modalBackdrop}>
             <View style={[styles.modalCard, { paddingBottom: Math.max(insets.bottom + 18, 28) }]}>
-              <Text style={styles.modalTitle}>Thanh toan & danh gia</Text>
+              <Text style={styles.modalTitle}>{text.paymentReview}</Text>
               <Text style={styles.modalMeta}>{selectedBooking?.housekeeperName || 'Housekeeper'}</Text>
               <Text style={styles.modalPrice}>{formatPrice(selectedBooking?.totalPrice)}</Text>
               <View style={styles.platformBox}>
-                <Text style={styles.platformTitle}>Platform thu ho va doi soat</Text>
+                <Text style={styles.platformTitle}>{text.platformTitle}</Text>
                 <Text style={styles.platformText}>
-                  Phi platform: {formatPrice(PLATFORM_FEE)}. Housekeeper nhan phan con lai theo chu ky hoac khi rut tien.
+                  {text.platformText.replace('{fee}', formatPrice(PLATFORM_FEE))}
                 </Text>
               </View>
 
-              <Text style={styles.modalLabel}>Phuong thuc thanh toan</Text>
+              <Text style={styles.modalLabel}>{text.paymentMethod}</Text>
               <View style={styles.methodRow}>
                 {paymentMethods.map((method) => (
                   <TouchableOpacity
@@ -313,7 +384,7 @@ export default function CustomerBookingsScreen() {
                     style={[styles.methodButton, paymentMethod === method.key && styles.methodButtonActive]}
                   >
                     <Text style={[styles.methodText, paymentMethod === method.key && styles.methodTextActive]}>{method.label}</Text>
-                    <Text style={[styles.methodHint, paymentMethod === method.key && styles.methodHintActive]}>{method.description}</Text>
+                    {/* <Text style={[styles.methodHint, paymentMethod === method.key && styles.methodHintActive]}>{method.description}</Text> */}
                   </TouchableOpacity>
                 ))}
               </View>
@@ -324,7 +395,7 @@ export default function CustomerBookingsScreen() {
                 </View>
               ) : null}
 
-              <Text style={styles.modalLabel}>Danh gia</Text>
+              <Text style={styles.modalLabel}>{text.rating}</Text>
               <View style={styles.starRow}>
                 {[1, 2, 3, 4, 5].map((star) => (
                   <TouchableOpacity key={star} onPress={() => setRating(star)}>
@@ -336,17 +407,17 @@ export default function CustomerBookingsScreen() {
               <TextInput
                 multiline
                 onChangeText={setReview}
-                placeholder="Nhan xet ve dich vu..."
+                placeholder={text.reviewPlaceholder}
                 style={styles.reviewInput}
                 value={review}
               />
 
               <View style={styles.modalActions}>
                 <TouchableOpacity disabled={isSubmittingPayment} onPress={closePaymentReview} style={styles.cancelButton}>
-                  <Text style={styles.cancelText}>De sau</Text>
+                  <Text style={styles.cancelText}>{text.later}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity disabled={isSubmittingPayment} onPress={submitPaymentReview} style={styles.confirmButton}>
-                  {isSubmittingPayment ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmText}>Xac nhan</Text>}
+                  {isSubmittingPayment ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmText}>{text.confirm}</Text>}
                 </TouchableOpacity>
               </View>
             </View>

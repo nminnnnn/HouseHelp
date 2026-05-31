@@ -41,6 +41,7 @@ export type CreateBookingPayload = {
   customerEmail?: string;
   customerPhone?: string;
   housekeeperName?: string;
+  paymentMethod?: 'cash' | 'momo';
 };
 
 export type ConfirmPaymentPayload = {

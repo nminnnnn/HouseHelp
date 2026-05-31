@@ -39,7 +39,7 @@ export type UserFile = {
   url: string;
 };
 
-export type UploadFileType = 'avatar' | 'id_card_front' | 'id_card_back';
+export type UploadFileType = 'avatar' | 'document' | 'id_card_front' | 'id_card_back';
 
 export const profileService = {
   getProfile: async (userId: number) => {

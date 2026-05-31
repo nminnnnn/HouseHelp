@@ -7,6 +7,24 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { authService, type AuthUser } from '../lib/auth';
 import { housekeeperPreferenceService } from '../lib/housekeeper-preferences';
 import { housekeeperService, type Housekeeper } from '../lib/housekeepers';
+import { useLanguage } from '../lib/language';
+
+const copy = {
+  en: {
+    account: 'Account',
+    emptyText: 'Open a housekeeper profile and tap the heart to save them here.',
+    emptyTitle: 'No favorite housekeepers yet',
+    title: 'Favorite Housekeepers',
+    subtitle: 'People you want to prioritize for rebooking.',
+  },
+  vi: {
+    account: 'Tài khoản',
+    emptyText: 'Mở hồ sơ housekeeper và bấm trái tim để lưu vào danh sách này.',
+    emptyTitle: 'Chưa có housekeeper yêu thích',
+    title: 'Người giúp việc yêu thích',
+    subtitle: 'Những người bạn muốn ưu tiên đặt lại.',
+  },
+} as const;
 
 function formatPrice(price?: number | string) {
   const value = Number(price);
@@ -19,8 +37,10 @@ export default function FavoriteHousekeepersScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
+  const { language } = useLanguage();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const text = copy[language];
 
   const loadData = useCallback(async (refreshing = false) => {
     try {
@@ -80,17 +100,17 @@ export default function FavoriteHousekeepersScreen() {
       >
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons color="#ff8128" name="chevron-back" size={22} />
-          <Text style={styles.backText}>Account</Text>
+          <Text style={styles.backText}>{text.account}</Text>
         </TouchableOpacity>
 
-        <Text style={styles.title}>Favorite Housekeepers</Text>
-        <Text style={styles.subtitle}>Nhung nguoi ban muon uu tien dat lai.</Text>
+        <Text style={styles.title}>{text.title}</Text>
+        <Text style={styles.subtitle}>{text.subtitle}</Text>
 
         {favorites.length === 0 ? (
           <View style={styles.empty}>
             <Ionicons color="#ff9a28" name="heart-outline" size={64} />
-            <Text style={styles.emptyTitle}>Chua co housekeeper yeu thich</Text>
-            <Text style={styles.emptyText}>Mo ho so housekeeper va bam trai tim de luu vao danh sach nay.</Text>
+            <Text style={styles.emptyTitle}>{text.emptyTitle}</Text>
+            <Text style={styles.emptyText}>{text.emptyText}</Text>
           </View>
         ) : (
           <View style={styles.list}>

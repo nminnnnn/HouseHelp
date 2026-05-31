@@ -17,6 +17,7 @@ import { authService, type AuthUser } from '../../lib/auth';
 import { bookingService } from '../../lib/bookings';
 import { housekeeperPreferenceService } from '../../lib/housekeeper-preferences';
 import { housekeeperService, type Housekeeper } from '../../lib/housekeepers';
+import { useLanguage } from '../../lib/language';
 
 function errorMessage(error: any) {
   const value = error?.response?.data?.message || error?.response?.data?.error || error?.message;
@@ -40,6 +41,29 @@ const featured = [
   { title: 'Patient Care', icon: 'medkit-outline' },
   { title: 'Home Moving', icon: 'cube-outline' },
 ];
+
+const copy = {
+  en: {
+    bookAgain: 'Book again',
+    greeting: 'Hi',
+    heroCopy: 'Book home care services quickly with clear pricing.',
+    housekeepersNearYou: 'Housekeepers near you',
+    previousHousekeepers: 'People who worked for you',
+    retry: 'Try again',
+    service: 'Service',
+    seeAll: 'See all',
+  },
+  vi: {
+    bookAgain: 'Đặt lại',
+    greeting: 'Xin chào',
+    heroCopy: 'Đặt dịch vụ chăm sóc nhà cửa nhanh và rõ giá.',
+    housekeepersNearYou: 'Người giúp việc gần bạn',
+    previousHousekeepers: 'Người từng làm cho bạn',
+    retry: 'Thử lại',
+    service: 'Dịch vụ',
+    seeAll: 'Xem tất cả',
+  },
+} as const;
 
 function formatPrice(price?: number | string) {
   const value = Number(price);
@@ -77,8 +101,10 @@ export default function CustomerHome() {
   const [previousHousekeepers, setPreviousHousekeepers] = useState<Housekeeper[]>([]);
   const [user, setUser] = useState<AuthUser | null>(null);
   const { refresh } = useLocalSearchParams<{ refresh?: string }>();
+  const { language } = useLanguage();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const text = copy[language];
 
   const loadData = useCallback(async (refreshing = false) => {
     try {
@@ -144,8 +170,8 @@ export default function CustomerHome() {
           <View style={styles.hero}>
             <View style={styles.heroTop}>
               <View>
-                <Text style={styles.greeting}>Hi {compactName(user?.fullName)}</Text>
-                <Text style={styles.heroCopy}>Dat dich vu cham soc nha cua nhanh va ro gia.</Text>
+                <Text style={styles.greeting}>{text.greeting} {compactName(user?.fullName)}</Text>
+                <Text style={styles.heroCopy}>{text.heroCopy}</Text>
               </View>
               <TouchableOpacity onPress={() => router.push('/notifications')} style={styles.messageButton}>
                 <Ionicons color="#fff" name="notifications-outline" size={26} />
@@ -162,7 +188,7 @@ export default function CustomerHome() {
                   </Text>
                 </View>
                 <TouchableOpacity onPress={() => router.push('/(customer)/bookings')}>
-                  <Text style={styles.bookAgain}>Book again</Text>
+                  <Text style={styles.bookAgain}>{text.bookAgain}</Text>
                 </TouchableOpacity>
               </View>
               <View style={styles.rewardRow}>
@@ -179,9 +205,9 @@ export default function CustomerHome() {
           </View>
 
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Service</Text>
+            <Text style={styles.sectionTitle}>{text.service}</Text>
             <TouchableOpacity>
-              <Text style={styles.seeAll}>See all</Text>
+              <Text style={styles.seeAll}>{text.seeAll}</Text>
             </TouchableOpacity>
           </View>
 
@@ -242,7 +268,7 @@ export default function CustomerHome() {
           {previousHousekeepers.length ? (
             <>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Nguoi tung lam cho ban</Text>
+                <Text style={styles.sectionTitle}>{text.previousHousekeepers}</Text>
               </View>
               <View style={styles.housekeeperList}>
                 {previousHousekeepers.map((item) => (
@@ -260,13 +286,13 @@ export default function CustomerHome() {
             <View style={styles.errorBox}>
               <Text style={styles.errorText}>{error}</Text>
               <TouchableOpacity onPress={() => loadData()} style={styles.retryButton}>
-                <Text style={styles.retryText}>Thu lai</Text>
+                <Text style={styles.retryText}>{text.retry}</Text>
               </TouchableOpacity>
             </View>
           ) : null}
 
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Housekeepers near you</Text>
+            <Text style={styles.sectionTitle}>{text.housekeepersNearYou}</Text>
           </View>
 
           <View style={styles.housekeeperList}>

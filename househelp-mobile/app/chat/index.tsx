@@ -1,12 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CustomerBottomNav } from '../../components/customer-bottom-nav';
 import { authService, type AuthUser } from '../../lib/auth';
+import { useLanguage } from '../../lib/language';
 import { messageService, type Conversation } from '../../lib/messages';
+import type { AppLanguage } from '../../lib/storage';
 
 function formatTime(value?: string) {
   if (!value) return '';
@@ -32,8 +34,26 @@ function initials(name?: string) {
     .toUpperCase();
 }
 
-function ConversationCard({ item, onOpen }: { item: Conversation; onOpen: () => void }) {
+const copy = {
+  en: {
+    customer: 'Customer',
+    emptyCustomer: 'Open a housekeeper profile and tap Message to start chatting.',
+    emptyHousekeeper: 'Conversations with customers will appear here after messages or bookings.',
+    emptyTitle: 'No conversations yet',
+    newMessages: 'new messages',
+  },
+  vi: {
+    customer: 'Khách hàng',
+    emptyCustomer: 'Vào hồ sơ housekeeper và bấm Nhắn tin để bắt đầu trao đổi.',
+    emptyHousekeeper: 'Hội thoại với khách hàng sẽ hiện ở đây sau khi có tin nhắn hoặc booking.',
+    emptyTitle: 'Chưa có hội thoại',
+    newMessages: 'tin nhắn mới',
+  },
+} as const;
+
+function ConversationCard({ item, language, onOpen }: { item: Conversation; language: AppLanguage; onOpen: () => void }) {
   const unreadCount = Number(item.unreadCount || 0);
+  const text = copy[language];
 
   return (
     <TouchableOpacity activeOpacity={0.86} onPress={onOpen} style={styles.card}>
@@ -54,7 +74,7 @@ function ConversationCard({ item, onOpen }: { item: Conversation; onOpen: () => 
         </Text>
 
         <View style={styles.metaRow}>
-          <Text style={styles.role}>{item.otherUserRole === 'housekeeper' ? 'Housekeeper' : 'Khach hang'}</Text>
+          <Text style={styles.role}>{item.otherUserRole === 'housekeeper' ? 'Housekeeper' : text.customer}</Text>
           {unreadCount > 0 ? (
             <Text style={styles.badge}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
           ) : null}
@@ -95,9 +115,10 @@ export default function ChatListScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const { refresh } = useLocalSearchParams<{ refresh?: string }>();
+  const { language } = useLanguage();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const text = copy[language];
 
   const unreadTotal = useMemo(
     () => conversations.reduce((total, item) => total + Number(item.unreadCount || 0), 0),
@@ -134,7 +155,7 @@ export default function ChatListScreen() {
   useFocusEffect(
     useCallback(() => {
       loadConversations();
-    }, [loadConversations, refresh]),
+    }, [loadConversations]),
   );
 
   const openConversation = (conversation: Conversation) => {
@@ -172,7 +193,7 @@ export default function ChatListScreen() {
           <View style={styles.headerRow}>
             <View>
               <Text style={styles.title}>Chat</Text>
-              <Text style={styles.subtitle}>{unreadTotal} tin nhan moi</Text>
+              <Text style={styles.subtitle}>{unreadTotal} {text.newMessages}</Text>
             </View>
             {isHousekeeper ? (
               <View style={styles.rolePill}>
@@ -196,15 +217,15 @@ export default function ChatListScreen() {
           data={conversations}
           keyExtractor={(item) => `${item.bookingId || 'direct'}-${item.otherUserId}`}
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadConversations(true)} tintColor="#ff8128" />}
-          renderItem={({ item }) => <ConversationCard item={item} onOpen={() => openConversation(item)} />}
+          renderItem={({ item }) => <ConversationCard item={item} language={language} onOpen={() => openConversation(item)} />}
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons color="#ff8128" name="chatbubbles-outline" size={64} />
-              <Text style={styles.emptyTitle}>Chua co hoi thoai</Text>
+              <Text style={styles.emptyTitle}>{text.emptyTitle}</Text>
               <Text style={styles.emptyText}>
                 {isHousekeeper
-                  ? 'Hoi thoai voi khach hang se hien o day sau khi co tin nhan hoac booking.'
-                  : 'Vao ho so housekeeper va bam Nhan tin de bat dau trao doi.'}
+                  ? text.emptyHousekeeper
+                  : text.emptyCustomer}
               </Text>
             </View>
           }

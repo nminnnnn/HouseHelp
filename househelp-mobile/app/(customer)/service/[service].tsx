@@ -16,6 +16,35 @@ import { CustomerBottomNav } from '../../../components/customer-bottom-nav';
 import { authService } from '../../../lib/auth';
 import { housekeeperPreferenceService } from '../../../lib/housekeeper-preferences';
 import { housekeeperService, type Housekeeper } from '../../../lib/housekeepers';
+import { useLanguage } from '../../../lib/language';
+import type { AppLanguage } from '../../../lib/storage';
+
+const copy = {
+  en: {
+    available: 'Available',
+    book: 'Book',
+    emptyText: 'This service has no approved housekeepers yet, or the backend service name does not match.',
+    emptyTitle: 'No matching housekeepers',
+    home: 'Home',
+    message: 'Message',
+    monthlySuffix: ' for monthly schedule',
+    retry: 'Try again',
+    subtitle: (count: number) => `${count} matching housekeeper${count === 1 ? '' : 's'}`,
+    unavailable: 'Paused',
+  },
+  vi: {
+    available: 'Nhận việc',
+    book: 'Đặt lịch',
+    emptyText: 'Dịch vụ này chưa có housekeeper đã được duyệt, hoặc tên dịch vụ trong backend chưa khớp.',
+    emptyTitle: 'Chưa có housekeeper phù hợp',
+    home: 'Trang chủ',
+    message: 'Nhắn tin',
+    monthlySuffix: ' cho lịch hàng tháng',
+    retry: 'Thử lại',
+    subtitle: (count: number) => `${count} housekeeper phù hợp`,
+    unavailable: 'Tạm nghỉ',
+  },
+} as const;
 
 function errorMessage(error: any) {
   const value = error?.response?.data?.message || error?.response?.data?.error || error?.message;
@@ -33,11 +62,13 @@ function HousekeeperCard({
   onBook,
   onMessage,
   onOpen,
+  text,
 }: {
   item: Housekeeper;
   onBook: () => void;
   onMessage: () => void;
   onOpen: () => void;
+  text: (typeof copy)[AppLanguage];
 }) {
   return (
     <TouchableOpacity activeOpacity={0.88} onPress={onOpen} style={styles.card}>
@@ -49,7 +80,7 @@ function HousekeeperCard({
         <View style={styles.cardHeader}>
           <Text numberOfLines={1} style={styles.name}>{item.fullName}</Text>
           <Text style={[styles.status, item.available ? styles.available : styles.unavailable]}>
-            {item.available ? 'Nhan viec' : 'Tam nghi'}
+            {item.available ? text.available : text.unavailable}
           </Text>
         </View>
 
@@ -63,10 +94,10 @@ function HousekeeperCard({
         <View style={styles.actionRow}>
           <TouchableOpacity activeOpacity={0.85} onPress={onMessage} style={styles.messageButton}>
             <Ionicons color="#ff8128" name="chatbubble-ellipses-outline" size={18} />
-            <Text style={styles.messageText}>Nhan tin</Text>
+            <Text style={styles.messageText}>{text.message}</Text>
           </TouchableOpacity>
           <TouchableOpacity activeOpacity={0.85} onPress={onBook} style={styles.bookButton}>
-            <Text style={styles.bookText}>Dat lich</Text>
+            <Text style={styles.bookText}>{text.book}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -80,7 +111,9 @@ export default function ServiceHousekeepersScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const router = useRouter();
+  const { language } = useLanguage();
   const insets = useSafeAreaInsets();
+  const text = copy[language];
   const params = useLocalSearchParams<{
     dbService?: string;
     recurring?: string;
@@ -179,12 +212,12 @@ export default function ServiceHousekeepersScreen() {
               style={styles.backButton}
             >
               <Ionicons color="#ff8128" name="chevron-back" size={22} />
-              <Text style={styles.backText}>Home</Text>
+              <Text style={styles.backText}>{text.home}</Text>
             </TouchableOpacity>
             <Text style={styles.title}>{title}</Text>
             <Text style={styles.subtitle}>
-              {filteredHousekeepers.length} housekeeper phu hop
-              {recurring === 'monthly' ? ' cho lich hang thang' : ''}
+              {text.subtitle(filteredHousekeepers.length)}
+              {recurring === 'monthly' ? text.monthlySuffix : ''}
             </Text>
           </View>
 
@@ -192,7 +225,7 @@ export default function ServiceHousekeepersScreen() {
             <View style={styles.errorBox}>
               <Text style={styles.errorText}>{error}</Text>
               <TouchableOpacity onPress={() => loadHousekeepers()} style={styles.retryButton}>
-                <Text style={styles.retryText}>Thu lai</Text>
+                <Text style={styles.retryText}>{text.retry}</Text>
               </TouchableOpacity>
             </View>
           ) : null}
@@ -200,8 +233,8 @@ export default function ServiceHousekeepersScreen() {
           {filteredHousekeepers.length === 0 ? (
             <View style={styles.empty}>
               <Ionicons color="#ff9a28" name="search-outline" size={70} />
-              <Text style={styles.emptyTitle}>Chua co housekeeper phu hop</Text>
-              <Text style={styles.emptyText}>Dich vu nay chua co housekeeper da duoc duyet, hoac ten dich vu trong backend chua khop.</Text>
+              <Text style={styles.emptyTitle}>{text.emptyTitle}</Text>
+              <Text style={styles.emptyText}>{text.emptyText}</Text>
             </View>
           ) : (
             <View style={styles.list}>
@@ -212,6 +245,7 @@ export default function ServiceHousekeepersScreen() {
                   onBook={() => openBooking(housekeeper)}
                   onMessage={() => openChat(housekeeper)}
                   onOpen={() => router.push(`/(customer)/housekeeper/${housekeeper.id}`)}
+                  text={text}
                 />
               ))}
             </View>
