@@ -15,7 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { authService, type AuthUser } from '../../lib/auth';
 import { bookingService, type Booking } from '../../lib/bookings';
-import { housekeeperService, type Housekeeper } from '../../lib/housekeepers';
+import { housekeeperService, type Housekeeper, type HousekeeperEarnings } from '../../lib/housekeepers';
 
 type FilterKey = 'all' | 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'rejected';
 
@@ -116,6 +116,7 @@ export default function HousekeeperDashboard() {
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [earnings, setEarnings] = useState<HousekeeperEarnings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isTogglingAvailability, setIsTogglingAvailability] = useState(false);
@@ -142,12 +143,14 @@ export default function HousekeeperDashboard() {
       }
 
       setUser(storedUser);
-      const [data, housekeeperProfile] = await Promise.all([
+      const [data, housekeeperProfile, housekeeperEarnings] = await Promise.all([
         bookingService.getForUser(storedUser.id),
         housekeeperService.getProfileByUserId(storedUser.id),
+        housekeeperService.getEarnings(storedUser.id).catch(() => null),
       ]);
       setBookings(data);
       setProfile(housekeeperProfile);
+      setEarnings(housekeeperEarnings);
     } catch (loadError: any) {
       setError(loadError.response?.data?.message || loadError.response?.data?.error || 'Khong the tai booking.');
     } finally {
@@ -296,6 +299,9 @@ export default function HousekeeperDashboard() {
           <TouchableOpacity onPress={() => router.push('/profile')} style={styles.profileHeaderButton}>
             <Text style={styles.profileHeaderText}>Tai khoan</Text>
           </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/(housekeeper)/verification')} style={styles.verifyHeaderButton}>
+            <Text style={styles.verifyHeaderText}>Xac minh</Text>
+          </TouchableOpacity>
           <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
             <Text style={styles.logoutText}>Dang xuat</Text>
           </TouchableOpacity>
@@ -309,6 +315,31 @@ export default function HousekeeperDashboard() {
           <View style={styles.summaryBox}>
             <Text style={styles.summaryValue}>{pendingCount}</Text>
             <Text style={styles.summaryLabel}>Cho xu ly</Text>
+          </View>
+        </View>
+
+        <View style={styles.earningsCard}>
+          <View style={styles.earningsHeader}>
+            <Text style={styles.earningsTitle}>Thu nhap & doi soat</Text>
+            <Text style={styles.earningsBadge}>Platform payout</Text>
+          </View>
+          <View style={styles.earningsGrid}>
+            <View style={styles.earningsItem}>
+              <Text style={styles.earningsValue}>{formatPrice(earnings?.pendingPayout)}</Text>
+              <Text style={styles.earningsLabel}>MoMo dang tam giu</Text>
+            </View>
+            <View style={styles.earningsItem}>
+              <Text style={styles.earningsValue}>{formatPrice(earnings?.paidOut)}</Text>
+              <Text style={styles.earningsLabel}>Da chi tra</Text>
+            </View>
+            <View style={styles.earningsItem}>
+              <Text style={styles.earningsValue}>{formatPrice(earnings?.cashCollected)}</Text>
+              <Text style={styles.earningsLabel}>Tien mat da thu</Text>
+            </View>
+            <View style={styles.earningsItem}>
+              <Text style={styles.earningsValue}>{formatPrice(earnings?.cashPlatformFeeDue)}</Text>
+              <Text style={styles.earningsLabel}>Phi platform can doi soat</Text>
+            </View>
           </View>
         </View>
       </View>
@@ -467,6 +498,59 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '800',
   },
+  earningsBadge: {
+    backgroundColor: '#fff1e8',
+    borderRadius: 999,
+    color: '#ff8128',
+    fontSize: 11,
+    fontWeight: '900',
+    overflow: 'hidden',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  earningsCard: {
+    backgroundColor: '#fff',
+    borderColor: '#fed7aa',
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 14,
+    padding: 14,
+  },
+  earningsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 12,
+  },
+  earningsHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  earningsItem: {
+    backgroundColor: '#f8f8fc',
+    borderRadius: 12,
+    flexBasis: '48%',
+    flexGrow: 1,
+    padding: 12,
+  },
+  earningsLabel: {
+    color: '#6b7280',
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 17,
+    marginTop: 4,
+  },
+  earningsTitle: {
+    color: '#172033',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  earningsValue: {
+    color: '#15803d',
+    fontSize: 15,
+    fontWeight: '900',
+  },
   errorBox: {
     backgroundColor: '#fef2f2',
     borderColor: '#fecaca',
@@ -585,6 +669,19 @@ const styles = StyleSheet.create({
   },
   profileHeaderText: {
     color: '#15803d',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  verifyHeaderButton: {
+    alignItems: 'center',
+    backgroundColor: '#ff8128',
+    borderRadius: 8,
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 11,
+  },
+  verifyHeaderText: {
+    color: '#fff',
     fontSize: 13,
     fontWeight: '800',
   },

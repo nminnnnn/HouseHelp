@@ -14,6 +14,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { CustomerBottomNav } from '../../components/customer-bottom-nav';
 import { authService, type AuthUser } from '../../lib/auth';
+import { bookingService } from '../../lib/bookings';
+import { housekeeperPreferenceService } from '../../lib/housekeeper-preferences';
 import { housekeeperService, type Housekeeper } from '../../lib/housekeepers';
 
 function errorMessage(error: any) {
@@ -72,6 +74,7 @@ export default function CustomerHome() {
   const [housekeepers, setHousekeepers] = useState<Housekeeper[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [previousHousekeepers, setPreviousHousekeepers] = useState<Housekeeper[]>([]);
   const [user, setUser] = useState<AuthUser | null>(null);
   const { refresh } = useLocalSearchParams<{ refresh?: string }>();
   const router = useRouter();
@@ -90,7 +93,24 @@ export default function CustomerHome() {
         housekeeperService.getAll(),
       ]);
       setUser(storedUser);
-      setHousekeepers(data);
+
+      if (!storedUser) {
+        setHousekeepers(data);
+        setPreviousHousekeepers([]);
+        return;
+      }
+
+      const [blockedIds, bookings] = await Promise.all([
+        housekeeperPreferenceService.getBlockedIds(storedUser.id),
+        bookingService.getForUser(storedUser.id).catch(() => []),
+      ]);
+      const visibleHousekeepers = housekeeperPreferenceService.filterBlocked(data, blockedIds);
+      const visibleMap = new Map(visibleHousekeepers.map((housekeeper) => [String(housekeeper.id), housekeeper]));
+      const previousIds = Array.from(
+        new Set(bookings.map((booking) => String(booking.housekeeperId)).filter((housekeeperId) => visibleMap.has(housekeeperId))),
+      );
+      setHousekeepers(visibleHousekeepers);
+      setPreviousHousekeepers(previousIds.map((housekeeperId) => visibleMap.get(housekeeperId)!).slice(0, 4));
     } catch (loadError: any) {
       setError(errorMessage(loadError));
     } finally {
@@ -219,9 +239,22 @@ export default function CustomerHome() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Housekeepers near you</Text>
-          </View>
+          {previousHousekeepers.length ? (
+            <>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Nguoi tung lam cho ban</Text>
+              </View>
+              <View style={styles.housekeeperList}>
+                {previousHousekeepers.map((item) => (
+                  <HousekeeperCard
+                    key={`previous-${String(item.id)}`}
+                    item={item}
+                    onPress={() => router.push(`/(customer)/housekeeper/${item.id}`)}
+                  />
+                ))}
+              </View>
+            </>
+          ) : null}
 
           {error ? (
             <View style={styles.errorBox}>
@@ -231,6 +264,10 @@ export default function CustomerHome() {
               </TouchableOpacity>
             </View>
           ) : null}
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Housekeepers near you</Text>
+          </View>
 
           <View style={styles.housekeeperList}>
             {housekeepers.slice(0, 6).map((item) => (

@@ -13,6 +13,8 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CustomerBottomNav } from '../../../components/customer-bottom-nav';
+import { authService } from '../../../lib/auth';
+import { housekeeperPreferenceService } from '../../../lib/housekeeper-preferences';
 import { housekeeperService, type Housekeeper } from '../../../lib/housekeepers';
 
 function errorMessage(error: any) {
@@ -100,8 +102,18 @@ export default function ServiceHousekeepersScreen() {
       }
 
       setError(null);
-      const data = await housekeeperService.getAll(dbService || undefined);
-      setHousekeepers(data);
+      const [storedUser, data] = await Promise.all([
+        authService.checkAuthStatus(),
+        housekeeperService.getAll(dbService || undefined),
+      ]);
+
+      if (!storedUser) {
+        setHousekeepers(data);
+        return;
+      }
+
+      const blockedIds = await housekeeperPreferenceService.getBlockedIds(storedUser.id);
+      setHousekeepers(housekeeperPreferenceService.filterBlocked(data, blockedIds));
     } catch (loadError: any) {
       setError(errorMessage(loadError));
     } finally {

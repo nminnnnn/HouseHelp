@@ -1,11 +1,55 @@
-import React, { useState } from "react";
-import ProfileHeader from "./Profile/ProfileHeader";
-import ProfileInfo from "./Profile/ProfileInfo";
-import HousekeeperInfo from "./Profile/HousekeeperInfo";
+import React, { useEffect, useMemo, useState } from "react";
 import ProfileEdit from "./Profile/ProfileEdit";
+import { authHeaders } from "../api/userApi";
 
 function ProfileView({ user, profileData, loading, editing, onEdit, onCancel, onSave }) {
   const [activeTab, setActiveTab] = useState("personal");
+  const [bookings, setBookings] = useState([]);
+  const [bookingsLoading, setBookingsLoading] = useState(false);
+  const [bookingsError, setBookingsError] = useState("");
+
+  useEffect(() => {
+    if (!user?.id || (activeTab !== "booking" && activeTab !== "statistics")) return;
+
+    let isMounted = true;
+
+    async function loadBookings() {
+      try {
+        setBookingsLoading(true);
+        setBookingsError("");
+        const response = await fetch(`http://localhost:5000/api/bookings/user/${user.id}`, {
+          headers: authHeaders()
+        });
+
+        if (!response.ok) throw new Error("Could not load bookings");
+
+        const data = await response.json();
+        if (isMounted) setBookings(Array.isArray(data) ? data : []);
+      } catch (error) {
+        if (isMounted) setBookingsError(error.message || "Could not load bookings");
+      } finally {
+        if (isMounted) setBookingsLoading(false);
+      }
+    }
+
+    loadBookings();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeTab, user?.id]);
+
+  const bookingStats = useMemo(() => {
+    const total = bookings.length;
+    const completed = bookings.filter((booking) => booking.status === "completed").length;
+    const pending = bookings.filter((booking) => booking.status === "pending").length;
+    const cancelled = bookings.filter((booking) => ["cancelled", "rejected"].includes(booking.status)).length;
+    const revenue = bookings
+      .filter((booking) => booking.status === "completed")
+      .reduce((sum, booking) => sum + Number(booking.totalPrice || 0), 0);
+
+    return { total, completed, pending, cancelled, revenue };
+  }, [bookings]);
 
   if (loading) {
     return (
@@ -34,20 +78,35 @@ function ProfileView({ user, profileData, loading, editing, onEdit, onCancel, on
     );
   }
 
-  // Format member since date
-  const formatMemberSince = (dateString) => {
-    if (!dateString) return "N/A";
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'long' 
-    });
-  };
-
   // Get user initials for avatar
   const getInitials = (name) => {
     if (!name) return "U";
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  };
+
+  const formatDate = (value) => {
+    if (!value) return "N/A";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "N/A";
+    return date.toLocaleDateString("vi-VN");
+  };
+
+  const formatCurrency = (value) => {
+    const amount = Number(value || 0);
+    return amount.toLocaleString("vi-VN", { style: "currency", currency: "VND" });
+  };
+
+  const statusClass = (status) => {
+    const classes = {
+      completed: "bg-green-100 text-green-800",
+      confirmed: "bg-blue-100 text-blue-800",
+      pending: "bg-yellow-100 text-yellow-800",
+      cancelled: "bg-red-100 text-red-800",
+      rejected: "bg-red-100 text-red-800",
+      in_progress: "bg-purple-100 text-purple-800"
+    };
+
+    return classes[status] || "bg-gray-100 text-gray-800";
   };
 
   return (
@@ -270,11 +329,41 @@ function ProfileView({ user, profileData, loading, editing, onEdit, onCancel, on
                 {activeTab === "booking" && (
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900 mb-6">Booking History</h3>
-                    <div className="text-center py-12 text-gray-500">
-                      <svg className="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                      </svg>
-                      <p>Booking history functionality will be implemented here</p>
+                    {bookingsLoading && <div className="text-gray-500">Loading bookings...</div>}
+                    {bookingsError && <div className="text-red-600">{bookingsError}</div>}
+                    {!bookingsLoading && !bookingsError && bookings.length === 0 && (
+                      <div className="text-center py-12 text-gray-500">
+                        <svg className="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                        </svg>
+                        <p>No bookings yet.</p>
+                      </div>
+                    )}
+                    <div className="space-y-4">
+                      {bookings.map((booking) => (
+                        <div key={booking.id} className="border border-gray-200 rounded-lg p-4">
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <div className="font-semibold text-gray-900">{booking.service || "HouseHelp service"}</div>
+                              <div className="text-sm text-gray-600 mt-1">
+                                {user.role === "housekeeper"
+                                  ? `Customer: ${booking.customerName || booking.customerId || "N/A"}`
+                                  : `Housekeeper: ${booking.housekeeperName || booking.housekeeperId || "N/A"}`}
+                              </div>
+                              <div className="text-sm text-gray-600 mt-1">
+                                {formatDate(booking.startDate)} {booking.time ? `- ${booking.time}` : ""}
+                              </div>
+                              <div className="text-sm text-gray-600 mt-1">{booking.location || booking.customerAddress || "No address"}</div>
+                            </div>
+                            <div className="text-right">
+                              <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold capitalize ${statusClass(booking.status)}`}>
+                                {booking.status || "pending"}
+                              </span>
+                              <div className="text-sm font-semibold text-green-700 mt-3">{formatCurrency(booking.totalPrice)}</div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -282,12 +371,36 @@ function ProfileView({ user, profileData, loading, editing, onEdit, onCancel, on
                 {activeTab === "statistics" && user.role === "housekeeper" && (
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900 mb-6">Statistics</h3>
-                    <div className="text-center py-12 text-gray-500">
-                      <svg className="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                      </svg>
-                      <p>Statistics functionality will be implemented here</p>
-                    </div>
+                    {bookingsLoading && <div className="text-gray-500">Loading statistics...</div>}
+                    {bookingsError && <div className="text-red-600">{bookingsError}</div>}
+                    {!bookingsLoading && !bookingsError && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="border border-gray-200 rounded-lg p-4">
+                          <div className="text-sm text-gray-600">Total bookings</div>
+                          <div className="text-2xl font-bold text-gray-900 mt-1">{bookingStats.total}</div>
+                        </div>
+                        <div className="border border-gray-200 rounded-lg p-4">
+                          <div className="text-sm text-gray-600">Completed jobs</div>
+                          <div className="text-2xl font-bold text-green-700 mt-1">{bookingStats.completed}</div>
+                        </div>
+                        <div className="border border-gray-200 rounded-lg p-4">
+                          <div className="text-sm text-gray-600">Pending requests</div>
+                          <div className="text-2xl font-bold text-yellow-700 mt-1">{bookingStats.pending}</div>
+                        </div>
+                        <div className="border border-gray-200 rounded-lg p-4">
+                          <div className="text-sm text-gray-600">Completed revenue</div>
+                          <div className="text-2xl font-bold text-blue-700 mt-1">{formatCurrency(bookingStats.revenue)}</div>
+                        </div>
+                        <div className="border border-gray-200 rounded-lg p-4">
+                          <div className="text-sm text-gray-600">Cancelled or rejected</div>
+                          <div className="text-2xl font-bold text-red-700 mt-1">{bookingStats.cancelled}</div>
+                        </div>
+                        <div className="border border-gray-200 rounded-lg p-4">
+                          <div className="text-sm text-gray-600">Average rating</div>
+                          <div className="text-2xl font-bold text-gray-900 mt-1">{profileData?.housekeeper?.rating || "0.0"}</div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

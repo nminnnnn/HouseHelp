@@ -127,6 +127,7 @@ const db = mysql.createConnection({
 db.connect(err => {
   if (err) throw err;
   console.log('MySQL Connected!');
+  ensurePaymentSettlementColumns();
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'househelp_dev_secret_change_me';
@@ -134,6 +135,42 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
 
 const publicFileUrl = (filePath) => `${PUBLIC_BASE_URL}${filePath}`;
+const PLATFORM_PAYMENT_ACCOUNT = process.env.PLATFORM_MOMO_ACCOUNT || 'HouseHelp Platform MoMo';
+const PLATFORM_SERVICE_FEE = Number(process.env.PLATFORM_SERVICE_FEE || 50000);
+
+function normalizePaymentMethod(method) {
+  return method === 'momo' ? 'momo' : 'cash';
+}
+
+function paymentBreakdown(amount) {
+  const total = Number(amount || 0);
+  const platformFee = Math.min(PLATFORM_SERVICE_FEE, Math.max(total, 0));
+  return {
+    amount: total,
+    platformFee,
+    housekeeperAmount: Math.max(total - platformFee, 0),
+  };
+}
+
+function ensurePaymentSettlementColumns() {
+  const statements = [
+    "ALTER TABLE payments MODIFY method ENUM('cash','momo','credit_card','bank_transfer','e_wallet') NOT NULL",
+    "ALTER TABLE payments ADD COLUMN platformFee DECIMAL(10,2) DEFAULT 0",
+    "ALTER TABLE payments ADD COLUMN housekeeperAmount DECIMAL(10,2) DEFAULT 0",
+    "ALTER TABLE payments ADD COLUMN settlementStatus ENUM('pending','holding','ready','paid','cash_collected','cancelled') DEFAULT 'pending'",
+    "ALTER TABLE payments ADD COLUMN platformAccount VARCHAR(100)",
+    "ALTER TABLE payments ADD COLUMN settledAt DATETIME",
+    "ALTER TABLE payments ADD COLUMN payoutReference VARCHAR(100)"
+  ];
+
+  statements.forEach((sql) => {
+    db.query(sql, (err) => {
+      if (err && err.code !== 'ER_DUP_FIELDNAME') {
+        console.error('Payment settlement migration warning:', err.message);
+      }
+    });
+  });
+}
 
 const ACCESS_POLICIES = [
   { methods: ['POST'], pattern: /^\/api\/register$/, public: true },
@@ -152,6 +189,7 @@ const ACCESS_POLICIES = [
   { methods: ['POST'], pattern: /^\/api\/quick-booking\/create$/, roles: ['customer'] },
   { methods: ['POST'], pattern: /^\/api\/bookings$/, roles: ['customer'] },
   { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/cancel$/, roles: ['customer'] },
+  { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/confirm-payment$/, roles: ['customer'] },
   { methods: ['POST'], pattern: /^\/api\/reviews$/, roles: ['customer'] },
   { methods: ['POST'], pattern: /^\/api\/reports$/, roles: ['customer'] },
   { methods: ['POST'], pattern: /^\/api\/coupons\/use$/, roles: ['customer'] },
@@ -161,6 +199,7 @@ const ACCESS_POLICIES = [
   { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/reject$/, roles: ['housekeeper'] },
   { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/complete$/, roles: ['housekeeper'] },
   { methods: ['PUT'], pattern: /^\/api\/housekeepers\/\d+\/availability$/, roles: ['housekeeper', 'admin'] },
+  { methods: ['GET'], pattern: /^\/api\/housekeepers\/\d+\/earnings$/, roles: ['housekeeper', 'admin'] },
   { methods: ['POST'], pattern: /^\/api\/verification\/submit$/, roles: ['housekeeper'] },
 
   { methods: ['GET'], pattern: /^\/api\/users$/, roles: ['admin'] },
@@ -317,7 +356,7 @@ app.get('/api/housekeepers', (req, res) => {
   
   function executeMainQuery(serviceIds) {
     let sql = `
-      SELECT h.*, u.fullName, u.email, u.phone, u.isVerified, u.isApproved,
+      SELECT h.*, u.fullName, u.email, u.phone, u.avatar, u.address, u.city, u.district, u.isVerified, u.isApproved,
              COALESCE(AVG(r.rating), 0) as avgRating,
              COUNT(r.id) as reviewCount
       FROM housekeepers h
@@ -345,7 +384,7 @@ app.get('/api/housekeepers', (req, res) => {
     if (where.length) {
       sql += ` WHERE ` + where.join(" AND ");
     }
-    sql += ` GROUP BY h.id, h.userId, h.services, h.price, h.available, h.description, u.fullName, u.email, u.phone`;
+    sql += ` GROUP BY h.id, h.userId, h.rating, h.totalReviews, h.services, h.price, h.priceType, h.available, h.description, h.experience, h.skills, h.certifications, h.workingDays, h.workingHours, h.serviceRadius, h.profileImages, h.hasInsurance, h.completedJobs, h.responseTime, h.isTopRated, h.backgroundChecked, h.insured, h.createdAt, h.updatedAt, u.fullName, u.email, u.phone, u.avatar, u.address, u.city, u.district, u.isVerified, u.isApproved`;
     
     // BỎ HAVING COUNT(DISTINCT hs.serviceId) = ... để filter OR
     if (exactRating) {
@@ -423,7 +462,7 @@ app.put('/api/housekeepers/:userId/availability', (req, res) => {
       }
 
       db.query(
-        'SELECT h.*, u.fullName, u.email, u.phone, u.avatar FROM housekeepers h JOIN users u ON h.userId = u.id WHERE h.userId = ?',
+        'SELECT h.*, u.fullName, u.email, u.phone, u.avatar, u.address, u.city, u.district, u.isVerified, u.isApproved, u.avatar FROM housekeepers h JOIN users u ON h.userId = u.id WHERE h.userId = ?',
         [userId],
         (selectErr, rows) => {
           if (selectErr) {
@@ -442,14 +481,14 @@ app.get('/api/housekeepers/:id', (req, res) => {
   const housekeeperId = req.params.id;
   
   let sql = `
-    SELECT h.*, u.fullName, u.email, u.phone,
+    SELECT h.*, u.fullName, u.email, u.phone, u.avatar, u.address, u.city, u.district, u.isVerified, u.isApproved,
            COALESCE(AVG(r.rating), 0) as avgRating,
            COUNT(r.id) as reviewCount
     FROM housekeepers h
     JOIN users u ON h.userId = u.id
     LEFT JOIN reviews r ON h.id = r.housekeeperId
     WHERE h.id = ? OR h.userId = ?
-    GROUP BY h.id, h.userId, h.services, h.price, h.available, h.description, u.fullName, u.email, u.phone
+    GROUP BY h.id, h.userId, h.rating, h.totalReviews, h.services, h.price, h.priceType, h.available, h.description, h.experience, h.skills, h.certifications, h.workingDays, h.workingHours, h.serviceRadius, h.profileImages, h.hasInsurance, h.completedJobs, h.responseTime, h.isTopRated, h.backgroundChecked, h.insured, h.createdAt, h.updatedAt, u.fullName, u.email, u.phone, u.avatar, u.address, u.city, u.district, u.isVerified, u.isApproved
   `;
   
   db.query(sql, [housekeeperId, housekeeperId], (err, results) => {
@@ -469,11 +508,10 @@ app.get('/api/housekeepers/:id', (req, res) => {
       initials: initials,
       rating: parseFloat(hk.avgRating).toFixed(1),
       reviewCount: hk.reviewCount,
-      avatar: initials,
-      experience: hk.description || "Professional housekeeper",
-      backgroundChecked: true,
-      insured: true,
-      location: hk.address || "Location not specified",
+      avatar: hk.avatar,
+      backgroundChecked: Boolean(hk.backgroundChecked === 1 || hk.backgroundChecked === true),
+      insured: Boolean(hk.insured === 1 || hk.insured === true || hk.hasInsurance === 1 || hk.hasInsurance === true),
+      location: [hk.district, hk.city].filter(Boolean).join(', ') || hk.address || "Location not specified",
       bio: hk.description || "Professional housekeeper with experience.",
       phoneNumber: hk.phone,
       availability: hk.available ? "Available today" : "Not available"
@@ -1458,12 +1496,12 @@ app.post('/api/auth/google', (req, res) => {
     role = 'customer' 
   } = req.body;
 
-  console.log('🔐 Google OAuth attempt:', { googleId, email, name, role });
+  console.log('?? Google OAuth attempt:', { googleId, email, name, role });
 
   if (!googleId || !email || !name) {
     return res.status(400).json({ 
-      error: 'Thiếu thông tin Google OAuth',
-      message: 'Google ID, email và tên là bắt buộc' 
+      error: 'Thi?u th�ng tin Google OAuth',
+      message: 'Google ID, email v� t�n l� b?t bu?c' 
     });
   }
 
@@ -1471,13 +1509,13 @@ app.post('/api/auth/google', (req, res) => {
   db.query('SELECT * FROM users WHERE googleId = ?', [googleId], (err, googleResults) => {
     if (err) {
       console.error('Database error checking Google ID:', err);
-      return res.status(500).json({ error: 'Lỗi hệ thống', message: 'Không thể xác thực Google' });
+      return res.status(500).json({ error: 'L?i h? th?ng', message: 'Kh�ng th? x�c th?c Google' });
     }
 
     if (googleResults.length > 0) {
       // User exists with Google ID - login
       const user = googleResults[0];
-      console.log('✅ Google login successful for existing user:', user.id);
+      console.log('? Google login successful for existing user:', user.id);
       
       // Update last active time and profile picture
       db.query('UPDATE users SET lastActiveAt = NOW(), profilePicture = ? WHERE id = ?', 
@@ -1497,7 +1535,7 @@ app.post('/api/auth/google', (req, res) => {
       
       return res.json({
         success: true,
-        message: 'Đăng nhập Google thành công',
+        message: '�ang nh?p Google th�nh c�ng',
         accessToken: signAccessToken(user),
         user: user,
         isNewUser: false
@@ -1508,7 +1546,7 @@ app.post('/api/auth/google', (req, res) => {
     db.query('SELECT * FROM users WHERE email = ?', [email], (err, emailResults) => {
       if (err) {
         console.error('Database error checking email:', err);
-        return res.status(500).json({ error: 'Lỗi hệ thống', message: 'Không thể kiểm tra email' });
+        return res.status(500).json({ error: 'L?i h? th?ng', message: 'Kh�ng th? ki?m tra email' });
       }
 
       if (emailResults.length > 0) {
@@ -1517,8 +1555,8 @@ app.post('/api/auth/google', (req, res) => {
         
         if (existingUser.authProvider === 'local') {
           return res.status(409).json({ 
-            error: 'Email đã được đăng ký',
-            message: 'Email này đã được đăng ký bằng phương thức khác. Vui lòng đăng nhập bằng email và mật khẩu.' 
+            error: 'Email d� du?c dang k�',
+            message: 'Email n�y d� du?c dang k� b?ng phuong th?c kh�c. Vui l�ng dang nh?p b?ng email v� m?t kh?u.' 
           });
         }
         
@@ -1527,17 +1565,17 @@ app.post('/api/auth/google', (req, res) => {
           [googleId, picture, existingUser.id], (linkErr) => {
             if (linkErr) {
               console.error('Error linking Google account:', linkErr);
-              return res.status(500).json({ error: 'Lỗi liên kết tài khoản Google', message: linkErr.message });
+              return res.status(500).json({ error: 'L?i li�n k?t t�i kho?n Google', message: linkErr.message });
             }
             
-            console.log('✅ Google account linked to existing user:', existingUser.id);
+            console.log('? Google account linked to existing user:', existingUser.id);
             
             // Remove password from response
             delete existingUser.password;
             
             res.json({
               success: true,
-              message: 'Liên kết tài khoản Google thành công',
+              message: 'Li�n k?t t�i kho?n Google th�nh c�ng',
               accessToken: signAccessToken({ ...existingUser, role: existingUser.role, email: existingUser.email }),
               user: { ...existingUser, googleId, profilePicture: picture },
               isNewUser: false
@@ -1557,23 +1595,23 @@ app.post('/api/auth/google', (req, res) => {
       db.query(sql, [name, email, googleId, picture, role, isApproved], (err, result) => {
         if (err) {
           console.error('Database error creating Google user:', err);
-          return res.status(500).json({ error: 'Lỗi tạo tài khoản Google', message: err.message });
+          return res.status(500).json({ error: 'L?i t?o t�i kho?n Google', message: err.message });
         }
         
         const userId = result.insertId;
-        console.log('✅ Google user created with ID:', userId);
+        console.log('? Google user created with ID:', userId);
         
         // If housekeeper, create housekeeper record
         if (role === 'housekeeper') {
           const housekeeperSql = `INSERT INTO housekeepers 
             (userId, rating, services, price, available, description, experience) 
-            VALUES (?, 0, '', 50000, 1, 'Người giúp việc mới tham gia qua Google', 0)`;
+            VALUES (?, 0, '', 50000, 1, 'Ngu?i gi�p vi?c m?i tham gia qua Google', 0)`;
           
           db.query(housekeeperSql, [userId], (err, housekeeperResult) => {
             if (err) {
               console.error('Error creating Google housekeeper record:', err);
             } else {
-              console.log('✅ Google housekeeper record created');
+              console.log('? Google housekeeper record created');
             }
           });
         }
@@ -1587,7 +1625,7 @@ app.post('/api/auth/google', (req, res) => {
         
         res.status(201).json({ 
           success: true,
-          message: 'Đăng ký Google thành công! Chào mừng bạn đến với HouseHelp.',
+          message: '�ang k� Google th�nh c�ng! Ch�o m?ng b?n d?n v?i HouseHelp.',
           accessToken: signAccessToken({ id: userId, role, email }),
           user: { 
             id: userId, 
@@ -1614,15 +1652,15 @@ app.post('/api/auth/google/unlink', (req, res) => {
   
   if (!effectiveUserId) {
     return res.status(400).json({ 
-      error: 'Thiếu thông tin userId',
-      message: 'Cần có userId để hủy liên kết Google' 
+      error: 'Thi?u th�ng tin userId',
+      message: 'C?n c� userId d? h?y li�n k?t Google' 
     });
   }
 
   if (req.user && req.user.role !== 'admin' && Number(effectiveUserId) !== Number(req.user.id)) {
     return res.status(403).json({
       error: 'Forbidden',
-      message: 'Bạn chỉ có thể hủy liên kết tài khoản của chính mình'
+      message: 'B?n ch? c� th? h?y li�n k?t t�i kho?n c?a ch�nh m�nh'
     });
   }
 
@@ -1630,19 +1668,19 @@ app.post('/api/auth/google/unlink', (req, res) => {
   db.query('SELECT password, authProvider FROM users WHERE id = ?', [effectiveUserId], (err, results) => {
     if (err) {
       console.error('Database error checking user auth:', err);
-      return res.status(500).json({ error: 'Lỗi hệ thống', message: 'Không thể kiểm tra thông tin xác thực' });
+      return res.status(500).json({ error: 'L?i h? th?ng', message: 'Kh�ng th? ki?m tra th�ng tin x�c th?c' });
     }
     
     if (results.length === 0) {
-      return res.status(404).json({ error: 'Người dùng không tồn tại' });
+      return res.status(404).json({ error: 'Ngu?i d�ng kh�ng t?n t?i' });
     }
     
     const user = results[0];
     
     if (user.authProvider === 'google' && !user.password) {
       return res.status(400).json({ 
-        error: 'Không thể hủy liên kết',
-        message: 'Bạn cần đặt mật khẩu trước khi hủy liên kết tài khoản Google' 
+        error: 'Kh�ng th? h?y li�n k?t',
+        message: 'B?n c?n d?t m?t kh?u tru?c khi h?y li�n k?t t�i kho?n Google' 
       });
     }
     
@@ -1651,20 +1689,20 @@ app.post('/api/auth/google/unlink', (req, res) => {
       [effectiveUserId], (unlinkErr) => {
         if (unlinkErr) {
           console.error('Error unlinking Google account:', unlinkErr);
-          return res.status(500).json({ error: 'Lỗi hủy liên kết Google', message: unlinkErr.message });
+          return res.status(500).json({ error: 'L?i h?y li�n k?t Google', message: unlinkErr.message });
         }
         
-        console.log('✅ Google account unlinked for user:', effectiveUserId);
+        console.log('? Google account unlinked for user:', effectiveUserId);
         
         res.json({
           success: true,
-          message: 'Hủy liên kết tài khoản Google thành công'
+          message: 'H?y li�n k?t t�i kho?n Google th�nh c�ng'
         });
       });
   });
 });
 
-// API: Lấy danh sách tất cả users (cho Admin Dashboard)
+// API: L?y danh s�ch t?t c? users (cho Admin Dashboard)
 app.get('/api/users', (req, res) => {
   const { role, verified, approved, page = 1, limit = 50 } = req.query;
   let sql = 'SELECT id, fullName, email, phone, role, isVerified, isApproved, createdAt, lastActiveAt FROM users WHERE 1=1';
@@ -1699,7 +1737,7 @@ app.get('/api/users', (req, res) => {
       return res.status(500).json({ error: err });
     }
 
-    // Đếm tổng số users để tính pagination
+    // �?m t?ng s? users d? t�nh pagination
     let countSql = 'SELECT COUNT(*) as total FROM users WHERE 1=1';
     const countParams = [];
 
@@ -1739,7 +1777,7 @@ app.get('/api/users', (req, res) => {
   });
 });
 
-// API: Lấy thông tin user theo id
+// API: L?y th�ng tin user theo id
 app.get('/api/users/:id', (req, res) => {
   db.query('SELECT * FROM users WHERE id = ?', [req.params.id], (err, results) => {
     if (err) return res.status(500).json({ error: err });
@@ -1748,7 +1786,7 @@ app.get('/api/users/:id', (req, res) => {
   });
 });
 
-// API: Lấy profile đầy đủ của user
+// API: L?y profile d?y d? c?a user
 app.get('/api/users/:id/profile', (req, res) => {
   db.query('SELECT * FROM users WHERE id = ?', [req.params.id], (err, results) => {
     if (err) return res.status(500).json({ error: err });
@@ -1757,7 +1795,7 @@ app.get('/api/users/:id/profile', (req, res) => {
   });
 });
 
-// API: Cập nhật profile user
+// API: C?p nh?t profile user
 app.put('/api/users/:id/profile', (req, res) => {
   const userId = req.params.id;
   const {
@@ -1802,7 +1840,7 @@ app.put('/api/users/:id/profile', (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
     
-    // Trả về thông tin user đã cập nhật
+    // Tr? v? th�ng tin user d� c?p nh?t
     db.query('SELECT * FROM users WHERE id = ?', [userId], (err, results) => {
       if (err) {
         console.error('Select Error:', err);
@@ -1814,7 +1852,7 @@ app.put('/api/users/:id/profile', (req, res) => {
   });
 });
 
-// API: Lấy profile housekeeper
+// API: L?y profile housekeeper
 app.get('/api/housekeepers/:userId/profile', (req, res) => {
   const userId = req.params.userId;
   
@@ -1832,7 +1870,7 @@ app.get('/api/housekeepers/:userId/profile', (req, res) => {
   });
 });
 
-// API: Cập nhật profile housekeeper
+// API: C?p nh?t profile housekeeper
 app.put('/api/housekeepers/:userId/profile', (req, res) => {
   const userId = req.params.userId;
   const {
@@ -1857,7 +1895,7 @@ app.put('/api/housekeepers/:userId/profile', (req, res) => {
     if (err) return res.status(500).json({ error: err });
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Housekeeper not found' });
     
-    // Trả về thông tin housekeeper đã cập nhật
+    // Tr? v? th�ng tin housekeeper d� c?p nh?t
     const selectSql = `
       SELECT h.*, u.fullName, u.email, u.phone, u.avatar
       FROM housekeepers h
@@ -1872,7 +1910,7 @@ app.put('/api/housekeepers/:userId/profile', (req, res) => {
   });
 });
 
-// API: Lấy danh sách tất cả bookings (cho Admin Dashboard)
+// API: L?y danh s�ch t?t c? bookings (cho Admin Dashboard)
 app.get('/api/bookings', (req, res) => {
   const { status, housekeeper, customer, date, month, year, page = 1, limit = 50 } = req.query;
   
@@ -1934,7 +1972,7 @@ app.get('/api/bookings', (req, res) => {
       return res.status(500).json({ error: err });
     }
 
-    // Đếm tổng số bookings để tính pagination
+    // �?m t?ng s? bookings d? t�nh pagination
     let countSql = 'SELECT COUNT(*) as total FROM bookings b WHERE 1=1';
     const countParams = [];
 
@@ -1985,7 +2023,7 @@ app.get('/api/bookings', (req, res) => {
   });
 });
 
-// API: Quick Booking - Tìm housekeeper phù hợp
+// API: Quick Booking - T�m housekeeper ph� h?p
 app.post('/api/quick-booking/find-matches', (req, res) => {
   const { 
     service, 
@@ -1998,12 +2036,12 @@ app.post('/api/quick-booking/find-matches', (req, res) => {
     customerId 
   } = req.body;
 
-  console.log('🔍 Quick booking search request:', {
+  console.log('?? Quick booking search request:', {
     service, date, time, duration, location, maxPrice, urgency, customerId
   });
 
   // Build query to find matching housekeepers
-  // Sử dụng cột h.services trực tiếp thay vì JOIN với bảng housekeeper_services
+  // S? d?ng c?t h.services tr?c ti?p thay v� JOIN v?i b?ng housekeeper_services
   let sql = `
     SELECT h.*, u.fullName, u.email, u.phone, u.isVerified, u.isApproved,
            COALESCE(AVG(r.rating), 4.0) as avgRating,
@@ -2018,7 +2056,7 @@ app.post('/api/quick-booking/find-matches', (req, res) => {
 
   const params = [maxPrice];
 
-  // Add service filter if specified - tìm trong cột h.services
+  // Add service filter if specified - t�m trong c?t h.services
   if (service) {
     sql += ` AND h.services LIKE ?`;
     params.push(`%${service}%`);
@@ -2038,8 +2076,8 @@ app.post('/api/quick-booking/find-matches', (req, res) => {
 
   params.push(urgency, urgency);
 
-  console.log('📝 SQL Query:', sql);
-  console.log('📝 Params:', params);
+  console.log('?? SQL Query:', sql);
+  console.log('?? Params:', params);
 
   db.query(sql, params, (err, results) => {
     if (err) {
@@ -2049,7 +2087,7 @@ app.post('/api/quick-booking/find-matches', (req, res) => {
       return res.status(500).json({ error: 'Failed to find matches' });
     }
 
-    console.log(`✅ Found ${results.length} matching housekeepers`);
+    console.log(`? Found ${results.length} matching housekeepers`);
     if (results.length > 0) {
       console.log('First match:', results[0].fullName, '- Services:', results[0].services);
     }
@@ -2086,7 +2124,7 @@ app.post('/api/quick-booking/find-matches', (req, res) => {
   });
 });
 
-// API: Quick Booking - Tạo booking nhanh
+// API: Quick Booking - T?o booking nhanh
 app.post('/api/quick-booking/create', (req, res) => {
   const { 
     customerId,
@@ -2106,7 +2144,7 @@ app.post('/api/quick-booking/create', (req, res) => {
     isQuickBooking = true
   } = req.body;
 
-  console.log('⚡ Creating quick booking:', {
+  console.log('? Creating quick booking:', {
     customerId, housekeeperId, service, date, time, urgency
   });
 
@@ -2148,7 +2186,7 @@ app.post('/api/quick-booking/create', (req, res) => {
     const bookingId = result.insertId;
     const newBooking = { ...bookingData, id: bookingId };
 
-    console.log('⚡ QUICK BOOKING CREATED:');
+    console.log('? QUICK BOOKING CREATED:');
     console.log('- Booking ID:', bookingId);
     console.log('- Customer ID:', customerId);
     console.log('- Housekeeper ID:', housekeeperId);
@@ -2157,16 +2195,16 @@ app.post('/api/quick-booking/create', (req, res) => {
 
     // Send urgent notification to housekeeper for quick bookings
     const notificationTitle = urgency === 'asap' 
-      ? '🚨 Đơn đặt lịch KHẨN CẤP!' 
+      ? '?? �on d?t l?ch KH?N C?P!' 
       : urgency === 'urgent' 
-        ? '⚡ Đơn đặt lịch GẤP!'
-        : '📋 Đơn đặt lịch nhanh mới';
+        ? '? �on d?t l?ch G?P!'
+        : '?? �on d?t l?ch nhanh m?i';
 
     const notificationMessage = urgency === 'asap'
-      ? `${customerName} cần dịch vụ ${service} NGAY LẬP TỨC!`
+      ? `${customerName} c?n d?ch v? ${service} NGAY L?P T?C!`
       : urgency === 'urgent'
-        ? `${customerName} cần dịch vụ ${service} trong 6h tới`
-        : `${customerName} đã đặt lịch dịch vụ ${service} (Đặt nhanh)`;
+        ? `${customerName} c?n d?ch v? ${service} trong 6h t?i`
+        : `${customerName} d� d?t l?ch d?ch v? ${service} (�?t nhanh)`;
 
     const notificationToHousekeeper = {
       id: Date.now(),
@@ -2188,9 +2226,9 @@ app.post('/api/quick-booking/create', (req, res) => {
       }
 
       const housekeeperUserId = housekeeperResults[0].userId;
-      console.log('📤 Sending quick booking notification to housekeeper userId:', housekeeperUserId);
+      console.log('?? Sending quick booking notification to housekeeper userId:', housekeeperUserId);
 
-      // Store notification in database (cột read_status, không dùng isRead)
+      // Store notification in database (c?t read_status, kh�ng d�ng isRead)
       const notificationSql = `INSERT INTO notifications 
         (userId, type, title, message, bookingId, urgency, data, createdAt, read_status) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
@@ -2212,7 +2250,7 @@ app.post('/api/quick-booking/create', (req, res) => {
           console.error('Error saving notification:', err);
           return res.json({ success: true, booking: newBooking, id: bookingId });
         }
-        console.log('✅ Quick booking notification saved to database');
+        console.log('? Quick booking notification saved to database');
 
         if (io) {
           sendNotificationToUser(housekeeperUserId, {
@@ -2220,7 +2258,7 @@ app.post('/api/quick-booking/create', (req, res) => {
             id: notificationResult?.insertId || notificationToHousekeeper.id,
             userId: housekeeperUserId
           });
-          console.log('📡 Quick booking notification sent via WebSocket');
+          console.log('?? Quick booking notification sent via WebSocket');
         }
 
         res.json({ success: true, booking: newBooking, id: bookingId });
@@ -2229,7 +2267,7 @@ app.post('/api/quick-booking/create', (req, res) => {
   });
 });
 
-// API: Đặt lịch (Regular booking)
+// API: �?t l?ch (Regular booking)
 app.post('/api/bookings', (req, res) => {
   const { 
     customerId, 
@@ -2283,7 +2321,7 @@ app.post('/api/bookings', (req, res) => {
     const bookingId = result.insertId;
     const newBooking = { ...bookingData, id: bookingId };
 
-    console.log('🎯 NEW BOOKING CREATED:');
+    console.log('?? NEW BOOKING CREATED:');
     console.log('- Booking ID:', bookingId);
     console.log('- Customer ID:', customerId);
     console.log('- Housekeeper ID:', housekeeperId);
@@ -2294,8 +2332,8 @@ app.post('/api/bookings', (req, res) => {
     const notificationToHousekeeper = {
       id: Date.now(),
       type: 'new_booking',
-      title: 'Đơn đặt lịch mới',
-      message: `${customerName} đã đặt lịch dịch vụ ${service}`,
+      title: '�on d?t l?ch m?i',
+      message: `${customerName} d� d?t l?ch d?ch v? ${service}`,
       bookingId: bookingId,
       booking: newBooking,
       timestamp: new Date(),
@@ -2303,14 +2341,14 @@ app.post('/api/bookings', (req, res) => {
     };
 
     // Get housekeeper's userId from housekeeperId
-    console.log('🔍 Looking up housekeeper userId for housekeeperId:', housekeeperId);
+    console.log('?? Looking up housekeeper userId for housekeeperId:', housekeeperId);
     db.query('SELECT userId FROM housekeepers WHERE id = ?', [housekeeperId], (err, hkResults) => {
-      console.log('📝 Housekeeper query results:', hkResults);
+      console.log('?? Housekeeper query results:', hkResults);
       
       if (!err && hkResults.length > 0) {
         const housekeeperUserId = hkResults[0].userId;
-        console.log('✅ Found housekeeper userId:', housekeeperUserId);
-        console.log('📤 Sending notification to userId:', housekeeperUserId);
+        console.log('? Found housekeeper userId:', housekeeperUserId);
+        console.log('?? Sending notification to userId:', housekeeperUserId);
         
         // Save notification to database
         const notifSql = `INSERT INTO notifications (userId, type, title, message, bookingId, data, createdAt, read_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
@@ -2336,7 +2374,7 @@ app.post('/api/bookings', (req, res) => {
           console.log('Notification sent after save:', sent);
         });
 
-        // Không tự tạo tin nhắn thay housekeeper; housekeeper sẽ phản hồi sau khi xem/nhận đơn.
+        // Kh�ng t? t?o tin nh?n thay housekeeper; housekeeper s? ph?n h?i sau khi xem/nh?n don.
       }
     });
 
@@ -2428,12 +2466,12 @@ app.post('/api/bookings/:id/cancel', (req, res) => {
     );
   });
 });
-// API: Housekeeper xác nhận booking
+// API: Housekeeper x�c nh?n booking
 app.post('/api/bookings/:id/confirm', (req, res) => {
   const bookingId = req.params.id;
-  const { housekeeperId } = req.body; // Lấy housekeeperId từ request body
+  const { housekeeperId } = req.body; // L?y housekeeperId t? request body
   
-  // Kiểm tra trạng thái xác minh và phê duyệt của housekeeper trước khi cho phép xác nhận
+  // Ki?m tra tr?ng th�i x�c minh v� ph� duy?t c?a housekeeper tru?c khi cho ph�p x�c nh?n
   db.query(
     `SELECT u.id AS housekeeperUserId, u.isVerified, u.isApproved
      FROM bookings b
@@ -2444,21 +2482,21 @@ app.post('/api/bookings/:id/confirm', (req, res) => {
     (verifyErr, verifyResults) => {
     if (verifyErr) {
       console.error('Error checking housekeeper verification:', verifyErr);
-      return res.status(500).json({ error: 'Lỗi kiểm tra trạng thái xác minh' });
+      return res.status(500).json({ error: 'L?i ki?m tra tr?ng th�i x�c minh' });
     }
     
     if (verifyResults.length === 0) {
-      return res.status(404).json({ error: 'Không tìm thấy booking' });
+      return res.status(404).json({ error: 'Kh�ng t�m th?y booking' });
     }
     
     const housekeeper = verifyResults[0];
     if (!sameUser(housekeeper.housekeeperUserId, req.user.id)) {
-      return res.status(403).json({ error: 'Bạn chỉ có thể xác nhận booking của chính mình' });
+      return res.status(403).json({ error: 'B?n ch? c� th? x�c nh?n booking c?a ch�nh m�nh' });
     }
 
     if (!housekeeper.isVerified || !housekeeper.isApproved) {
       return res.status(403).json({ 
-        error: 'Bạn cần được xác minh và phê duyệt bởi admin trước khi có thể xác nhận booking',
+        error: 'B?n c?n du?c x�c minh v� ph� duy?t b?i admin tru?c khi c� th? x�c nh?n booking',
         needsVerification: !housekeeper.isVerified,
         needsApproval: !housekeeper.isApproved
       });
@@ -2487,15 +2525,15 @@ app.post('/api/bookings/:id/confirm', (req, res) => {
       const notificationToCustomer = {
         id: Date.now(),
         type: 'booking_confirmed',
-        title: 'Đặt lịch đã được xác nhận',
-        message: `${booking.housekeeperName} đã xác nhận đơn đặt lịch của bạn`,
+        title: '�?t l?ch d� du?c x�c nh?n',
+        message: `${booking.housekeeperName} d� x�c nh?n don d?t l?ch c?a b?n`,
         bookingId: bookingId,
         booking: booking,
         timestamp: new Date(),
         read: false
       };
 
-      console.log('🎉 Sending confirmation notification to customer:', booking.customerId);
+      console.log('?? Sending confirmation notification to customer:', booking.customerId);
       console.log('Notification data:', notificationToCustomer);
       
       // Save notification to database
@@ -2528,7 +2566,7 @@ app.post('/api/bookings/:id/confirm', (req, res) => {
   });
 });
 
-// API: Housekeeper từ chối booking
+// API: Housekeeper t? ch?i booking
 app.post('/api/bookings/:id/reject', (req, res) => {
   const bookingId = req.params.id;
   
@@ -2561,15 +2599,15 @@ app.post('/api/bookings/:id/reject', (req, res) => {
       const notificationToCustomer = {
         id: Date.now(),
         type: 'booking_rejected',
-        title: 'Đặt lịch đã bị từ chối',
-        message: `${booking.housekeeperName} đã từ chối đơn đặt lịch của bạn`,
+        title: '�?t l?ch d� b? t? ch?i',
+        message: `${booking.housekeeperName} d� t? ch?i don d?t l?ch c?a b?n`,
         bookingId: bookingId,
         booking: booking,
         timestamp: new Date(),
         read: false
       };
 
-      console.log('❌ Sending rejection notification to customer:', booking.customerId);
+      console.log('? Sending rejection notification to customer:', booking.customerId);
       console.log('Notification data:', notificationToCustomer);
       
       // Save notification to database
@@ -2601,7 +2639,7 @@ app.post('/api/bookings/:id/reject', (req, res) => {
   });
 });
 
-// API: Kiểm tra status của booking
+// API: Ki?m tra status c?a booking
 app.get('/api/bookings/:id/status', (req, res) => {
   const bookingId = req.params.id;
   
@@ -2619,11 +2657,11 @@ app.get('/api/bookings/:id/status', (req, res) => {
   });
 });
 
-// API: Lấy lịch sử đặt lịch của user
+// API: L?y l?ch s? d?t l?ch c?a user
 app.get('/api/bookings/user/:id', (req, res) => {
   const userId = req.params.id;
   
-  // Tìm housekeepers.id tương ứng với users.id (để hỗ trợ cả 2 trường hợp)
+  // T�m housekeepers.id tuong ?ng v?i users.id (d? h? tr? c? 2 tru?ng h?p)
   const sql = `
     SELECT b.* FROM bookings b
     WHERE b.customerId = ?
@@ -2635,12 +2673,12 @@ app.get('/api/bookings/user/:id', (req, res) => {
       console.error('Error fetching bookings for user:', err);
       return res.status(500).json({ error: err });
     }
-    console.log(`📋 Found ${results.length} bookings for user ${userId}`);
+    console.log(`?? Found ${results.length} bookings for user ${userId}`);
     res.json(results);
   });
 });
 
-// API: Tạo review cho housekeeper
+// API: T?o review cho housekeeper
 app.post('/api/reviews', (req, res) => {
   const { housekeeperId, customerId, rating, comment } = req.body;
   const sql = 'INSERT INTO reviews (housekeeperId, customerId, rating, comment) VALUES (?, ?, ?, ?)';
@@ -2650,7 +2688,7 @@ app.post('/api/reviews', (req, res) => {
   });
 });
 
-// API: Lấy reviews của housekeeper
+// API: L?y reviews c?a housekeeper
 app.get('/api/reviews/housekeeper/:id', (req, res) => {
   const housekeeperId = req.params.id;
   const sql = `
@@ -2666,7 +2704,7 @@ app.get('/api/reviews/housekeeper/:id', (req, res) => {
   });
 });
 
-// API: Filter - Services (lấy từ bảng services)
+// API: Filter - Services (l?y t? b?ng services)
 app.get('/api/filters/services', (req, res) => {
   db.query('SELECT name FROM services', (err, results) => {
     if (err) return res.status(500).json({ error: err });
@@ -2674,9 +2712,9 @@ app.get('/api/filters/services', (req, res) => {
   });
 });
 
-// API: Filter - Ratings (trả về tất cả các lựa chọn từ 1-5 sao)
+// API: Filter - Ratings (tr? v? t?t c? c�c l?a ch?n t? 1-5 sao)
 app.get('/api/filters/ratings', (req, res) => {
-  // Trả về tất cả các lựa chọn rating từ 1-5 sao, bao gồm "Any rating"
+  // Tr? v? t?t c? c�c l?a ch?n rating t? 1-5 sao, bao g?m "Any rating"
   const ratings = [
     { value: null, label: "Any rating", stars: 5 },
     { value: 5, label: "5 stars", stars: 5 },
@@ -2704,7 +2742,7 @@ app.get('/api/filters/availability', (req, res) => {
   });
 });
 
-// API: Lấy notifications của user
+// API: L?y notifications c?a user
 app.get('/api/notifications/:userId', (req, res) => {
   const userId = req.params.userId;
   
@@ -2719,7 +2757,7 @@ app.get('/api/notifications/:userId', (req, res) => {
       
       const parseNotifData = (raw) => {
         if (raw == null || raw === '') return null;
-        if (typeof raw === 'object') return raw; // mysql2 đã parse cột JSON
+        if (typeof raw === 'object') return raw; // mysql2 d� parse c?t JSON
         if (typeof raw === 'string') {
           try {
             return JSON.parse(raw);
@@ -2741,7 +2779,7 @@ app.get('/api/notifications/:userId', (req, res) => {
   );
 });
 
-// API: Tạo notification mới
+// API: T?o notification m?i
 app.post('/api/notifications', (req, res) => {
   const { userId, type, title, message, bookingId, data } = req.body;
   
@@ -2787,7 +2825,7 @@ app.post('/api/notifications', (req, res) => {
   });
 });
 
-// API: Đánh dấu notification đã đọc
+// API: ��nh d?u notification d� d?c
 app.put('/api/notifications/:id/read', (req, res) => {
   const notificationId = req.params.id;
   const params = req.user?.role === 'admin'
@@ -2811,7 +2849,7 @@ app.put('/api/notifications/:id/read', (req, res) => {
   );
 });
 
-// API: Xóa notification
+// API: X�a notification
 app.delete('/api/notifications/:id', (req, res) => {
   const notificationId = req.params.id;
   const params = req.user?.role === 'admin'
@@ -2860,18 +2898,18 @@ io.on('connection', (socket) => {
     socket.role = role;
     socket.userName = userName;
     
-    // Cập nhật trạng thái available cho housekeeper khi đăng nhập
+    // C?p nh?t tr?ng th�i available cho housekeeper khi dang nh?p
     if (role === 'housekeeper') {
-      db.query('UPDATE housekeepers SET available = 1, lastOnline = NOW() WHERE userId = ?', [userId], (err) => {
+      db.query('UPDATE housekeepers SET lastOnline = NOW() WHERE userId = ?', [userId], (err) => {
         if (err) {
-          console.error('Error updating housekeeper availability:', err);
+          console.error('Error updating housekeeper lastOnline:', err);
         } else {
-          console.log(`🟢 Housekeeper ${userId} is now AVAILABLE`);
+          console.log(`Housekeeper ${userId} socket joined; receive-jobs status unchanged`);
         }
       });
     }
     
-    console.log(`✅ User ${userId} (${role}) joined. Active users: ${activeUsers.size}`);
+    console.log(`? User ${userId} (${role}) joined. Active users: ${activeUsers.size}`);
     console.log(`Stored user with keys:`, [userId, userIdStr, userIdNum]);
   });
 
@@ -2881,13 +2919,13 @@ io.on('connection', (socket) => {
       const userIdStr = String(socket.userId);
       const userIdNum = parseInt(socket.userId);
       
-      // Cập nhật trạng thái available cho housekeeper khi đăng xuất
+      // C?p nh?t tr?ng th�i available cho housekeeper khi dang xu?t
       if (socket.role === 'housekeeper') {
-        db.query('UPDATE housekeepers SET available = 0, lastOnline = NOW() WHERE userId = ?', [socket.userId], (err) => {
+        db.query('UPDATE housekeepers SET lastOnline = NOW() WHERE userId = ?', [socket.userId], (err) => {
           if (err) {
-            console.error('Error updating housekeeper availability:', err);
+            console.error('Error updating housekeeper lastOnline:', err);
           } else {
-            console.log(`🔴 Housekeeper ${socket.userId} is now UNAVAILABLE`);
+            console.log(`Housekeeper ${socket.userId} socket disconnected; receive-jobs status unchanged`);
           }
         });
       }
@@ -2896,15 +2934,15 @@ io.on('connection', (socket) => {
       activeUsers.delete(userIdStr);
       activeUsers.delete(userIdNum);
       
-      console.log(`❌ User ${socket.userId} disconnected. Active users: ${activeUsers.size}`);
+      console.log(`? User ${socket.userId} disconnected. Active users: ${activeUsers.size}`);
     }
   });
 
   // Call signaling handlers
   socket.on('call_offer', ({ targetUserId, offer, isVideoCall, callerId }) => {
-    console.log(`📞 Call offer from ${callerId || socket.userId} to ${targetUserId}`);
-    console.log(`📞 Caller name: ${socket.userName}`);
-    console.log(`📞 Active users:`, Array.from(activeUsers.keys()));
+    console.log(`?? Call offer from ${callerId || socket.userId} to ${targetUserId}`);
+    console.log(`?? Caller name: ${socket.userName}`);
+    console.log(`?? Active users:`, Array.from(activeUsers.keys()));
     
     const actualCallerId = callerId || socket.userId;
     const targetUser = activeUsers.get(targetUserId) || activeUsers.get(String(targetUserId)) || activeUsers.get(parseInt(targetUserId));
@@ -2912,39 +2950,39 @@ io.on('connection', (socket) => {
     if (targetUser) {
       const callData = {
         callerId: actualCallerId,
-        callerName: socket.userName || 'Người dùng',
+        callerName: socket.userName || 'Ngu?i d�ng',
         offer,
         isVideoCall
       };
       
       io.to(targetUser.socketId).emit('incoming_call', callData);
-      console.log(`✅ Call offer sent to ${targetUserId}:`, callData);
+      console.log(`? Call offer sent to ${targetUserId}:`, callData);
     } else {
       socket.emit('call_failed', { error: 'User not available' });
-      console.log(`❌ Target user ${targetUserId} not found or offline`);
-      console.log(`❌ Available users:`, Array.from(activeUsers.keys()));
+      console.log(`? Target user ${targetUserId} not found or offline`);
+      console.log(`? Available users:`, Array.from(activeUsers.keys()));
     }
   });
 
   socket.on('call_answer', ({ targetUserId, answer }) => {
-    console.log(`📞 Call answer from ${socket.userId} to ${targetUserId}`);
+    console.log(`?? Call answer from ${socket.userId} to ${targetUserId}`);
     
     const targetUser = activeUsers.get(targetUserId) || activeUsers.get(String(targetUserId)) || activeUsers.get(parseInt(targetUserId));
     
     if (targetUser) {
       io.to(targetUser.socketId).emit('call_answer', { answer });
-      console.log(`✅ Call answer sent to ${targetUserId}`);
+      console.log(`? Call answer sent to ${targetUserId}`);
     }
   });
 
   socket.on('call_rejected', ({ targetUserId }) => {
-    console.log(`📞 Call rejected by ${socket.userId} to ${targetUserId}`);
+    console.log(`?? Call rejected by ${socket.userId} to ${targetUserId}`);
     
     const targetUser = activeUsers.get(targetUserId) || activeUsers.get(String(targetUserId)) || activeUsers.get(parseInt(targetUserId));
     
     if (targetUser) {
       io.to(targetUser.socketId).emit('call_rejected', { userId: socket.userId });
-      console.log(`✅ Call rejection sent to ${targetUserId}`);
+      console.log(`? Call rejection sent to ${targetUserId}`);
     }
   });
 
@@ -2957,14 +2995,14 @@ io.on('connection', (socket) => {
   });
 
   socket.on('call_ended', ({ targetUserId }) => {
-    console.log(`📞 Call ended by ${socket.userId}`);
+    console.log(`?? Call ended by ${socket.userId}`);
     
     if (targetUserId) {
       const targetUser = activeUsers.get(targetUserId) || activeUsers.get(String(targetUserId)) || activeUsers.get(parseInt(targetUserId));
       
       if (targetUser) {
         io.to(targetUser.socketId).emit('call_ended');
-        console.log(`✅ Call end notification sent to ${targetUserId}`);
+        console.log(`? Call end notification sent to ${targetUserId}`);
       }
     }
   });
@@ -4348,79 +4386,114 @@ app.post('/api/bookings/:id/complete', (req, res) => {
     });
 });
 
-// API: Customer xác nhận và thanh toán
+// API: Customer xac nhan va thanh toan
 app.post('/api/bookings/:id/confirm-payment', (req, res) => {
   const bookingId = req.params.id;
   const { customerId, paymentMethod, rating, review } = req.body;
-  
-  console.log(`💰 Customer ${customerId} confirming payment for booking ${bookingId}`);
-  
-  // Cập nhật payment status
-  db.query('UPDATE payments SET status = ?, method = ?, paidAt = NOW() WHERE bookingId = ? AND customerId = ?', 
-    ['success', paymentMethod, bookingId, customerId], (err, result) => {
-    if (err) {
-      console.error('Error updating payment:', err);
-      return res.status(500).json({ error: err.message });
+  const normalizedMethod = normalizePaymentMethod(paymentMethod);
+
+  console.log(`Customer ${customerId} confirming ${normalizedMethod} payment for booking ${bookingId}`);
+
+  db.query('SELECT * FROM bookings WHERE id = ? AND customerId = ?', [bookingId, customerId], (bookingErr, bookingResults) => {
+    if (bookingErr) {
+      console.error('Error fetching booking before payment:', bookingErr);
+      return res.status(500).json({ error: bookingErr.message });
     }
 
-    // Cập nhật paymentStatus trong bảng bookings
-    db.query('UPDATE bookings SET paymentStatus = ? WHERE id = ?', 
-      ['success', bookingId], (paymentUpdateErr) => {
-      if (paymentUpdateErr) {
-        console.error('Error updating booking payment status:', paymentUpdateErr);
-      }
-    });
+    if (!bookingResults || bookingResults.length === 0) {
+      return res.status(404).json({ error: 'Booking not found or unauthorized' });
+    }
 
-    // Lấy thông tin booking
-    db.query('SELECT * FROM bookings WHERE id = ?', [bookingId], (err, bookingResults) => {
-      if (err || bookingResults.length === 0) {
-        return res.status(500).json({ error: 'Error fetching booking details' });
-      }
+    const booking = bookingResults[0];
+    const breakdown = paymentBreakdown(booking.totalPrice);
+    const transactionCode = normalizedMethod === 'momo'
+      ? `MOMO_PLATFORM_${Date.now()}_${bookingId}`
+      : `CASH_${Date.now()}_${bookingId}`;
+    const settlementStatus = normalizedMethod === 'momo' ? 'holding' : 'cash_collected';
 
-      const booking = bookingResults[0];
+    const paymentValues = [
+      normalizedMethod,
+      breakdown.amount,
+      breakdown.platformFee,
+      breakdown.housekeeperAmount,
+      settlementStatus,
+      PLATFORM_PAYMENT_ACCOUNT,
+      'success',
+      transactionCode,
+      bookingId,
+      customerId,
+    ];
 
-      // Thêm review nếu có
+    const updatePaymentSql = `
+      UPDATE payments SET
+        method = ?,
+        amount = ?,
+        platformFee = ?,
+        housekeeperAmount = ?,
+        settlementStatus = ?,
+        platformAccount = ?,
+        status = ?,
+        transactionCode = ?,
+        paidAt = NOW()
+      WHERE bookingId = ? AND customerId = ?
+    `;
+
+    const insertPaymentSql = `
+      INSERT INTO payments
+        (bookingId, customerId, method, amount, platformFee, housekeeperAmount, settlementStatus, platformAccount, status, transactionCode, paidAt, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'success', ?, NOW(), NOW())
+    `;
+
+    const finishPayment = () => {
+      db.query('UPDATE bookings SET paymentStatus = ? WHERE id = ?', ['success', bookingId], (paymentUpdateErr) => {
+        if (paymentUpdateErr) console.error('Error updating booking payment status:', paymentUpdateErr);
+      });
+
       if (rating) {
-        const reviewSql = `INSERT INTO reviews (bookingId, housekeeperId, customerId, rating, comment, createdAt) 
+        const reviewSql = `INSERT INTO reviews (bookingId, housekeeperId, customerId, rating, comment, createdAt)
                           VALUES (?, ?, ?, ?, ?, NOW())`;
-        db.query(reviewSql, [bookingId, booking.housekeeperId, customerId, rating, review || ''], (err) => {
-          if (err) console.error('Error saving review:', err);
-          
-          // Cập nhật rating trung bình cho housekeeper
+        db.query(reviewSql, [bookingId, booking.housekeeperId, customerId, rating, review || ''], (reviewErr) => {
+          if (reviewErr) console.error('Error saving review:', reviewErr);
+
           const updateRatingSql = `
-            UPDATE housekeepers SET 
+            UPDATE housekeepers SET
               rating = (SELECT AVG(rating) FROM reviews WHERE housekeeperId = ?),
               totalReviews = (SELECT COUNT(*) FROM reviews WHERE housekeeperId = ?)
             WHERE id = ?
           `;
-          db.query(updateRatingSql, [booking.housekeeperId, booking.housekeeperId, booking.housekeeperId], 
-            (err) => {
-            if (err) console.error('Error updating housekeeper rating:', err);
+          db.query(updateRatingSql, [booking.housekeeperId, booking.housekeeperId, booking.housekeeperId], (ratingErr) => {
+            if (ratingErr) console.error('Error updating housekeeper rating:', ratingErr);
           });
         });
       }
 
-      // Gửi notification cho housekeeper
+      const payoutMessage = normalizedMethod === 'momo'
+        ? `Platform da nhan thanh toan qua MoMo. So tien tam giu tra sau: ${new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(breakdown.housekeeperAmount)}.`
+        : `Khach da xac nhan thanh toan tien mat. Phi platform can doi soat: ${new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(breakdown.platformFee)}.`;
+
       const notificationToHousekeeper = {
         id: Date.now(),
         type: 'payment_received',
-        title: 'Đã nhận thanh toán',
-        message: `${booking.customerName} đã xác nhận và thanh toán ${new Intl.NumberFormat('vi-VN', {style: 'currency', currency: 'VND'}).format(booking.totalPrice)}`,
+        title: normalizedMethod === 'momo' ? 'Platform da nhan tien MoMo' : 'Da xac nhan tien mat',
+        message: payoutMessage,
         bookingId: bookingId,
-        booking: booking,
+        booking: {
+          ...booking,
+          paymentMethod: normalizedMethod,
+          platformFee: breakdown.platformFee,
+          housekeeperAmount: breakdown.housekeeperAmount,
+          settlementStatus,
+        },
         timestamp: new Date(),
         read: false
       };
 
-      // Lấy housekeeper userId
-      db.query('SELECT userId FROM housekeepers WHERE id = ?', [booking.housekeeperId], (err, hkResults) => {
-        if (!err && hkResults.length > 0) {
+      db.query('SELECT userId FROM housekeepers WHERE id = ?', [booking.housekeeperId], (hkErr, hkResults) => {
+        if (!hkErr && hkResults.length > 0) {
           const housekeeperUserId = hkResults[0].userId;
-          console.log('💸 Sending payment notification to housekeeper:', housekeeperUserId);
           sendNotificationToUser(housekeeperUserId, notificationToHousekeeper);
-          
-          // Lưu notification vào database
-          const notifSql = `INSERT INTO notifications (userId, type, title, message, bookingId, data, createdAt, read_status) 
+
+          const notifSql = `INSERT INTO notifications (userId, type, title, message, bookingId, data, createdAt, read_status)
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
           db.query(notifSql, [
             housekeeperUserId,
@@ -4428,7 +4501,7 @@ app.post('/api/bookings/:id/confirm-payment', (req, res) => {
             notificationToHousekeeper.title,
             notificationToHousekeeper.message,
             bookingId,
-            JSON.stringify({ ...booking, paymentMethod, rating, review }),
+            JSON.stringify({ ...booking, paymentMethod: normalizedMethod, rating, review, ...breakdown, settlementStatus }),
             new Date(),
             0
           ], (notifErr) => {
@@ -4437,15 +4510,66 @@ app.post('/api/bookings/:id/confirm-payment', (req, res) => {
         }
       });
 
-      res.json({ 
-        message: 'Payment confirmed successfully', 
-        booking: booking,
+      return res.json({
+        message: normalizedMethod === 'momo'
+          ? 'MoMo payment confirmed to platform account'
+          : 'Cash payment confirmed',
+        booking: {
+          ...booking,
+          paymentStatus: 'success',
+          paymentMethod: normalizedMethod,
+          platformFee: breakdown.platformFee,
+          housekeeperAmount: breakdown.housekeeperAmount,
+          settlementStatus,
+        },
+        payment: {
+          amount: breakdown.amount,
+          housekeeperAmount: breakdown.housekeeperAmount,
+          method: normalizedMethod,
+          platformAccount: PLATFORM_PAYMENT_ACCOUNT,
+          platformFee: breakdown.platformFee,
+          settlementStatus,
+          transactionCode,
+        },
         paymentStatus: 'success'
       });
+    };
+
+    db.query(updatePaymentSql, paymentValues, (paymentErr, updateResult) => {
+      if (paymentErr) {
+        console.error('Error updating payment:', paymentErr);
+        return res.status(500).json({ error: paymentErr.message });
+      }
+
+      if (updateResult && updateResult.affectedRows > 0) {
+        return finishPayment();
+      }
+
+      db.query(
+        insertPaymentSql,
+        [
+          bookingId,
+          customerId,
+          normalizedMethod,
+          breakdown.amount,
+          breakdown.platformFee,
+          breakdown.housekeeperAmount,
+          settlementStatus,
+          PLATFORM_PAYMENT_ACCOUNT,
+          transactionCode,
+        ],
+        (insertErr) => {
+          if (insertErr) {
+            console.error('Error inserting payment:', insertErr);
+            return res.status(500).json({ error: insertErr.message });
+          }
+
+          return finishPayment();
+        }
+      );
     });
   });
 });
-
 // API: Lấy thông tin payment cho booking
 app.get('/api/bookings/:id/payment', (req, res) => {
   const bookingId = req.params.id;
@@ -4471,6 +4595,46 @@ app.get('/api/bookings/:id/payment', (req, res) => {
   });
 });
 
+// API: Housekeeper earnings held by platform / cash reconciliation
+app.get('/api/housekeepers/:userId/earnings', (req, res) => {
+  const { userId } = req.params;
+
+  if (req.user && req.user.role !== 'admin' && Number(req.user.id) !== Number(userId)) {
+    return res.status(403).json({ error: 'Ban chi co the xem thu nhap cua chinh minh' });
+  }
+
+  const sql = `
+    SELECT
+      COALESCE(SUM(CASE WHEN p.status = 'success' THEN p.amount ELSE 0 END), 0) as grossPaid,
+      COALESCE(SUM(CASE WHEN p.status = 'success' THEN p.platformFee ELSE 0 END), 0) as platformFees,
+      COALESCE(SUM(CASE WHEN p.status = 'success' AND p.method = 'momo' AND p.settlementStatus IN ('holding','ready') THEN p.housekeeperAmount ELSE 0 END), 0) as pendingPayout,
+      COALESCE(SUM(CASE WHEN p.status = 'success' AND p.method = 'momo' AND p.settlementStatus = 'paid' THEN p.housekeeperAmount ELSE 0 END), 0) as paidOut,
+      COALESCE(SUM(CASE WHEN p.status = 'success' AND p.method = 'cash' THEN p.amount ELSE 0 END), 0) as cashCollected,
+      COALESCE(SUM(CASE WHEN p.status = 'success' AND p.method = 'cash' THEN p.platformFee ELSE 0 END), 0) as cashPlatformFeeDue,
+      COUNT(CASE WHEN p.status = 'success' THEN 1 END) as paidBookings
+    FROM payments p
+    JOIN bookings b ON p.bookingId = b.id
+    JOIN housekeepers h ON b.housekeeperId = h.id
+    WHERE h.userId = ?
+  `;
+
+  db.query(sql, [userId], (err, rows) => {
+    if (err) {
+      console.error('Error fetching housekeeper earnings:', err);
+      return res.status(500).json({ error: err.message });
+    }
+
+    res.json(rows[0] || {
+      grossPaid: 0,
+      platformFees: 0,
+      pendingPayout: 0,
+      paidOut: 0,
+      cashCollected: 0,
+      cashPlatformFeeDue: 0,
+      paidBookings: 0,
+    });
+  });
+});
 // ========================
 // REVIEWS MANAGEMENT APIs
 // ========================

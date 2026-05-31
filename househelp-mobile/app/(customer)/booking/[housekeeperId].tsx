@@ -1,3 +1,4 @@
+import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -15,9 +16,12 @@ import {
 import MapView, { Marker, type MapPressEvent, type Region } from 'react-native-maps';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { addressService, addressText } from '../../../lib/addresses';
 import { authService, type AuthUser } from '../../../lib/auth';
 import { bookingService } from '../../../lib/bookings';
+import { housekeeperPreferenceService } from '../../../lib/housekeeper-preferences';
 import { housekeeperService, type Housekeeper } from '../../../lib/housekeepers';
+import { profileService } from '../../../lib/profile';
 
 function todayDate() {
   const now = new Date();
@@ -49,6 +53,10 @@ function dateOptions() {
 }
 
 const timeOptions = ['07:00', '08:00', '09:00', '10:00', '13:00', '14:00', '15:00', '16:00', '18:00'];
+const bookingSteps = ['Dich vu', 'Dia chi', 'Ngay gio', 'Thoi luong', 'Xac nhan'] as const;
+const PICK_HOUSEKEEPER_FEE = 15000;
+
+type BookingStep = (typeof bookingSteps)[number];
 
 function serviceList(services?: string) {
   return String(services || '')
@@ -99,6 +107,7 @@ function locationLabel(location: SelectedLocation) {
 
 export default function CreateBookingScreen() {
   const insets = useSafeAreaInsets();
+  const [currentStep, setCurrentStep] = useState<BookingStep>('Dich vu');
   const [date, setDate] = useState(todayDate());
   const [duration, setDuration] = useState('2');
   const [housekeeper, setHousekeeper] = useState<Housekeeper | null>(null);
@@ -126,6 +135,27 @@ export default function CreateBookingScreen() {
   }>();
   const router = useRouter();
 
+  const loadSelectedAddress = useCallback(async (storedUser: AuthUser | null) => {
+    if (!storedUser) return;
+
+    try {
+      const profile = await profileService.getProfile(storedUser.id);
+      const [savedAddresses, selectedAddressId] = await Promise.all([
+        addressService.getAll(storedUser.id, profile),
+        addressService.getSelectedId(storedUser.id),
+      ]);
+      const selectedAddress = savedAddresses.find((address) => address.id === selectedAddressId) || savedAddresses[0];
+
+      if (selectedAddress) {
+        const nextAddress = addressText(selectedAddress);
+        setLocation(nextAddress);
+        setSelectedLocation(null);
+      }
+    } catch {
+      // User can still enter or pick an address manually.
+    }
+  }, []);
+
   const loadData = useCallback(async () => {
     if (!housekeeperId) {
       setIsLoading(false);
@@ -140,6 +170,7 @@ export default function CreateBookingScreen() {
       ]);
 
       setUser(storedUser);
+      await loadSelectedAddress(storedUser);
       setHousekeeper(detail);
       setService(firstService(detail.services, selectedService));
       if (recurring === 'monthly') {
@@ -150,16 +181,23 @@ export default function CreateBookingScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [housekeeperId, recurring, selectedService]);
+  }, [housekeeperId, loadSelectedAddress, recurring, selectedService]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  const totalPrice = useMemo(() => {
+  useFocusEffect(
+    useCallback(() => {
+      loadSelectedAddress(user);
+    }, [loadSelectedAddress, user]),
+  );
+
+  const basePrice = useMemo(() => {
     const price = parsePrice(housekeeper?.price);
     return price * parseDuration(duration);
   }, [duration, housekeeper?.price]);
+  const totalPrice = basePrice + PICK_HOUSEKEEPER_FEE;
   const unitPrice = useMemo(() => parsePrice(housekeeper?.price), [housekeeper?.price]);
   const serviceOptions = useMemo(() => serviceList(housekeeper?.services), [housekeeper?.services]);
   const availableDates = useMemo(() => dateOptions(), []);
@@ -182,6 +220,17 @@ export default function CreateBookingScreen() {
     }
   }, []);
 
+  const getDeviceLocation = useCallback(async () => {
+    const permission = await Location.requestForegroundPermissionsAsync();
+
+    if (permission.status !== 'granted') {
+      throw new Error('permission');
+    }
+
+    const current = await Location.getCurrentPositionAsync({});
+    return current.coords;
+  }, []);
+
   const chooseCoordinate = useCallback(async (latitude: number, longitude: number) => {
     setMapRegion((current) => ({
       ...current,
@@ -195,10 +244,22 @@ export default function CreateBookingScreen() {
     setLocation(locationLabel(nextLocation));
   }, [reverseGeocode]);
 
+  const centerOnDeviceLocation = useCallback(async () => {
+    try {
+      setIsMapLoading(true);
+      const coords = await getDeviceLocation();
+      await chooseCoordinate(coords.latitude, coords.longitude);
+    } catch {
+      Alert.alert('Khong the truy cap vi tri', 'Hay kiem tra quyen vi tri va thu lai.');
+    } finally {
+      setIsMapLoading(false);
+    }
+  }, [chooseCoordinate, getDeviceLocation]);
+
   const openMapPicker = useCallback(async () => {
     setIsMapVisible(true);
 
-    if (selectedLocation) {
+    if (selectedLocation && selectedLocation.latitude !== 0 && selectedLocation.longitude !== 0) {
       setMapRegion((current) => ({
         ...current,
         latitude: selectedLocation.latitude,
@@ -209,21 +270,14 @@ export default function CreateBookingScreen() {
 
     try {
       setIsMapLoading(true);
-      const permission = await Location.requestForegroundPermissionsAsync();
-
-      if (permission.status !== 'granted') {
-        Alert.alert('Can quyen vi tri', 'Ban co the cham truc tiep tren ban do de chon dia chi.');
-        return;
-      }
-
-      const current = await Location.getCurrentPositionAsync({});
-      await chooseCoordinate(current.coords.latitude, current.coords.longitude);
+      const coords = await getDeviceLocation();
+      await chooseCoordinate(coords.latitude, coords.longitude);
     } catch {
       Alert.alert('Khong lay duoc vi tri', 'Ban co the cham truc tiep tren ban do de chon dia chi.');
     } finally {
       setIsMapLoading(false);
     }
-  }, [chooseCoordinate, selectedLocation]);
+  }, [getDeviceLocation, chooseCoordinate, selectedLocation]);
 
   const handleMapPress = (event: MapPressEvent) => {
     const { latitude, longitude } = event.nativeEvent.coordinate;
@@ -272,7 +326,60 @@ export default function CreateBookingScreen() {
     setSelectedLocation((current) => (current ? { ...current, address: value } : current));
   };
 
-  const handleSubmit = async () => {
+  const validateCurrentStep = () => {
+    if (currentStep === 'Dich vu' && !service.trim()) {
+      Alert.alert('Chua chon dich vu', 'Vui long chon dich vu can dat.');
+      return false;
+    }
+
+    if (currentStep === 'Dia chi' && !location.trim()) {
+      Alert.alert('Chua chon dia chi', 'Vui long chon dia chi lam viec.');
+      return false;
+    }
+
+    if (currentStep === 'Ngay gio') {
+      if (!date.trim() || !time.trim()) {
+        Alert.alert('Thieu ngay gio', 'Vui long chon ngay va khung gio.');
+        return false;
+      }
+
+      if (!isValidTimeFrame(time)) {
+        Alert.alert('Khung gio chua hop le', 'Vui long nhap khung gio muon thue, vi du: 08:00-11:00 hoac 8h den 11h.');
+        return false;
+      }
+
+      if (date < todayDate()) {
+        Alert.alert('Ngay khong hop le', 'Vui long chon ngay hom nay hoac mot ngay trong tuong lai.');
+        return false;
+      }
+    }
+
+    if (currentStep === 'Thoi luong' && parseDuration(duration) <= 0) {
+      Alert.alert('Thoi luong chua hop le', 'Vui long nhap so gio muon thue.');
+      return false;
+    }
+
+    return true;
+  };
+
+  const goNext = () => {
+    if (!validateCurrentStep()) return;
+    const currentIndex = bookingSteps.indexOf(currentStep);
+    const nextStep = bookingSteps[currentIndex + 1];
+    if (nextStep) setCurrentStep(nextStep);
+  };
+
+  const goBackStep = () => {
+    const currentIndex = bookingSteps.indexOf(currentStep);
+    const previousStep = bookingSteps[currentIndex - 1];
+    if (previousStep) {
+      setCurrentStep(previousStep);
+      return;
+    }
+    router.back();
+  };
+
+  const createBooking = async () => {
     if (!user || !housekeeper) {
       Alert.alert('Can dang nhap', 'Vui long dang nhap lai de dat lich.');
       router.replace('/(auth)/login');
@@ -289,8 +396,9 @@ export default function CreateBookingScreen() {
       return;
     }
 
-    if (!selectedLocation) {
-      Alert.alert('Can chon dia chi tren ban do', 'Vui long bam Chon tren ban do va dat ghim vi tri lam viec.');
+    const blockedHousekeeper = await housekeeperPreferenceService.isBlocked(user.id, housekeeper.id);
+    if (blockedHousekeeper) {
+      Alert.alert('Housekeeper da bi chan', 'Vui long bo chan housekeeper nay neu ban muon dat lich lai.');
       return;
     }
 
@@ -349,7 +457,7 @@ export default function CreateBookingScreen() {
       keyboardShouldPersistTaps="handled"
       style={styles.screen}
     >
-      <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+      <TouchableOpacity onPress={goBackStep} style={styles.backButton}>
         <Text style={styles.backText}>Quay lai</Text>
       </TouchableOpacity>
 
@@ -366,141 +474,205 @@ export default function CreateBookingScreen() {
         <Text style={styles.summaryValue}>{totalPrice.toLocaleString('vi-VN')} VND</Text>
       </View>
 
-      <Text style={styles.label}>Dich vu</Text>
-      <View style={styles.servicePicker}>
-        {/* <Text style={styles.servicePickerTitle}>Chon cong viec housekeeper co the lam</Text> */}
-        <View style={styles.serviceOptions}>
-          {(serviceOptions.length > 0 ? serviceOptions : [service || 'House cleaning']).map((item) => {
-            const isSelected = item === service;
-
-            return (
-              <TouchableOpacity
-                activeOpacity={0.82}
-                key={item}
-                onPress={() => setService(item)}
-                style={[styles.serviceOption, isSelected && styles.serviceOptionActive]}
-              >
-                <Text style={[styles.serviceOptionText, isSelected && styles.serviceOptionTextActive]}>{item}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
-
-      <Text style={styles.label}>Ngay lam</Text>
-      <ScrollView
-        contentContainerStyle={styles.pickerRow}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.pickerScroller}
-      >
-        {availableDates.map((item) => {
-          const isSelected = item.value === date;
+      <View style={styles.stepper}>
+        {bookingSteps.map((step, index) => {
+          const isActive = step === currentStep;
+          const isDone = bookingSteps.indexOf(currentStep) > index;
 
           return (
-            <TouchableOpacity
-              activeOpacity={0.82}
-              key={item.value}
-              onPress={() => setDate(item.value)}
-              style={[styles.dateOption, isSelected && styles.dateOptionActive]}
-            >
-              <Text style={[styles.dateOptionLabel, isSelected && styles.dateOptionLabelActive]}>{item.label}</Text>
-              <Text style={[styles.dateOptionValue, isSelected && styles.dateOptionValueActive]}>{item.value.slice(5)}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-
-      <Text style={styles.label}>Khung gio muon thue</Text>
-      <TextInput
-        onChangeText={setTime}
-        placeholder="Vi du: 08:00-11:00"
-        style={styles.input}
-        value={time}
-      />
-      {/* <Text style={styles.helperText}>Co the nhap tu do theo nhu cau, cac moc duoi day chi la goi y nhanh.</Text> */}
-      <View style={styles.timeGrid}>
-        {timeOptions.map((item) => {
-          const isSelected = item === time;
-
-          return (
-            <TouchableOpacity
-              activeOpacity={0.82}
-              key={item}
-              onPress={() => setTime(item)}
-              style={[styles.timeOption, isSelected && styles.timeOptionActive]}
-            >
-              <Text style={[styles.timeOptionText, isSelected && styles.timeOptionTextActive]}>{item}</Text>
-            </TouchableOpacity>
+            <View key={step} style={styles.stepItem}>
+              <View style={[styles.stepDot, (isActive || isDone) && styles.stepDotActive]}>
+                <Text style={[styles.stepDotText, (isActive || isDone) && styles.stepDotTextActive]}>{index + 1}</Text>
+              </View>
+              <Text numberOfLines={1} style={[styles.stepLabel, isActive && styles.stepLabelActive]}>{step}</Text>
+            </View>
           );
         })}
       </View>
 
-      <Text style={styles.label}>So gio</Text>
-      <TextInput
-        keyboardType="number-pad"
-        onChangeText={setDuration}
-        placeholder="2"
-        style={styles.input}
-        value={duration}
-      />
+      {currentStep === 'Dich vu' ? (
+        <>
+          <Text style={styles.label}>Dich vu</Text>
+          <View style={styles.servicePicker}>
+            <View style={styles.serviceOptions}>
+              {(serviceOptions.length > 0 ? serviceOptions : [service || 'House cleaning']).map((item) => {
+                const isSelected = item === service;
 
-      <Text style={styles.label}>Dia chi lam viec</Text>
-        <View style={styles.locationCard}>
-        <View style={styles.locationPin}>
-          <Text style={styles.locationPinText}>PIN</Text>
+                return (
+                  <TouchableOpacity
+                    activeOpacity={0.82}
+                    key={item}
+                    onPress={() => setService(item)}
+                    style={[styles.serviceOption, isSelected && styles.serviceOptionActive]}
+                  >
+                    <Text style={[styles.serviceOptionText, isSelected && styles.serviceOptionTextActive]}>{item}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </>
+      ) : null}
+
+      {currentStep === 'Dia chi' ? (
+        <>
+          <Text style={styles.label}>Dia chi lam viec</Text>
+          <View style={styles.locationCard}>
+            <View style={styles.locationPin}>
+              <Text style={styles.locationPinText}>PIN</Text>
+            </View>
+            <View style={styles.locationBody}>
+              <Text style={styles.locationTitle}>{location ? 'Dia chi da chon' : 'Chua chon dia chi'}</Text>
+              <Text numberOfLines={3} style={styles.locationText}>
+                {location || 'Vui long chon dia chi tu so dia chi hoac tren ban do.'}
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity activeOpacity={0.86} onPress={() => router.push('/addresses')} style={styles.addressBookButton}>
+            <Text style={styles.addressBookButtonText}>Chon tu so dia chi</Text>
+          </TouchableOpacity>
+          <TouchableOpacity activeOpacity={0.86} onPress={openMapPicker} style={styles.mapButton}>
+            <Text style={styles.mapButtonText}>{selectedLocation ? 'Chon lai tren ban do' : 'Chon tren ban do'}</Text>
+          </TouchableOpacity>
+        </>
+      ) : null}
+
+      {currentStep === 'Ngay gio' ? (
+        <>
+          <Text style={styles.label}>Ngay lam</Text>
+          <ScrollView
+            contentContainerStyle={styles.pickerRow}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.pickerScroller}
+          >
+            {availableDates.map((item) => {
+              const isSelected = item.value === date;
+
+              return (
+                <TouchableOpacity
+                  activeOpacity={0.82}
+                  key={item.value}
+                  onPress={() => setDate(item.value)}
+                  style={[styles.dateOption, isSelected && styles.dateOptionActive]}
+                >
+                  <Text style={[styles.dateOptionLabel, isSelected && styles.dateOptionLabelActive]}>{item.label}</Text>
+                  <Text style={[styles.dateOptionValue, isSelected && styles.dateOptionValueActive]}>{item.value.slice(5)}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          <Text style={styles.label}>Khung gio muon thue</Text>
+          <TextInput
+            onChangeText={setTime}
+            placeholder="Vi du: 08:00-11:00"
+            style={styles.input}
+            value={time}
+          />
+          <View style={styles.timeGrid}>
+            {timeOptions.map((item) => {
+              const isSelected = item === time;
+
+              return (
+                <TouchableOpacity
+                  activeOpacity={0.82}
+                  key={item}
+                  onPress={() => setTime(item)}
+                  style={[styles.timeOption, isSelected && styles.timeOptionActive]}
+                >
+                  <Text style={[styles.timeOptionText, isSelected && styles.timeOptionTextActive]}>{item}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </>
+      ) : null}
+
+      {currentStep === 'Thoi luong' ? (
+        <>
+          <Text style={styles.label}>So gio</Text>
+          <TextInput
+            keyboardType="number-pad"
+            onChangeText={setDuration}
+            placeholder="2"
+            style={styles.input}
+            value={duration}
+          />
+
+          <Text style={styles.label}>Ghi chu</Text>
+          <TextInput
+            multiline
+            onChangeText={setNotes}
+            placeholder="Yeu cau them neu co"
+            style={[styles.input, styles.multiline]}
+            value={notes}
+          />
+        </>
+      ) : null}
+
+      {currentStep === 'Xac nhan' ? (
+        <View style={styles.reviewCard}>
+          <Text style={styles.reviewTitle}>Xac nhan don truoc khi dat</Text>
+          <View style={styles.reviewRow}>
+            <Text style={styles.reviewLabel}>Dich vu</Text>
+            <Text numberOfLines={2} style={styles.reviewValue}>{service || 'Chua chon'}</Text>
+          </View>
+          <View style={styles.reviewRow}>
+            <Text style={styles.reviewLabel}>Ngay gio</Text>
+            <Text style={styles.reviewValue}>{date} - {time}</Text>
+          </View>
+          <View style={styles.reviewRow}>
+            <Text style={styles.reviewLabel}>So gio</Text>
+            <Text style={styles.reviewValue}>{parseDuration(duration)} gio</Text>
+          </View>
+          <View style={styles.reviewRow}>
+            <Text style={styles.reviewLabel}>Don gia</Text>
+            <Text style={styles.reviewValue}>{unitPrice.toLocaleString('vi-VN')} VND/gio</Text>
+          </View>
+          <View style={styles.reviewRow}>
+            <Text style={styles.reviewLabel}>Tien dich vu</Text>
+            <Text style={styles.reviewValue}>{basePrice.toLocaleString('vi-VN')} VND</Text>
+          </View>
+          <View style={styles.reviewRow}>
+            <Text style={styles.reviewLabel}>Phi tu chon nguoi lam</Text>
+            <Text style={styles.reviewValue}>{PICK_HOUSEKEEPER_FEE.toLocaleString('vi-VN')} VND</Text>
+          </View>
+          <View style={styles.reviewRow}>
+            <Text style={styles.reviewLabel}>Dia chi</Text>
+            <Text numberOfLines={3} style={styles.reviewValue}>{location.trim() || 'Chua nhap'}</Text>
+          </View>
+          {notes.trim() ? (
+            <View style={styles.reviewRow}>
+              <Text style={styles.reviewLabel}>Ghi chu</Text>
+              <Text numberOfLines={3} style={styles.reviewValue}>{notes.trim()}</Text>
+            </View>
+          ) : null}
+          <View style={[styles.reviewRow, styles.reviewTotalRow]}>
+            <Text style={styles.reviewTotalLabel}>Tong tien</Text>
+            <Text style={styles.reviewTotalValue}>{totalPrice.toLocaleString('vi-VN')} VND</Text>
+          </View>
         </View>
-        <View style={styles.locationBody}>
-          <Text style={styles.locationTitle}>{selectedLocation ? 'Da chon vi tri' : 'Chua chon vi tri'}</Text>
-          <Text numberOfLines={3} style={styles.locationText}>
-            {selectedLocation ? location : 'Vui long chon dia chi chinh xac tren ban do.'}
-          </Text>
-        </View>
+      ) : null}
+
+      <View style={styles.stepActions}>
+        {currentStep !== 'Dich vu' ? (
+          <TouchableOpacity disabled={isSubmitting} onPress={goBackStep} style={styles.secondaryButton}>
+            <Text style={styles.secondaryText}>Quay lai</Text>
+          </TouchableOpacity>
+        ) : null}
+        <TouchableOpacity
+          disabled={isSubmitting}
+          onPress={currentStep === 'Xac nhan' ? createBooking : goNext}
+          style={[styles.primaryButton, currentStep !== 'Dich vu' && styles.primaryButtonFlex]}
+        >
+          {isSubmitting ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.primaryText}>{currentStep === 'Xac nhan' ? 'Xac nhan dat lich' : 'Tiep tuc'}</Text>
+          )}
+        </TouchableOpacity>
       </View>
-      <TouchableOpacity activeOpacity={0.86} onPress={openMapPicker} style={styles.mapButton}>
-        <Text style={styles.mapButtonText}>{selectedLocation ? 'Chon lai tren ban do' : 'Chon tren ban do'}</Text>
-      </TouchableOpacity>
-
-      <Text style={styles.label}>Ghi chu</Text>
-      <TextInput
-        multiline
-        onChangeText={setNotes}
-        placeholder="Yeu cau them neu co"
-        style={[styles.input, styles.multiline]}
-        value={notes}
-      />
-
-      <View style={styles.reviewCard}>
-        <Text style={styles.reviewTitle}>Tom tat truoc khi gui</Text>
-        <View style={styles.reviewRow}>
-          <Text style={styles.reviewLabel}>Dich vu</Text>
-          <Text numberOfLines={2} style={styles.reviewValue}>{service || 'Chua chon'}</Text>
-        </View>
-        <View style={styles.reviewRow}>
-          <Text style={styles.reviewLabel}>Ngay gio</Text>
-          <Text style={styles.reviewValue}>{date} - {time}</Text>
-        </View>
-        <View style={styles.reviewRow}>
-          <Text style={styles.reviewLabel}>So gio</Text>
-          <Text style={styles.reviewValue}>{parseDuration(duration)} gio</Text>
-        </View>
-        <View style={styles.reviewRow}>
-          <Text style={styles.reviewLabel}>Don gia</Text>
-          <Text style={styles.reviewValue}>{unitPrice.toLocaleString('vi-VN')} VND/gio</Text>
-        </View>
-        <View style={styles.reviewRow}>
-          <Text style={styles.reviewLabel}>Dia chi</Text>
-          <Text numberOfLines={2} style={styles.reviewValue}>{location.trim() || 'Chua nhap'}</Text>
-        </View>
-        <View style={[styles.reviewRow, styles.reviewTotalRow]}>
-          <Text style={styles.reviewTotalLabel}>Tong tien</Text>
-          <Text style={styles.reviewTotalValue}>{totalPrice.toLocaleString('vi-VN')} VND</Text>
-        </View>
-      </View>
-
-      <TouchableOpacity disabled={isSubmitting} onPress={handleSubmit} style={styles.primaryButton}>
-        {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Gui yeu cau dat lich</Text>}
-      </TouchableOpacity>
 
       <Modal animationType="slide" onRequestClose={() => setIsMapVisible(false)} visible={isMapVisible}>
         <View style={[styles.mapScreen, { paddingTop: Math.max(insets.top, 12) }]}>
@@ -527,6 +699,9 @@ export default function CreateBookingScreen() {
               <Text style={styles.mapSearchButtonText}>Tim</Text>
             </TouchableOpacity>
           </View>
+          <TouchableOpacity activeOpacity={0.84} onPress={centerOnDeviceLocation} style={styles.mapLocationButton}>
+            <Text style={styles.mapLocationButtonText}>Chuyen den vi tri hien tai</Text>
+          </TouchableOpacity>
 
           <MapView
             initialRegion={mapRegion}
@@ -581,6 +756,18 @@ export default function CreateBookingScreen() {
 }
 
 const styles = StyleSheet.create({
+  addressBookButton: {
+    alignItems: 'center',
+    backgroundColor: '#ff8128',
+    borderRadius: 12,
+    marginBottom: 10,
+    paddingVertical: 13,
+  },
+  addressBookButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '900',
+  },
   backButton: {
     alignSelf: 'flex-start',
     paddingVertical: 8,
@@ -823,6 +1010,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 11,
   },
+  mapLocationButton: {
+    alignItems: 'center',
+    backgroundColor: '#ffedd5',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    marginHorizontal: 16,
+    marginBottom: 10,
+    paddingVertical: 12,
+  },
+  mapLocationButtonText: {
+    color: '#c2410c',
+    fontSize: 14,
+    fontWeight: '900',
+  },
   mapSubtitle: {
     color: '#6b7280',
     fontSize: 12,
@@ -840,6 +1042,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginTop: 10,
     padding: 15,
+  },
+  primaryButtonFlex: {
+    flex: 1,
+    marginTop: 0,
   },
   primaryText: {
     color: '#fff',
@@ -929,6 +1135,20 @@ const styles = StyleSheet.create({
   serviceOptionTextActive: {
     color: '#fff',
   },
+  secondaryButton: {
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderColor: '#fed7aa',
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    padding: 15,
+  },
+  secondaryText: {
+    color: '#ff8128',
+    fontSize: 16,
+    fontWeight: '900',
+  },
   serviceOptions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -981,6 +1201,55 @@ const styles = StyleSheet.create({
     color: '#ff8128',
     fontSize: 16,
     fontWeight: '800',
+  },
+  stepActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  stepDot: {
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 14,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
+  },
+  stepDotActive: {
+    backgroundColor: '#ff8128',
+  },
+  stepDotText: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  stepDotTextActive: {
+    color: '#fff',
+  },
+  stepItem: {
+    alignItems: 'center',
+    flex: 1,
+    gap: 5,
+    minWidth: 0,
+  },
+  stepLabel: {
+    color: '#8a94a3',
+    fontSize: 10,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  stepLabelActive: {
+    color: '#ff8128',
+  },
+  stepper: {
+    backgroundColor: '#fff',
+    borderColor: '#edf0f4',
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 18,
+    padding: 10,
   },
   timeGrid: {
     flexDirection: 'row',

@@ -16,6 +16,9 @@ export default function RootLayout() {
       }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="(housekeeper)" />
+        <Stack.Screen name="addresses" />
+        <Stack.Screen name="blocked-housekeepers" />
+        <Stack.Screen name="favorite-housekeepers" />
         <Stack.Screen name="notifications" />
         <Stack.Screen name="profile" />
         <Stack.Screen name="chat/index" />

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -19,20 +20,34 @@ import { storage } from '../lib/storage';
 import { profileService, type UserProfile } from '../lib/profile';
 
 const accountRows = [
-  { label: 'Personal Profile', icon: 'person' },
-  { label: 'Saved Addresses', icon: 'location' },
-  { label: 'Transaction history', icon: 'time' },
-  { label: 'My Rewards', icon: 'gift' },
-  { label: 'Favorite Housekeepers', icon: 'heart' },
-  { label: 'Block List', icon: 'ban' },
-  { label: 'Create a Business account', icon: 'business' },
+  { action: 'edit', label: 'Personal Profile', icon: 'person' },
+  { action: 'addresses', label: 'Saved Addresses', icon: 'location' },
+  { action: 'transactions', label: 'Transaction history', icon: 'time' },
+  { action: 'rewards', label: 'My Rewards', icon: 'gift' },
+  { action: 'favorites', label: 'Favorite Housekeepers', icon: 'heart' },
+  { action: 'blockList', label: 'Block List', icon: 'ban' },
+  { action: 'business', label: 'Create a Business account', icon: 'business' },
 ];
 
 const utilityRows = [
-  { label: 'HouseHelp Pay', icon: 'wallet' },
-  { label: 'Language', icon: 'globe' },
-  { label: 'Help Center', icon: 'help-circle' },
+  { action: 'pay', label: 'HouseHelp Pay', icon: 'wallet' },
+  { action: 'language', label: 'Language', icon: 'globe' },
+  { action: 'help', label: 'Help Center', icon: 'help-circle' },
 ];
+
+type AccountAction =
+  | 'addresses'
+  | 'blockList'
+  | 'business'
+  | 'edit'
+  | 'favorites'
+  | 'help'
+  | 'language'
+  | 'pay'
+  | 'rewards'
+  | 'transactions';
+
+type PanelAction = Exclude<AccountAction, 'addresses' | 'blockList' | 'edit' | 'favorites' | 'help' | 'transactions' | 'business'>;
 
 function initials(name?: string) {
   return (name || 'U')
@@ -60,6 +75,7 @@ export default function ProfileScreen() {
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [activePanel, setActivePanel] = useState<PanelAction | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
   const { refresh } = useLocalSearchParams<{ refresh?: string }>();
   const router = useRouter();
@@ -113,6 +129,84 @@ export default function ProfileScreen() {
   const handleLogout = async () => {
     await authService.logout();
     router.replace('/(auth)/login');
+  };
+
+  const handleAccountAction = (action: AccountAction) => {
+    switch (action) {
+      case 'edit':
+        setIsEditing(true);
+        break;
+      case 'addresses':
+        router.push('/addresses');
+        break;
+      case 'transactions':
+        router.push('/(customer)/bookings');
+        break;
+      case 'favorites':
+        router.push('/favorite-housekeepers');
+        break;
+      case 'blockList':
+        router.push('/blocked-housekeepers');
+        break;
+      case 'business':
+        router.push('/(auth)/register-housekeeper');
+        break;
+      case 'help':
+        router.push('/chatbot');
+        break;
+      default:
+        setActivePanel(action);
+        break;
+    }
+  };
+
+  const closePanel = () => setActivePanel(null);
+
+  const panelTitle = {
+    language: 'Language',
+    pay: 'HouseHelp Pay',
+    rewards: 'My Rewards',
+  }[activePanel || 'rewards'];
+
+  const renderPanelContent = () => {
+    if (activePanel === 'rewards') {
+      return (
+        <>
+          <View style={styles.panelCard}>
+            <Text style={styles.panelCardTitle}>0 points</Text>
+            <Text style={styles.panelCardText}>Diem thuong se xuat hien sau khi ban hoan thanh booking hoac nhan uu dai.</Text>
+          </View>
+          <TouchableOpacity onPress={() => router.push('/(customer)')} style={styles.panelPrimaryButton}>
+            <Text style={styles.panelPrimaryText}>Dat dich vu</Text>
+          </TouchableOpacity>
+        </>
+      );
+    }
+
+    if (activePanel === 'pay') {
+      return (
+        <>
+          <View style={styles.panelCard}>
+            <Text style={styles.panelCardTitle}>Thanh toan tien mat dang bat</Text>
+            <Text style={styles.panelCardText}>HouseHelp Pay se theo doi cac thanh toan da xac nhan trong Activity.</Text>
+          </View>
+          <TouchableOpacity onPress={() => router.push('/(customer)/bookings')} style={styles.panelPrimaryButton}>
+            <Text style={styles.panelPrimaryText}>Xem thanh toan</Text>
+          </TouchableOpacity>
+        </>
+      );
+    }
+
+    if (activePanel === 'language') {
+      return (
+        <View style={styles.panelCard}>
+          <Text style={styles.panelCardTitle}>Ngon ngu hien tai</Text>
+          <Text style={styles.panelCardText}>Tieng Viet/English trong mobile app se duoc cai dat o day khi co module ngon ngu rieng.</Text>
+        </View>
+      );
+    }
+
+    return null;
   };
 
   if (isLoading) {
@@ -187,7 +281,7 @@ export default function ProfileScreen() {
             </View>
             <View style={styles.identityInfo}>
               <Text numberOfLines={2} style={styles.name}>{form.fullName || 'HouseHelp User'}</Text>
-              <TouchableOpacity activeOpacity={0.85} style={styles.memberPill}>
+              <TouchableOpacity activeOpacity={0.85} onPress={() => setActivePanel('rewards')} style={styles.memberPill}>
                 <Text style={styles.memberText}>Member tier</Text>
               </TouchableOpacity>
             </View>
@@ -195,12 +289,12 @@ export default function ProfileScreen() {
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Account</Text>
-            {accountRows.map((row, index) => (
+            {accountRows.map((row) => (
               <AccountRow
                 icon={row.icon}
                 key={row.label}
                 label={row.label}
-                onPress={index === 0 ? () => setIsEditing(true) : undefined}
+                onPress={() => handleAccountAction(row.action as AccountAction)}
               />
             ))}
           </View>
@@ -208,7 +302,12 @@ export default function ProfileScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Utilities</Text>
             {utilityRows.map((row) => (
-              <AccountRow icon={row.icon} key={row.label} label={row.label} />
+              <AccountRow
+                icon={row.icon}
+                key={row.label}
+                label={row.label}
+                onPress={() => handleAccountAction(row.action as AccountAction)}
+              />
             ))}
           </View>
 
@@ -217,6 +316,20 @@ export default function ProfileScreen() {
             <Text style={styles.logoutText}>Dang xuat</Text>
           </TouchableOpacity>
         </ScrollView>
+        <Modal animationType="slide" onRequestClose={closePanel} transparent visible={activePanel !== null}>
+          <View style={styles.modalBackdrop}>
+            <TouchableOpacity activeOpacity={1} onPress={closePanel} style={styles.modalScrim} />
+            <View style={styles.panel}>
+              <View style={styles.panelHeader}>
+                <Text style={styles.panelTitle}>{panelTitle}</Text>
+                <TouchableOpacity onPress={closePanel} style={styles.panelCloseButton}>
+                  <Ionicons color="#172033" name="close" size={22} />
+                </TouchableOpacity>
+              </View>
+              {renderPanelContent()}
+            </View>
+          </View>
+        </Modal>
         <CustomerBottomNav />
       </View>
     </SafeAreaView>
@@ -330,11 +443,76 @@ const styles = StyleSheet.create({
     minHeight: 92,
     textAlignVertical: 'top',
   },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalScrim: {
+    backgroundColor: 'rgba(17, 24, 39, 0.42)',
+    flex: 1,
+  },
   name: {
     color: '#172033',
     fontSize: 29,
     fontWeight: '900',
     lineHeight: 34,
+  },
+  panel: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    padding: 18,
+    paddingBottom: 28,
+  },
+  panelCard: {
+    backgroundColor: '#fff',
+    borderColor: '#eceef2',
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+  },
+  panelCardText: {
+    color: '#687386',
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  panelCardTitle: {
+    color: '#172033',
+    fontSize: 18,
+    fontWeight: '900',
+    marginBottom: 6,
+  },
+  panelCloseButton: {
+    alignItems: 'center',
+    backgroundColor: '#f2f4f7',
+    borderRadius: 19,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  panelHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  panelPrimaryButton: {
+    alignItems: 'center',
+    backgroundColor: '#ff8128',
+    borderRadius: 14,
+    marginTop: 14,
+    padding: 14,
+  },
+  panelPrimaryText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  panelTitle: {
+    color: '#172033',
+    flex: 1,
+    fontSize: 24,
+    fontWeight: '900',
   },
   primaryButton: {
     alignItems: 'center',

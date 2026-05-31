@@ -25,6 +25,11 @@ function errorMessage(error: any) {
 }
 
 const tabs = ['Upcoming', 'Schedule', 'Monthly', 'History'] as const;
+const paymentMethods = [
+  { key: 'cash', label: 'Tien mat', description: 'Tra truc tiep khi nhan nha sach.' },
+  { key: 'momo', label: 'MoMo', description: 'Thanh toan vao vi MoMo cua HouseHelp Platform.' },
+] as const;
+const PLATFORM_FEE = 50000;
 
 function formatPrice(value?: number | string) {
   const price = Number(value || 0);
@@ -102,7 +107,7 @@ export default function CustomerBookingsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'momo'>('cash');
   const [rating, setRating] = useState(5);
   const [review, setReview] = useState('');
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
@@ -173,14 +178,19 @@ export default function CustomerBookingsScreen() {
 
     try {
       setIsSubmittingPayment(true);
-      await bookingService.confirmPayment(selectedBooking.id, {
+      const result = await bookingService.confirmPayment(selectedBooking.id, {
         customerId: selectedBooking.customerId,
         paymentMethod,
         rating,
         review: review.trim() || undefined,
       });
       setSelectedBooking(null);
-      Alert.alert('Da thanh toan', 'Cam on ban da xac nhan thanh toan va danh gia dich vu.');
+      Alert.alert(
+        'Da thanh toan',
+        paymentMethod === 'momo'
+          ? `HouseHelp Platform da ghi nhan thanh toan MoMo. Ma giao dich: ${result.payment?.transactionCode || 'dang cap nhat'}.`
+          : 'Cam on ban da xac nhan thanh toan tien mat va danh gia dich vu.',
+      );
       await loadBookings(true);
     } catch (paymentError: any) {
       Alert.alert('Khong thanh toan duoc', errorMessage(paymentError));
@@ -287,21 +297,32 @@ export default function CustomerBookingsScreen() {
               <Text style={styles.modalTitle}>Thanh toan & danh gia</Text>
               <Text style={styles.modalMeta}>{selectedBooking?.housekeeperName || 'Housekeeper'}</Text>
               <Text style={styles.modalPrice}>{formatPrice(selectedBooking?.totalPrice)}</Text>
+              <View style={styles.platformBox}>
+                <Text style={styles.platformTitle}>Platform thu ho va doi soat</Text>
+                <Text style={styles.platformText}>
+                  Phi platform: {formatPrice(PLATFORM_FEE)}. Housekeeper nhan phan con lai theo chu ky hoac khi rut tien.
+                </Text>
+              </View>
 
               <Text style={styles.modalLabel}>Phuong thuc thanh toan</Text>
               <View style={styles.methodRow}>
-                {['cash', 'bank', 'wallet'].map((method) => (
+                {paymentMethods.map((method) => (
                   <TouchableOpacity
-                    key={method}
-                    onPress={() => setPaymentMethod(method)}
-                    style={[styles.methodButton, paymentMethod === method && styles.methodButtonActive]}
+                    key={method.key}
+                    onPress={() => setPaymentMethod(method.key)}
+                    style={[styles.methodButton, paymentMethod === method.key && styles.methodButtonActive]}
                   >
-                    <Text style={[styles.methodText, paymentMethod === method && styles.methodTextActive]}>
-                      {method === 'cash' ? 'Tien mat' : method === 'bank' ? 'Chuyen khoan' : 'Vi dien tu'}
-                    </Text>
+                    <Text style={[styles.methodText, paymentMethod === method.key && styles.methodTextActive]}>{method.label}</Text>
+                    <Text style={[styles.methodHint, paymentMethod === method.key && styles.methodHintActive]}>{method.description}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
+              {paymentMethod === 'momo' ? (
+                <View style={styles.momoBox}>
+                  <Text style={styles.momoTitle}>MoMo Platform</Text>
+                  <Text style={styles.momoText}>Khach thanh toan vao vi MoMo HouseHelp Platform. Platform giu phi va ghi nhan tien cho housekeeper.</Text>
+                </View>
+              ) : null}
 
               <Text style={styles.modalLabel}>Danh gia</Text>
               <View style={styles.starRow}>
@@ -526,10 +547,21 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 15,
   },
+  methodHint: {
+    color: '#667085',
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 15,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  methodHintActive: {
+    color: '#9a4a10',
+  },
   methodText: {
     color: '#667085',
-    fontSize: 12,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '900',
     textAlign: 'center',
   },
   methodTextActive: {
@@ -576,6 +608,26 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '900',
   },
+  momoBox: {
+    backgroundColor: '#fff1f5',
+    borderColor: '#f9a8d4',
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 4,
+    padding: 12,
+  },
+  momoText: {
+    color: '#7a294f',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 19,
+    marginTop: 4,
+  },
+  momoTitle: {
+    color: '#be185d',
+    fontSize: 15,
+    fontWeight: '900',
+  },
   meta: {
     color: '#667085',
     fontSize: 14,
@@ -584,6 +636,26 @@ const styles = StyleSheet.create({
   price: {
     color: '#ff8128',
     fontSize: 15,
+    fontWeight: '900',
+  },
+  platformBox: {
+    backgroundColor: '#f8f8fc',
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 12,
+    padding: 12,
+  },
+  platformText: {
+    color: '#667085',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 19,
+    marginTop: 4,
+  },
+  platformTitle: {
+    color: '#172033',
+    fontSize: 14,
     fontWeight: '900',
   },
   paidButton: {

@@ -19,7 +19,11 @@ export type Booking = {
   customerEmail?: string;
   customerPhone?: string;
   housekeeperName?: string;
+  housekeeperAmount?: number | string;
+  paymentMethod?: 'cash' | 'momo' | string;
   paymentStatus?: string;
+  platformFee?: number | string;
+  settlementStatus?: string;
   createdAt?: string;
 };
 
@@ -41,7 +45,7 @@ export type CreateBookingPayload = {
 
 export type ConfirmPaymentPayload = {
   customerId: number;
-  paymentMethod: string;
+  paymentMethod: 'cash' | 'momo';
   rating?: number;
   review?: string;
 };
@@ -82,7 +86,20 @@ export const bookingService = {
   },
 
   confirmPayment: async (bookingId: number, payload: ConfirmPaymentPayload) => {
-    const response = await api.post<{ message: string; booking: Booking; paymentStatus: string }>(
+    const response = await api.post<{
+      booking: Booking;
+      message: string;
+      payment?: {
+        amount: number;
+        housekeeperAmount: number;
+        method: 'cash' | 'momo';
+        platformAccount: string;
+        platformFee: number;
+        settlementStatus: string;
+        transactionCode: string;
+      };
+      paymentStatus: string;
+    }>(
       `/bookings/${bookingId}/confirm-payment`,
       payload,
     );
