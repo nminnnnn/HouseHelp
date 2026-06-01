@@ -499,7 +499,14 @@ export default function ProfileScreen() {
           <TextInput keyboardType="phone-pad" onChangeText={(value) => updateField('phone', value)} style={styles.input} value={form.phone || ''} />
 
           <Text style={styles.label}>{language === 'vi' ? 'Địa chỉ' : 'Address'}</Text>
-          <TextInput onChangeText={(value) => updateField('address', value)} style={styles.input} value={form.address || ''} />
+          <TextInput
+            onChangeText={(value) => {
+              setSelectedLocation(null);
+              updateField('address', value);
+            }}
+            style={styles.input}
+            value={form.address || ''}
+          />
           <TouchableOpacity activeOpacity={0.86} onPress={openMapPicker} style={styles.mapButton}>
             <Ionicons color="#ff8128" name="map-outline" size={18} />
             <Text style={styles.mapButtonText}>{text.chooseAddress}</Text>
@@ -576,7 +583,7 @@ export default function ProfileScreen() {
                     }}
                     placeholder={language === 'vi' ? 'Bổ sung số nhà, tầng, tòa nhà...' : 'Add house number, floor, building...'}
                     style={styles.mapAddressInput}
-                    value={form.address || selectedLocation.address}
+                    value={selectedLocation.address || form.address || ''}
                   />
                 ) : null}
                 <Text numberOfLines={2} style={styles.mapAddress}>

@@ -55,10 +55,14 @@ export type HousekeeperEarnings = {
 function normalizeHousekeeper(housekeeper: Housekeeper): Housekeeper {
   const price = Number(housekeeper.price);
   const available = housekeeper.available === true || housekeeper.available === 1 || housekeeper.available === '1';
+  const isApproved = housekeeper.isApproved === true || housekeeper.isApproved === 1 || housekeeper.isApproved === '1';
+  const isVerified = housekeeper.isVerified === true || housekeeper.isVerified === 1 || housekeeper.isVerified === '1';
 
   return {
     ...housekeeper,
     available,
+    isApproved,
+    isVerified,
     price: Number.isFinite(price) ? price : undefined,
   };
 }

@@ -50,6 +50,10 @@ function formatDate(booking: Booking) {
   return booking.startDate || booking.date || 'Chua co ngay';
 }
 
+function truthy(value: unknown) {
+  return value === true || value === 1 || value === '1';
+}
+
 function JobCard({
   item,
   isUpdating,
@@ -173,6 +177,7 @@ export default function HousekeeperDashboard() {
   }, [activeFilter, bookings]);
 
   const pendingCount = useMemo(() => bookings.filter((booking) => booking.status === 'pending').length, [bookings]);
+  const isVerifiedHousekeeper = truthy(profile?.isVerified) && truthy(profile?.isApproved);
 
   const handleLogout = async () => {
     await authService.logout();
@@ -181,6 +186,11 @@ export default function HousekeeperDashboard() {
 
   const handleToggleAvailability = async () => {
     if (!user) return;
+
+    if (!isVerifiedHousekeeper) {
+      Alert.alert('Can xac minh', 'Ban can duoc admin xac minh va phe duyet truoc khi bat san sang nhan viec.');
+      return;
+    }
 
     try {
       setIsTogglingAvailability(true);
@@ -313,9 +323,11 @@ export default function HousekeeperDashboard() {
                 >
                   <Text style={styles.profileHeaderText}>Tai khoan</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push('/(housekeeper)/verification')} style={styles.verifyHeaderButton}>
-                  <Text style={styles.verifyHeaderText}>Xac minh</Text>
-                </TouchableOpacity>
+                {!isVerifiedHousekeeper ? (
+                  <TouchableOpacity onPress={() => router.push('/(housekeeper)/verification')} style={styles.verifyHeaderButton}>
+                    <Text style={styles.verifyHeaderText}>Xac minh</Text>
+                  </TouchableOpacity>
+                ) : null}
                 <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
                   <Text style={styles.logoutText}>Dang xuat</Text>
                 </TouchableOpacity>

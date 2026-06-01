@@ -1500,8 +1500,8 @@ app.post('/api/auth/google', (req, res) => {
 
   if (!googleId || !email || !name) {
     return res.status(400).json({ 
-      error: 'Thi?u thông tin Google OAuth',
-      message: 'Google ID, email và tên là b?t bu?c' 
+      error: 'Thi?u thï¿½ng tin Google OAuth',
+      message: 'Google ID, email vï¿½ tï¿½n lï¿½ b?t bu?c' 
     });
   }
 
@@ -1509,7 +1509,7 @@ app.post('/api/auth/google', (req, res) => {
   db.query('SELECT * FROM users WHERE googleId = ?', [googleId], (err, googleResults) => {
     if (err) {
       console.error('Database error checking Google ID:', err);
-      return res.status(500).json({ error: 'L?i h? th?ng', message: 'Không th? xác th?c Google' });
+      return res.status(500).json({ error: 'L?i h? th?ng', message: 'Khï¿½ng th? xï¿½c th?c Google' });
     }
 
     if (googleResults.length > 0) {
@@ -1535,7 +1535,7 @@ app.post('/api/auth/google', (req, res) => {
       
       return res.json({
         success: true,
-        message: 'Ðang nh?p Google thành công',
+        message: 'ï¿½ang nh?p Google thï¿½nh cï¿½ng',
         accessToken: signAccessToken(user),
         user: user,
         isNewUser: false
@@ -1546,7 +1546,7 @@ app.post('/api/auth/google', (req, res) => {
     db.query('SELECT * FROM users WHERE email = ?', [email], (err, emailResults) => {
       if (err) {
         console.error('Database error checking email:', err);
-        return res.status(500).json({ error: 'L?i h? th?ng', message: 'Không th? ki?m tra email' });
+        return res.status(500).json({ error: 'L?i h? th?ng', message: 'Khï¿½ng th? ki?m tra email' });
       }
 
       if (emailResults.length > 0) {
@@ -1555,8 +1555,8 @@ app.post('/api/auth/google', (req, res) => {
         
         if (existingUser.authProvider === 'local') {
           return res.status(409).json({ 
-            error: 'Email dã du?c dang ký',
-            message: 'Email này dã du?c dang ký b?ng phuong th?c khác. Vui lòng dang nh?p b?ng email và m?t kh?u.' 
+            error: 'Email dï¿½ du?c dang kï¿½',
+            message: 'Email nï¿½y dï¿½ du?c dang kï¿½ b?ng phuong th?c khï¿½c. Vui lï¿½ng dang nh?p b?ng email vï¿½ m?t kh?u.' 
           });
         }
         
@@ -1565,7 +1565,7 @@ app.post('/api/auth/google', (req, res) => {
           [googleId, picture, existingUser.id], (linkErr) => {
             if (linkErr) {
               console.error('Error linking Google account:', linkErr);
-              return res.status(500).json({ error: 'L?i liên k?t tài kho?n Google', message: linkErr.message });
+              return res.status(500).json({ error: 'L?i liï¿½n k?t tï¿½i kho?n Google', message: linkErr.message });
             }
             
             console.log('? Google account linked to existing user:', existingUser.id);
@@ -1575,7 +1575,7 @@ app.post('/api/auth/google', (req, res) => {
             
             res.json({
               success: true,
-              message: 'Liên k?t tài kho?n Google thành công',
+              message: 'Liï¿½n k?t tï¿½i kho?n Google thï¿½nh cï¿½ng',
               accessToken: signAccessToken({ ...existingUser, role: existingUser.role, email: existingUser.email }),
               user: { ...existingUser, googleId, profilePicture: picture },
               isNewUser: false
@@ -1595,7 +1595,7 @@ app.post('/api/auth/google', (req, res) => {
       db.query(sql, [name, email, googleId, picture, role, isApproved], (err, result) => {
         if (err) {
           console.error('Database error creating Google user:', err);
-          return res.status(500).json({ error: 'L?i t?o tài kho?n Google', message: err.message });
+          return res.status(500).json({ error: 'L?i t?o tï¿½i kho?n Google', message: err.message });
         }
         
         const userId = result.insertId;
@@ -1605,7 +1605,7 @@ app.post('/api/auth/google', (req, res) => {
         if (role === 'housekeeper') {
           const housekeeperSql = `INSERT INTO housekeepers 
             (userId, rating, services, price, available, description, experience) 
-            VALUES (?, 0, '', 50000, 1, 'Ngu?i giúp vi?c m?i tham gia qua Google', 0)`;
+            VALUES (?, 0, '', 50000, 1, 'Ngu?i giï¿½p vi?c m?i tham gia qua Google', 0)`;
           
           db.query(housekeeperSql, [userId], (err, housekeeperResult) => {
             if (err) {
@@ -1625,7 +1625,7 @@ app.post('/api/auth/google', (req, res) => {
         
         res.status(201).json({ 
           success: true,
-          message: 'Ðang ký Google thành công! Chào m?ng b?n d?n v?i HouseHelp.',
+          message: 'ï¿½ang kï¿½ Google thï¿½nh cï¿½ng! Chï¿½o m?ng b?n d?n v?i HouseHelp.',
           accessToken: signAccessToken({ id: userId, role, email }),
           user: { 
             id: userId, 
@@ -1652,15 +1652,15 @@ app.post('/api/auth/google/unlink', (req, res) => {
   
   if (!effectiveUserId) {
     return res.status(400).json({ 
-      error: 'Thi?u thông tin userId',
-      message: 'C?n có userId d? h?y liên k?t Google' 
+      error: 'Thi?u thï¿½ng tin userId',
+      message: 'C?n cï¿½ userId d? h?y liï¿½n k?t Google' 
     });
   }
 
   if (req.user && req.user.role !== 'admin' && Number(effectiveUserId) !== Number(req.user.id)) {
     return res.status(403).json({
       error: 'Forbidden',
-      message: 'B?n ch? có th? h?y liên k?t tài kho?n c?a chính mình'
+      message: 'B?n ch? cï¿½ th? h?y liï¿½n k?t tï¿½i kho?n c?a chï¿½nh mï¿½nh'
     });
   }
 
@@ -1668,19 +1668,19 @@ app.post('/api/auth/google/unlink', (req, res) => {
   db.query('SELECT password, authProvider FROM users WHERE id = ?', [effectiveUserId], (err, results) => {
     if (err) {
       console.error('Database error checking user auth:', err);
-      return res.status(500).json({ error: 'L?i h? th?ng', message: 'Không th? ki?m tra thông tin xác th?c' });
+      return res.status(500).json({ error: 'L?i h? th?ng', message: 'Khï¿½ng th? ki?m tra thï¿½ng tin xï¿½c th?c' });
     }
     
     if (results.length === 0) {
-      return res.status(404).json({ error: 'Ngu?i dùng không t?n t?i' });
+      return res.status(404).json({ error: 'Ngu?i dï¿½ng khï¿½ng t?n t?i' });
     }
     
     const user = results[0];
     
     if (user.authProvider === 'google' && !user.password) {
       return res.status(400).json({ 
-        error: 'Không th? h?y liên k?t',
-        message: 'B?n c?n d?t m?t kh?u tru?c khi h?y liên k?t tài kho?n Google' 
+        error: 'Khï¿½ng th? h?y liï¿½n k?t',
+        message: 'B?n c?n d?t m?t kh?u tru?c khi h?y liï¿½n k?t tï¿½i kho?n Google' 
       });
     }
     
@@ -1689,20 +1689,20 @@ app.post('/api/auth/google/unlink', (req, res) => {
       [effectiveUserId], (unlinkErr) => {
         if (unlinkErr) {
           console.error('Error unlinking Google account:', unlinkErr);
-          return res.status(500).json({ error: 'L?i h?y liên k?t Google', message: unlinkErr.message });
+          return res.status(500).json({ error: 'L?i h?y liï¿½n k?t Google', message: unlinkErr.message });
         }
         
         console.log('? Google account unlinked for user:', effectiveUserId);
         
         res.json({
           success: true,
-          message: 'H?y liên k?t tài kho?n Google thành công'
+          message: 'H?y liï¿½n k?t tï¿½i kho?n Google thï¿½nh cï¿½ng'
         });
       });
   });
 });
 
-// API: L?y danh sách t?t c? users (cho Admin Dashboard)
+// API: L?y danh sï¿½ch t?t c? users (cho Admin Dashboard)
 app.get('/api/users', (req, res) => {
   const { role, verified, approved, page = 1, limit = 50 } = req.query;
   let sql = 'SELECT id, fullName, email, phone, role, isVerified, isApproved, createdAt, lastActiveAt FROM users WHERE 1=1';
@@ -1737,7 +1737,7 @@ app.get('/api/users', (req, res) => {
       return res.status(500).json({ error: err });
     }
 
-    // Ð?m t?ng s? users d? tính pagination
+    // ï¿½?m t?ng s? users d? tï¿½nh pagination
     let countSql = 'SELECT COUNT(*) as total FROM users WHERE 1=1';
     const countParams = [];
 
@@ -1777,7 +1777,7 @@ app.get('/api/users', (req, res) => {
   });
 });
 
-// API: L?y thông tin user theo id
+// API: L?y thï¿½ng tin user theo id
 app.get('/api/users/:id', (req, res) => {
   db.query('SELECT * FROM users WHERE id = ?', [req.params.id], (err, results) => {
     if (err) return res.status(500).json({ error: err });
@@ -1831,7 +1831,7 @@ app.put('/api/users/:id/profile', (req, res) => {
   });
 
   if (updates.length === 0) {
-    return res.status(400).json({ error: 'Không có thông tin c?n c?p nh?t' });
+    return res.status(400).json({ error: 'Khï¿½ng cï¿½ thï¿½ng tin c?n c?p nh?t' });
   }
 
   updates.push('updatedAt = NOW()');
@@ -1855,7 +1855,7 @@ app.put('/api/users/:id/profile', (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
     
-    // Tr? v? thông tin user dã c?p nh?t
+    // Tr? v? thï¿½ng tin user dï¿½ c?p nh?t
     db.query('SELECT * FROM users WHERE id = ?', [userId], (err, results) => {
       if (err) {
         console.error('Select Error:', err);
@@ -1910,7 +1910,7 @@ app.put('/api/housekeepers/:userId/profile', (req, res) => {
     if (err) return res.status(500).json({ error: err });
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Housekeeper not found' });
     
-    // Tr? v? thông tin housekeeper dã c?p nh?t
+    // Tr? v? thï¿½ng tin housekeeper dï¿½ c?p nh?t
     const selectSql = `
       SELECT h.*, u.fullName, u.email, u.phone, u.avatar
       FROM housekeepers h
@@ -1925,7 +1925,7 @@ app.put('/api/housekeepers/:userId/profile', (req, res) => {
   });
 });
 
-// API: L?y danh sách t?t c? bookings (cho Admin Dashboard)
+// API: L?y danh sï¿½ch t?t c? bookings (cho Admin Dashboard)
 app.get('/api/bookings', (req, res) => {
   const { status, housekeeper, customer, date, month, year, page = 1, limit = 50 } = req.query;
   
@@ -1987,7 +1987,7 @@ app.get('/api/bookings', (req, res) => {
       return res.status(500).json({ error: err });
     }
 
-    // Ð?m t?ng s? bookings d? tính pagination
+    // ï¿½?m t?ng s? bookings d? tï¿½nh pagination
     let countSql = 'SELECT COUNT(*) as total FROM bookings b WHERE 1=1';
     const countParams = [];
 
@@ -2038,7 +2038,7 @@ app.get('/api/bookings', (req, res) => {
   });
 });
 
-// API: Quick Booking - Tìm housekeeper phù h?p
+// API: Quick Booking - Tï¿½m housekeeper phï¿½ h?p
 app.post('/api/quick-booking/find-matches', (req, res) => {
   const { 
     service, 
@@ -2056,7 +2056,7 @@ app.post('/api/quick-booking/find-matches', (req, res) => {
   });
 
   // Build query to find matching housekeepers
-  // S? d?ng c?t h.services tr?c ti?p thay vì JOIN v?i b?ng housekeeper_services
+  // S? d?ng c?t h.services tr?c ti?p thay vï¿½ JOIN v?i b?ng housekeeper_services
   let sql = `
     SELECT h.*, u.fullName, u.email, u.phone, u.isVerified, u.isApproved,
            COALESCE(AVG(r.rating), 4.0) as avgRating,
@@ -2071,7 +2071,7 @@ app.post('/api/quick-booking/find-matches', (req, res) => {
 
   const params = [maxPrice];
 
-  // Add service filter if specified - tìm trong c?t h.services
+  // Add service filter if specified - tï¿½m trong c?t h.services
   if (service) {
     sql += ` AND h.services LIKE ?`;
     params.push(`%${service}%`);
@@ -2219,16 +2219,16 @@ app.post('/api/quick-booking/create', (req, res) => {
 
     // Send urgent notification to housekeeper for quick bookings
     const notificationTitle = urgency === 'asap' 
-      ? '?? Ðon d?t l?ch KH?N C?P!' 
+      ? '?? ï¿½on d?t l?ch KH?N C?P!' 
       : urgency === 'urgent' 
-        ? '? Ðon d?t l?ch G?P!'
-        : '?? Ðon d?t l?ch nhanh m?i';
+        ? '? ï¿½on d?t l?ch G?P!'
+        : '?? ï¿½on d?t l?ch nhanh m?i';
 
     const notificationMessage = urgency === 'asap'
       ? `${customerName} c?n d?ch v? ${service} NGAY L?P T?C!`
       : urgency === 'urgent'
         ? `${customerName} c?n d?ch v? ${service} trong 6h t?i`
-        : `${customerName} dã d?t l?ch d?ch v? ${service} (Ð?t nhanh)`;
+        : `${customerName} dï¿½ d?t l?ch d?ch v? ${service} (ï¿½?t nhanh)`;
 
     const notificationToHousekeeper = {
       id: Date.now(),
@@ -2252,7 +2252,7 @@ app.post('/api/quick-booking/create', (req, res) => {
       const housekeeperUserId = housekeeperResults[0].userId;
       console.log('?? Sending quick booking notification to housekeeper userId:', housekeeperUserId);
 
-      // Store notification in database (c?t read_status, không dùng isRead)
+      // Store notification in database (c?t read_status, khï¿½ng dï¿½ng isRead)
       const notificationSql = `INSERT INTO notifications 
         (userId, type, title, message, bookingId, urgency, data, createdAt, read_status) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
@@ -2291,7 +2291,7 @@ app.post('/api/quick-booking/create', (req, res) => {
   });
 });
 
-// API: Ð?t l?ch (Regular booking)
+// API: ï¿½?t l?ch (Regular booking)
 app.post('/api/bookings', (req, res) => {
   const { 
     customerId, 
@@ -2368,8 +2368,8 @@ app.post('/api/bookings', (req, res) => {
     const notificationToHousekeeper = {
       id: Date.now(),
       type: 'new_booking',
-      title: 'Ðon d?t l?ch m?i',
-      message: `${customerName} dã d?t l?ch d?ch v? ${service}`,
+      title: 'Don dat lich moi',
+      message: `${customerName} da dat lich dich vu ${service}`,
       bookingId: bookingId,
       booking: newBooking,
       timestamp: new Date(),
@@ -2410,7 +2410,7 @@ app.post('/api/bookings', (req, res) => {
           console.log('Notification sent after save:', sent);
         });
 
-        // Không t? t?o tin nh?n thay housekeeper; housekeeper s? ph?n h?i sau khi xem/nh?n don.
+        // Khï¿½ng t? t?o tin nh?n thay housekeeper; housekeeper s? ph?n h?i sau khi xem/nh?n don.
       }
     });
 
@@ -2502,12 +2502,12 @@ app.post('/api/bookings/:id/cancel', (req, res) => {
     );
   });
 });
-// API: Housekeeper xác nh?n booking
+// API: Housekeeper xï¿½c nh?n booking
 app.post('/api/bookings/:id/confirm', (req, res) => {
   const bookingId = req.params.id;
   const { housekeeperId } = req.body; // L?y housekeeperId t? request body
   
-  // Ki?m tra tr?ng thái xác minh và phê duy?t c?a housekeeper tru?c khi cho phép xác nh?n
+  // Ki?m tra tr?ng thï¿½i xï¿½c minh vï¿½ phï¿½ duy?t c?a housekeeper tru?c khi cho phï¿½p xï¿½c nh?n
   db.query(
     `SELECT u.id AS housekeeperUserId, u.isVerified, u.isApproved
      FROM bookings b
@@ -2518,21 +2518,21 @@ app.post('/api/bookings/:id/confirm', (req, res) => {
     (verifyErr, verifyResults) => {
     if (verifyErr) {
       console.error('Error checking housekeeper verification:', verifyErr);
-      return res.status(500).json({ error: 'L?i ki?m tra tr?ng thái xác minh' });
+      return res.status(500).json({ error: 'L?i ki?m tra tr?ng thï¿½i xï¿½c minh' });
     }
     
     if (verifyResults.length === 0) {
-      return res.status(404).json({ error: 'Không tìm th?y booking' });
+      return res.status(404).json({ error: 'Khï¿½ng tï¿½m th?y booking' });
     }
     
     const housekeeper = verifyResults[0];
     if (!sameUser(housekeeper.housekeeperUserId, req.user.id)) {
-      return res.status(403).json({ error: 'B?n ch? có th? xác nh?n booking c?a chính mình' });
+      return res.status(403).json({ error: 'B?n ch? cï¿½ th? xï¿½c nh?n booking c?a chï¿½nh mï¿½nh' });
     }
 
     if (!housekeeper.isVerified || !housekeeper.isApproved) {
       return res.status(403).json({ 
-        error: 'B?n c?n du?c xác minh và phê duy?t b?i admin tru?c khi có th? xác nh?n booking',
+        error: 'B?n c?n du?c xï¿½c minh vï¿½ phï¿½ duy?t b?i admin tru?c khi cï¿½ th? xï¿½c nh?n booking',
         needsVerification: !housekeeper.isVerified,
         needsApproval: !housekeeper.isApproved
       });
@@ -2561,8 +2561,8 @@ app.post('/api/bookings/:id/confirm', (req, res) => {
       const notificationToCustomer = {
         id: Date.now(),
         type: 'booking_confirmed',
-        title: 'Ð?t l?ch dã du?c xác nh?n',
-        message: `${booking.housekeeperName} dã xác nh?n don d?t l?ch c?a b?n`,
+        title: 'ï¿½?t l?ch dï¿½ du?c xï¿½c nh?n',
+        message: `${booking.housekeeperName} dï¿½ xï¿½c nh?n don d?t l?ch c?a b?n`,
         bookingId: bookingId,
         booking: booking,
         timestamp: new Date(),
@@ -2635,8 +2635,8 @@ app.post('/api/bookings/:id/reject', (req, res) => {
       const notificationToCustomer = {
         id: Date.now(),
         type: 'booking_rejected',
-        title: 'Ð?t l?ch dã b? t? ch?i',
-        message: `${booking.housekeeperName} dã t? ch?i don d?t l?ch c?a b?n`,
+        title: 'ï¿½?t l?ch dï¿½ b? t? ch?i',
+        message: `${booking.housekeeperName} dï¿½ t? ch?i don d?t l?ch c?a b?n`,
         bookingId: bookingId,
         booking: booking,
         timestamp: new Date(),
@@ -2697,7 +2697,7 @@ app.get('/api/bookings/:id/status', (req, res) => {
 app.get('/api/bookings/user/:id', (req, res) => {
   const userId = req.params.id;
   
-  // Tìm housekeepers.id tuong ?ng v?i users.id (d? h? tr? c? 2 tru?ng h?p)
+  // Tï¿½m housekeepers.id tuong ?ng v?i users.id (d? h? tr? c? 2 tru?ng h?p)
   const sql = `
     SELECT b.*,
       (SELECT p.method FROM payments p WHERE p.bookingId = b.id ORDER BY p.createdAt DESC LIMIT 1) as paymentMethod,
@@ -2753,9 +2753,9 @@ app.get('/api/filters/services', (req, res) => {
   });
 });
 
-// API: Filter - Ratings (tr? v? t?t c? các l?a ch?n t? 1-5 sao)
+// API: Filter - Ratings (tr? v? t?t c? cï¿½c l?a ch?n t? 1-5 sao)
 app.get('/api/filters/ratings', (req, res) => {
-  // Tr? v? t?t c? các l?a ch?n rating t? 1-5 sao, bao g?m "Any rating"
+  // Tr? v? t?t c? cï¿½c l?a ch?n rating t? 1-5 sao, bao g?m "Any rating"
   const ratings = [
     { value: null, label: "Any rating", stars: 5 },
     { value: 5, label: "5 stars", stars: 5 },
@@ -2798,7 +2798,7 @@ app.get('/api/notifications/:userId', (req, res) => {
       
       const parseNotifData = (raw) => {
         if (raw == null || raw === '') return null;
-        if (typeof raw === 'object') return raw; // mysql2 dã parse c?t JSON
+        if (typeof raw === 'object') return raw; // mysql2 dï¿½ parse c?t JSON
         if (typeof raw === 'string') {
           try {
             return JSON.parse(raw);
@@ -2866,7 +2866,7 @@ app.post('/api/notifications', (req, res) => {
   });
 });
 
-// API: Ðánh d?u notification dã d?c
+// API: ï¿½ï¿½nh d?u notification dï¿½ d?c
 app.put('/api/notifications/:id/read', (req, res) => {
   const notificationId = req.params.id;
   const params = req.user?.role === 'admin'
@@ -2890,7 +2890,7 @@ app.put('/api/notifications/:id/read', (req, res) => {
   );
 });
 
-// API: Xóa notification
+// API: Xï¿½a notification
 app.delete('/api/notifications/:id', (req, res) => {
   const notificationId = req.params.id;
   const params = req.user?.role === 'admin'
@@ -2940,7 +2940,7 @@ io.on('connection', (socket) => {
     socket.role = role;
     socket.userName = userName;
     
-    // C?p nh?t tr?ng thái available cho housekeeper khi dang nh?p
+    // C?p nh?t tr?ng thï¿½i available cho housekeeper khi dang nh?p
     if (role === 'housekeeper') {
       db.query('UPDATE housekeepers SET lastOnline = NOW() WHERE userId = ?', [userId], (err) => {
         if (err) {
@@ -2961,7 +2961,7 @@ io.on('connection', (socket) => {
       const userIdStr = String(socket.userId);
       const userIdNum = parseInt(socket.userId);
       
-      // C?p nh?t tr?ng thái available cho housekeeper khi dang xu?t
+      // C?p nh?t tr?ng thï¿½i available cho housekeeper khi dang xu?t
       if (socket.role === 'housekeeper') {
         db.query('UPDATE housekeepers SET lastOnline = NOW() WHERE userId = ?', [socket.userId], (err) => {
           if (err) {
@@ -5057,7 +5057,7 @@ app.post('/api/users/:userId1/messages/:userId2', (req, res) => {
       }
 
       if (directRows.length === 0) {
-        return res.status(404).json({ error: 'Không tìm th?y ngu?i dùng d? nh?n tin' });
+        return res.status(404).json({ error: 'Khï¿½ng tï¿½m th?y ngu?i dï¿½ng d? nh?n tin' });
       }
 
       const row = directRows[0];
@@ -5065,7 +5065,7 @@ app.post('/api/users/:userId1/messages/:userId2', (req, res) => {
       const secondUserIsHousekeeper = Boolean(row.housekeeper2Id);
 
       if (firstUserIsHousekeeper === secondUserIsHousekeeper) {
-        return res.status(400).json({ error: 'Ch? h? tr? nh?n tr?c ti?p gi?a khách hàng và ngu?i giúp vi?c' });
+        return res.status(400).json({ error: 'Ch? h? tr? nh?n tr?c ti?p gi?a khï¿½ch hï¿½ng vï¿½ ngu?i giï¿½p vi?c' });
       }
 
       const customer = firstUserIsHousekeeper
@@ -5087,7 +5087,7 @@ app.post('/api/users/:userId1/messages/:userId2', (req, res) => {
       db.query(createBookingSql, [
         customer.id,
         housekeeper.id,
-        'Cu?c trò chuy?n tr?c ti?p',
+        'Cu?c trï¿½ chuy?n tr?c ti?p',
         customer.name,
         customer.email,
         customer.phone,

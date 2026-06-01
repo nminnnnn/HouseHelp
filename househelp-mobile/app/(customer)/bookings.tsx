@@ -31,8 +31,6 @@ const paymentMethods = [
   { key: 'cash', label: 'Tiền mặt' },
   { key: 'momo', label: 'MoMo',  },
 ] as const;
-const PLATFORM_FEE = 50000;
-
 const copy = {
   en: {
     activity: 'Activity',
@@ -47,8 +45,6 @@ const copy = {
     location: 'Address',
     paymentMethod: 'Payment method',
     paymentReview: 'Payment & review',
-    platformText: 'Platform fee: {fee}. Housekeeper receives the remaining amount by cycle or withdrawal.',
-    platformTitle: 'Platform collects and reconciles',
     rating: 'Review',
     reviewPlaceholder: 'Review this service...',
     tabs: { history: 'History', monthly: 'Monthly', schedule: 'Schedule', upcoming: 'Upcoming' },
@@ -68,8 +64,6 @@ const copy = {
     location: 'Địa chỉ',
     paymentMethod: 'Phương thức thanh toán',
     paymentReview: 'Thanh toán & đánh giá',
-    platformText: 'Phí platform: {fee}. Người giúp việc nhận phần còn lại theo chu kỳ hoặc khi rút tiền.',
-    platformTitle: 'Platform thu hộ và đối soát',
     rating: 'Đánh giá',
     reviewPlaceholder: 'Nhận xét về dịch vụ...',
     tabs: { history: 'Lịch sử', monthly: 'Hàng tháng', schedule: 'Lịch hẹn', upcoming: 'Sắp tới' },
@@ -103,6 +97,21 @@ function formatDate(booking: Booking, language: AppLanguage) {
   const year = hcmDate.getUTCFullYear();
 
   return language === 'vi' ? `${weekday}, ${day}/${month}/${year}` : `${weekday}, ${month}/${day}/${year}`;
+}
+
+function bookingTimeValue(booking: Booking) {
+  const rawDate = booking.startDate || booking.date || booking.createdAt;
+  const rawTime = booking.time || '00:00';
+  const dateTime = rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
+    ? new Date(`${rawDate}T${rawTime}:00+07:00`)
+    : new Date(rawDate || 0);
+
+  const time = dateTime.getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function sortRecentFirst(items: Booking[]) {
+  return [...items].sort((a, b) => bookingTimeValue(b) - bookingTimeValue(a));
 }
 
 function statusLabel(status: string, language: AppLanguage) {
@@ -217,18 +226,18 @@ export default function CustomerBookingsScreen() {
 
   const visibleBookings = useMemo(() => {
     if (activeTab === 'monthly') {
-      return bookings.filter((item) => String(item.service || '').toLowerCase().includes('monthly'));
+      return sortRecentFirst(bookings.filter((item) => String(item.service || '').toLowerCase().includes('monthly')));
     }
 
     if (activeTab === 'history') {
-      return bookings.filter((item) => ['completed', 'cancelled', 'rejected'].includes(item.status));
+      return sortRecentFirst(bookings.filter((item) => ['completed', 'cancelled', 'rejected'].includes(item.status)));
     }
 
     if (activeTab === 'schedule') {
-      return bookings.filter((item) => ['confirmed', 'in_progress'].includes(item.status));
+      return sortRecentFirst(bookings.filter((item) => ['confirmed', 'in_progress'].includes(item.status)));
     }
 
-    return bookings.filter((item) => !['completed', 'cancelled', 'rejected'].includes(item.status));
+    return sortRecentFirst(bookings.filter((item) => !['completed', 'cancelled', 'rejected'].includes(item.status)));
   }, [activeTab, bookings]);
 
   const openPaymentReview = (booking: Booking) => {
@@ -368,13 +377,6 @@ export default function CustomerBookingsScreen() {
               <Text style={styles.modalTitle}>{text.paymentReview}</Text>
               <Text style={styles.modalMeta}>{selectedBooking?.housekeeperName || 'Housekeeper'}</Text>
               <Text style={styles.modalPrice}>{formatPrice(selectedBooking?.totalPrice)}</Text>
-              <View style={styles.platformBox}>
-                <Text style={styles.platformTitle}>{text.platformTitle}</Text>
-                <Text style={styles.platformText}>
-                  {text.platformText.replace('{fee}', formatPrice(PLATFORM_FEE))}
-                </Text>
-              </View>
-
               <Text style={styles.modalLabel}>{text.paymentMethod}</Text>
               <View style={styles.methodRow}>
                 {paymentMethods.map((method) => (
@@ -388,13 +390,6 @@ export default function CustomerBookingsScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
-              {paymentMethod === 'momo' ? (
-                <View style={styles.momoBox}>
-                  <Text style={styles.momoTitle}>MoMo Platform</Text>
-                  <Text style={styles.momoText}>Khach thanh toan vao vi MoMo HouseHelp Platform. Platform giu phi va ghi nhan tien cho housekeeper.</Text>
-                </View>
-              ) : null}
-
               <Text style={styles.modalLabel}>{text.rating}</Text>
               <View style={styles.starRow}>
                 {[1, 2, 3, 4, 5].map((star) => (
@@ -679,26 +674,6 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '900',
   },
-  momoBox: {
-    backgroundColor: '#fff1f5',
-    borderColor: '#f9a8d4',
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 4,
-    padding: 12,
-  },
-  momoText: {
-    color: '#7a294f',
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 19,
-    marginTop: 4,
-  },
-  momoTitle: {
-    color: '#be185d',
-    fontSize: 15,
-    fontWeight: '900',
-  },
   meta: {
     color: '#667085',
     fontSize: 14,
@@ -707,26 +682,6 @@ const styles = StyleSheet.create({
   price: {
     color: '#ff8128',
     fontSize: 15,
-    fontWeight: '900',
-  },
-  platformBox: {
-    backgroundColor: '#f8f8fc',
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
-    borderWidth: 1,
-    marginTop: 12,
-    padding: 12,
-  },
-  platformText: {
-    color: '#667085',
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 19,
-    marginTop: 4,
-  },
-  platformTitle: {
-    color: '#172033',
-    fontSize: 14,
     fontWeight: '900',
   },
   paidButton: {

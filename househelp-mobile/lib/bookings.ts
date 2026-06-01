@@ -57,6 +57,7 @@ export const bookingService = {
     return response.data;
   },
 
+
   getForUser: async (userId: number) => {
     const response = await api.get<Booking[]>(`/bookings/user/${userId}`);
     return response.data;
