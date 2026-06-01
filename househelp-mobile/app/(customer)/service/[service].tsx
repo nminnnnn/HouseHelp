@@ -15,7 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { CustomerBottomNav } from '../../../components/customer-bottom-nav';
 import { authService } from '../../../lib/auth';
 import { housekeeperPreferenceService } from '../../../lib/housekeeper-preferences';
-import { housekeeperService, type Housekeeper } from '../../../lib/housekeepers';
+import { housekeeperService, parseServices, type Housekeeper } from '../../../lib/housekeepers';
 import { useLanguage } from '../../../lib/language';
 import type { AppLanguage } from '../../../lib/storage';
 
@@ -87,7 +87,7 @@ function HousekeeperCard({
           </Text>
         </View>
 
-        <Text numberOfLines={2} style={styles.services}>{item.services || 'House cleaning'}</Text>
+        <Text numberOfLines={2} style={styles.services}>{parseServices(item.services).join(', ') || 'House cleaning'}</Text>
 
         <View style={styles.metaRow}>
           <Text style={styles.rating}>★ {item.rating ?? item.avgRating ?? '0.0'}</Text>
@@ -170,7 +170,7 @@ export default function ServiceHousekeepersScreen() {
       params: {
         housekeeperId: String(housekeeper.id),
         recurring,
-        service: title === 'All services' ? housekeeper.services?.split(',')[0]?.trim() || 'House cleaning' : title,
+        service: title === 'All services' ? parseServices(housekeeper.services)[0] || 'House cleaning' : title,
       },
     });
   };

@@ -22,7 +22,7 @@ import { addressService, addressText } from '../../../lib/addresses';
 import { authService, type AuthUser } from '../../../lib/auth';
 import { bookingService } from '../../../lib/bookings';
 import { housekeeperPreferenceService } from '../../../lib/housekeeper-preferences';
-import { housekeeperService, type Housekeeper } from '../../../lib/housekeepers';
+import { housekeeperService, parseServices, type Housekeeper } from '../../../lib/housekeepers';
 import { profileService } from '../../../lib/profile';
 
 function todayDate() {
@@ -61,11 +61,8 @@ const PICK_HOUSEKEEPER_FEE = 15000;
 type BookingStep = (typeof bookingSteps)[number];
 
 
-function serviceList(services?: string) {
-  return String(services || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
+function serviceList(services?: string | string[] | unknown) {
+  return parseServices(services);
 }
 
 function firstService(services?: string, selectedService?: string | string[]) {

@@ -6,7 +6,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { authService, type AuthUser } from '../lib/auth';
 import { housekeeperPreferenceService } from '../lib/housekeeper-preferences';
-import { housekeeperService, type Housekeeper } from '../lib/housekeepers';
+import { housekeeperService, parseServices, type Housekeeper } from '../lib/housekeepers';
 import { useLanguage } from '../lib/language';
 
 const copy = {
@@ -117,7 +117,7 @@ export default function BlockedHousekeepersScreen() {
                 </View>
                 <View style={styles.cardBody}>
                   <Text numberOfLines={1} style={styles.name}>{housekeeper.fullName}</Text>
-                  <Text numberOfLines={1} style={styles.meta}>{housekeeper.services || 'House cleaning'}</Text>
+                  <Text numberOfLines={1} style={styles.meta}>{parseServices(housekeeper.services).join(', ') || 'House cleaning'}</Text>
                 </View>
                 <TouchableOpacity onPress={() => unblock(housekeeper.id)} style={styles.unblockButton}>
                   <Text style={styles.unblockText}>{text.unblock}</Text>

@@ -6,7 +6,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { authService, type AuthUser } from '../../../lib/auth';
 import { housekeeperPreferenceService } from '../../../lib/housekeeper-preferences';
-import { housekeeperService, type Housekeeper } from '../../../lib/housekeepers';
+import { housekeeperService, parseServices, type Housekeeper } from '../../../lib/housekeepers';
 import { useLanguage } from '../../../lib/language';
 import type { AppLanguage } from '../../../lib/storage';
 
@@ -19,17 +19,10 @@ function formatPrice(price?: number | string, language: AppLanguage = 'vi') {
   return `${value.toLocaleString('vi-VN')} VND`;
 }
 
-function formatServices(services?: string, language: AppLanguage) {
-  if (!services) {
-    return [language === 'vi' ? 'Chưa cập nhật dịch vụ' : 'No services updated'];
-  }
-
-  const items = services
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  return items.length ? items : [language === 'vi' ? 'Chưa cập nhật dịch vụ' : 'No services updated'];
+function formatServices(services?: string | string[] | unknown, language: AppLanguage) {
+  const items = parseServices(services);
+  if (items.length > 0) return items;
+  return [language === 'vi' ? 'Chưa cập nhật dịch vụ' : 'No services updated'];
 }
 
 function listFromValue(value?: string[] | string) {

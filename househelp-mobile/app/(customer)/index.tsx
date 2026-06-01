@@ -16,7 +16,7 @@ import { CustomerBottomNav } from '../../components/customer-bottom-nav';
 import { authService, type AuthUser } from '../../lib/auth';
 import { bookingService } from '../../lib/bookings';
 import { housekeeperPreferenceService } from '../../lib/housekeeper-preferences';
-import { housekeeperService, type Housekeeper } from '../../lib/housekeepers';
+import { housekeeperService, parseServices, type Housekeeper } from '../../lib/housekeepers';
 import { useLanguage } from '../../lib/language';
 
 function errorMessage(error: any, fallback: string) {
@@ -91,7 +91,7 @@ function HousekeeperCard({ contactLabel, item, onPress }: { contactLabel: string
       </View>
       <View style={styles.housekeeperInfo}>
         <Text numberOfLines={1} style={styles.housekeeperName}>{item.fullName}</Text>
-        <Text numberOfLines={1} style={styles.housekeeperMeta}>{item.services || 'House cleaning'}</Text>
+        <Text numberOfLines={1} style={styles.housekeeperMeta}>{parseServices(item.services).join(', ') || 'House cleaning'}</Text>
         <View style={styles.housekeeperFooter}>
           <Text style={styles.rating}>★ {item.rating ?? item.avgRating ?? '0.0'}</Text>
           <Text style={styles.price}>{formatPrice(item.price, contactLabel)}</Text>
@@ -283,6 +283,7 @@ export default function CustomerHome() {
                 {previousHousekeepers.map((item) => (
                   <HousekeeperCard
                     key={`previous-${String(item.id)}`}
+                    contactLabel={text.contact}
                     item={item}
                     onPress={() => router.push(`/(customer)/housekeeper/${item.id}`)}
                   />

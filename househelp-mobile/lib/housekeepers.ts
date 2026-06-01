@@ -42,6 +42,35 @@ type GetAllOptions = {
   availableOnly?: boolean;
 };
 
+export function parseServices(value?: string | string[] | unknown) {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value.map(String).map((item) => item.trim()).filter(Boolean);
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.map(String).map((item) => item.trim()).filter(Boolean);
+    }
+  } catch {
+    // Ignore invalid JSON and fall back to delimited parsing.
+  }
+
+  return raw
+    .split(/[,;\n|]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+export function servicesToString(value?: string | string[] | unknown) {
+  return parseServices(value).join(', ');
+}
+
 export type HousekeeperEarnings = {
   cashCollected?: number | string;
   cashPlatformFeeDue?: number | string;
@@ -64,6 +93,7 @@ function normalizeHousekeeper(housekeeper: Housekeeper): Housekeeper {
     isApproved,
     isVerified,
     price: Number.isFinite(price) ? price : undefined,
+    services: servicesToString(housekeeper.services),
   };
 }
 
