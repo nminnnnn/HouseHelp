@@ -1,3 +1,5 @@
+import { Ionicons } from '@expo/vector-icons';
+import Slider from '@react-native-community/slider';
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
@@ -23,32 +25,25 @@ import { housekeeperPreferenceService } from '../../../lib/housekeeper-preferenc
 import { housekeeperService, type Housekeeper } from '../../../lib/housekeepers';
 import { profileService } from '../../../lib/profile';
 
-const HCM_UTC_OFFSET_HOURS = 7;
-const MIN_BOOKING_NOTICE_HOURS = 3;
-
-function hcmNow() {
-  return new Date(Date.now() + HCM_UTC_OFFSET_HOURS * 60 * 60 * 1000);
-}
-
 function todayDate() {
-  const now = hcmNow();
-  const year = now.getUTCFullYear();
-  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(now.getUTCDate()).padStart(2, '0');
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
 function toDateValue(date: Date) {
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
 function dateOptions() {
   return Array.from({ length: 14 }, (_, index) => {
-    const date = hcmNow();
-    date.setUTCDate(date.getUTCDate() + index);
+    const date = new Date();
+    date.setDate(date.getDate() + index);
 
     return {
       label: index === 0
@@ -59,15 +54,12 @@ function dateOptions() {
   });
 }
 
-const timeOptions = ['07:00', '08:00', '09:00', '10:00', '13:00', '14:00', '15:00', '16:00', '18:00'];
-const bookingSteps = ['Dich vu', 'Dia chi', 'Ngay gio', 'Thoi luong', 'Xac nhan'] as const;
+const bookingSteps = ['Location', 'Time', 'Notes', 'Payment'] as const;
+const durationOptions = [2, 3, 4, 5, 6, 7, 8, 9];
 const PICK_HOUSEKEEPER_FEE = 15000;
-const paymentMethods = [
-  { key: 'cash', label: 'Tien mat' },
-  { key: 'momo', label: 'MoMo' },
-] as const;
 
 type BookingStep = (typeof bookingSteps)[number];
+
 
 function serviceList(services?: string) {
   return String(services || '')
@@ -90,7 +82,7 @@ function firstService(services?: string, selectedService?: string | string[]) {
 
 function parseDuration(value: string) {
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 1;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
 
 function parsePrice(value?: number | string) {
@@ -100,38 +92,6 @@ function parsePrice(value?: number | string) {
 
 function isValidTimeFrame(value: string) {
   return value.trim().length >= 3;
-}
-
-function parseStartTime(value: string) {
-  const match = value.trim().match(/(\d{1,2})(?::|h)?(\d{2})?/i);
-
-  if (!match) {
-    return null;
-  }
-
-  const hour = Number(match[1]);
-  const minute = Number(match[2] || 0);
-
-  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-    return null;
-  }
-
-  return { hour, minute };
-}
-
-function bookingStartUtcMs(dateValue: string, timeValue: string) {
-  const [year, month, day] = dateValue.split('-').map(Number);
-  const start = parseStartTime(timeValue);
-
-  if (!year || !month || !day || !start) {
-    return null;
-  }
-
-  return Date.UTC(year, month - 1, day, start.hour - HCM_UTC_OFFSET_HOURS, start.minute, 0, 0);
-}
-
-function minBookingStartUtcMs() {
-  return Date.now() + MIN_BOOKING_NOTICE_HOURS * 60 * 60 * 1000;
 }
 
 type SelectedLocation = {
@@ -150,7 +110,7 @@ function locationLabel(location: SelectedLocation) {
 
 export default function CreateBookingScreen() {
   const insets = useSafeAreaInsets();
-  const [currentStep, setCurrentStep] = useState<BookingStep>('Dich vu');
+  const [currentStep, setCurrentStep] = useState<BookingStep>('Location');
   const [date, setDate] = useState(todayDate());
   const [duration, setDuration] = useState('2');
   const [housekeeper, setHousekeeper] = useState<Housekeeper | null>(null);
@@ -166,9 +126,7 @@ export default function CreateBookingScreen() {
     latitudeDelta: 0.025,
     longitudeDelta: 0.025,
   });
-  const [nowTick, setNowTick] = useState(Date.now());
   const [notes, setNotes] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'momo'>('cash');
   const [selectedLocation, setSelectedLocation] = useState<SelectedLocation | null>(null);
   const [service, setService] = useState('');
   const [time, setTime] = useState('08:00');
@@ -222,7 +180,7 @@ export default function CreateBookingScreen() {
         setDuration('3');
       }
     } catch (error: any) {
-      Alert.alert('Khong tai duoc du lieu', error.response?.data?.message || error.response?.data?.error || 'Thu lai sau.');
+      Alert.alert('Không tải được dữ liệu', error.response?.data?.message || error.response?.data?.error || 'Thử lại sau.');
     } finally {
       setIsLoading(false);
     }
@@ -231,12 +189,6 @@ export default function CreateBookingScreen() {
   useEffect(() => {
     loadData();
   }, [loadData]);
-
-  useEffect(() => {
-    const intervalId = setInterval(() => setNowTick(Date.now()), 60000);
-
-    return () => clearInterval(intervalId);
-  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -251,14 +203,10 @@ export default function CreateBookingScreen() {
   const totalPrice = basePrice + PICK_HOUSEKEEPER_FEE;
   const unitPrice = useMemo(() => parsePrice(housekeeper?.price), [housekeeper?.price]);
   const serviceOptions = useMemo(() => serviceList(housekeeper?.services), [housekeeper?.services]);
-  const availableDates = useMemo(() => {
-    void nowTick;
-    return dateOptions();
-  }, [nowTick]);
-  const isTimeOptionDisabled = useCallback((timeValue: string) => {
-    const startUtcMs = bookingStartUtcMs(date, timeValue);
-    return !startUtcMs || startUtcMs < nowTick + MIN_BOOKING_NOTICE_HOURS * 60 * 60 * 1000;
-  }, [date, nowTick]);
+  const availableDates = useMemo(() => dateOptions(), []);
+  const selectedDuration = parseDuration(duration);
+  const selectedDurationIndex = Math.max(0, durationOptions.findIndex((item) => item === selectedDuration));
+  const durationProgress = `${(selectedDurationIndex / (durationOptions.length - 1)) * 100}%`;
 
   const reverseGeocode = useCallback(async (latitude: number, longitude: number) => {
     try {
@@ -272,9 +220,9 @@ export default function CreateBookingScreen() {
         place?.region,
       ].filter(Boolean);
 
-      return parts.length > 0 ? parts.join(', ') : `Vi tri da chon ${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}`;
+      return parts.length > 0 ? parts.join(', ') : `Vị trí đã chọn ${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}`;
     } catch {
-      return `Vi tri da chon ${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}`;
+      return `Vị trí đã chọn ${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}`;
     }
   }, []);
 
@@ -308,7 +256,7 @@ export default function CreateBookingScreen() {
       const coords = await getDeviceLocation();
       await chooseCoordinate(coords.latitude, coords.longitude);
     } catch {
-      Alert.alert('Khong the truy cap vi tri', 'Hay kiem tra quyen vi tri va thu lai.');
+      Alert.alert('Không thể truy cập vị trí', 'Hãy kiểm tra quyền vị trí và thử lại.');
     } finally {
       setIsMapLoading(false);
     }
@@ -331,7 +279,7 @@ export default function CreateBookingScreen() {
       const coords = await getDeviceLocation();
       await chooseCoordinate(coords.latitude, coords.longitude);
     } catch {
-      Alert.alert('Khong lay duoc vi tri', 'Ban co the cham truc tiep tren ban do de chon dia chi.');
+      Alert.alert('Không lấy được vị trí', 'Bạn có thể chạm trực tiếp trên bản đồ để chọn địa chỉ.');
     } finally {
       setIsMapLoading(false);
     }
@@ -346,7 +294,7 @@ export default function CreateBookingScreen() {
     const query = mapQuery.trim();
 
     if (!query) {
-      Alert.alert('Nhap dia chi', 'Vui long nhap dia chi can tim.');
+      Alert.alert('Nhập địa chỉ', 'Vui lòng nhập địa chỉ cần tìm.');
       return;
     }
 
@@ -355,7 +303,7 @@ export default function CreateBookingScreen() {
       const results = await Location.geocodeAsync(query);
 
       if (!results.length) {
-        Alert.alert('Khong tim thay', 'Vui long nhap dia chi cu the hon.');
+        Alert.alert('Không tìm thấy', 'Vui lòng nhập địa chỉ cụ thể hơn.');
         return;
       }
 
@@ -373,7 +321,7 @@ export default function CreateBookingScreen() {
       setSelectedLocation(nextLocation);
       setLocation(locationLabel(nextLocation));
     } catch {
-      Alert.alert('Khong tim duoc dia chi', 'Vui long thu lai hoac cham truc tiep tren ban do.');
+      Alert.alert('Không tìm được địa chỉ', 'Vui lòng thử lại hoặc chạm trực tiếp trên bản đồ.');
     } finally {
       setIsMapLoading(false);
     }
@@ -385,46 +333,36 @@ export default function CreateBookingScreen() {
   };
 
   const validateCurrentStep = () => {
-    if (currentStep === 'Dich vu' && !service.trim()) {
-      Alert.alert('Chua chon dich vu', 'Vui long chon dich vu can dat.');
+    if (currentStep === 'Location' && !service.trim()) {
+      Alert.alert('Chưa chọn dịch vụ', 'Vui lòng chọn dịch vụ cần đặt.');
       return false;
     }
 
-    if (currentStep === 'Dia chi' && !location.trim()) {
-      Alert.alert('Chua chon dia chi', 'Vui long chon dia chi lam viec.');
+    if (currentStep === 'Location' && !location.trim()) {
+      Alert.alert('Chưa chọn địa chỉ', 'Vui lòng chọn địa chỉ làm việc.');
       return false;
     }
 
-    if (currentStep === 'Ngay gio') {
+    if (currentStep === 'Time') {
       if (!date.trim() || !time.trim()) {
-        Alert.alert('Thieu ngay gio', 'Vui long chon ngay va khung gio.');
+        Alert.alert('Thiếu ngày giờ', 'Vui lòng chọn ngày và khung giờ.');
         return false;
       }
 
       if (!isValidTimeFrame(time)) {
-        Alert.alert('Khung gio chua hop le', 'Vui long nhap khung gio muon thue, vi du: 08:00-11:00 hoac 8h den 11h.');
+        Alert.alert('Khung giờ chưa hợp lệ', 'Vui lòng nhập khung giờ muốn thuê, ví dụ: 08:00-11:00 hoặc 8h đến 11h.');
         return false;
       }
 
-      const startUtcMs = bookingStartUtcMs(date, time);
-
-      if (!startUtcMs) {
-        Alert.alert('Khung gio chua hop le', 'Vui long nhap gio bat dau hop le, vi du: 08:00-11:00 hoac 8h den 11h.');
+      if (date < todayDate()) {
+        Alert.alert('Ngày không hợp lệ', 'Vui lòng chọn ngày hôm nay hoặc một ngày trong tương lai.');
         return false;
       }
 
-      if (startUtcMs < minBookingStartUtcMs()) {
-        Alert.alert(
-          'Lich qua gan',
-          `Vui long chon lich cach thoi diem hien tai it nhat ${MIN_BOOKING_NOTICE_HOURS} tieng theo gio Ho Chi Minh (UTC+7).`,
-        );
+      if (parseDuration(duration) <= 0) {
+        Alert.alert('Thời lượng chưa hợp lệ', 'Vui lòng nhập số giờ muốn thuê.');
         return false;
       }
-    }
-
-    if (currentStep === 'Thoi luong' && parseDuration(duration) <= 0) {
-      Alert.alert('Thoi luong chua hop le', 'Vui long nhap so gio muon thue.');
-      return false;
     }
 
     return true;
@@ -449,44 +387,34 @@ export default function CreateBookingScreen() {
 
   const createBooking = async () => {
     if (!user || !housekeeper) {
-      Alert.alert('Can dang nhap', 'Vui long dang nhap lai de dat lich.');
+      Alert.alert('Cần đăng nhập', 'Vui lòng đăng nhập lại để đặt lịch.');
       router.replace('/(auth)/login');
       return;
     }
 
     if (!housekeeper.available) {
-      Alert.alert('Housekeeper dang tam nghi', 'Vui long chon housekeeper khac dang nhan viec.');
+      Alert.alert('Housekeeper đang tạm nghỉ', 'Vui lòng chọn housekeeper khác đang nhận việc.');
       return;
     }
 
     if (!service.trim() || !date.trim() || !time.trim() || !location.trim()) {
-      Alert.alert('Thieu thong tin', 'Vui long chon dich vu, ngay, khung gio va dia chi.');
+      Alert.alert('Thiếu thông tin', 'Vui lòng chọn dịch vụ, ngày, khung giờ và địa chỉ.');
       return;
     }
 
     const blockedHousekeeper = await housekeeperPreferenceService.isBlocked(user.id, housekeeper.id);
     if (blockedHousekeeper) {
-      Alert.alert('Housekeeper da bi chan', 'Vui long bo chan housekeeper nay neu ban muon dat lich lai.');
+      Alert.alert('Housekeeper đã bị chặn', 'Vui lòng bỏ chặn housekeeper này nếu bạn muốn đặt lịch lại.');
       return;
     }
 
     if (!isValidTimeFrame(time)) {
-      Alert.alert('Khung gio chua hop le', 'Vui long nhap khung gio muon thue, vi du: 08:00-11:00 hoac 8h den 11h.');
+      Alert.alert('Khung giờ chưa hợp lệ', 'Vui lòng nhập khung giờ muốn thuê, ví dụ: 08:00-11:00 hoặc 8h đến 11h.');
       return;
     }
 
-    const startUtcMs = bookingStartUtcMs(date, time);
-
-    if (!startUtcMs) {
-      Alert.alert('Khung gio chua hop le', 'Vui long nhap gio bat dau hop le, vi du: 08:00-11:00 hoac 8h den 11h.');
-      return;
-    }
-
-    if (startUtcMs < minBookingStartUtcMs()) {
-      Alert.alert(
-        'Lich qua gan',
-        `Vui long chon lich cach thoi diem hien tai it nhat ${MIN_BOOKING_NOTICE_HOURS} tieng theo gio Ho Chi Minh (UTC+7).`,
-      );
+    if (date < todayDate()) {
+      Alert.alert('Ngày không hợp lệ', 'Vui lòng chọn ngày hôm nay hoặc một ngày trong tương lai.');
       return;
     }
 
@@ -503,17 +431,16 @@ export default function CreateBookingScreen() {
         housekeeperName: housekeeper.fullName,
         location: location.trim(),
         notes: notes.trim() || undefined,
-        paymentMethod,
         service: recurring === 'monthly' ? `${service.trim()} monthly` : service.trim(),
         time: time.trim(),
         totalPrice,
       });
 
-      Alert.alert('Dat lich thanh cong', 'Yeu cau cua ban da duoc gui den nguoi giup viec.', [
+      Alert.alert('Đặt lịch thành công', 'Yêu cầu của bạn đã được gửi đến người giúp việc.', [
         { text: 'Xem booking', onPress: () => router.replace('/(customer)/bookings') },
       ]);
     } catch (error: any) {
-      Alert.alert('Dat lich that bai', error.response?.data?.message || error.response?.data?.error || 'Khong the tao booking.');
+      Alert.alert('Đặt lịch thất bại', error.response?.data?.message || error.response?.data?.error || 'Không thể tạo booking.');
     } finally {
       setIsSubmitting(false);
     }
@@ -536,21 +463,14 @@ export default function CreateBookingScreen() {
       keyboardShouldPersistTaps="handled"
       style={styles.screen}
     >
-      <TouchableOpacity onPress={goBackStep} style={styles.backButton}>
-        <Text style={styles.backText}>Quay lai</Text>
-      </TouchableOpacity>
-
-      <Text style={styles.title}>Dat lich</Text>
-      <Text style={styles.subtitle}>{housekeeper?.fullName || 'Nguoi giup viec'}</Text>
-      {recurring === 'monthly' ? (
-        <View style={styles.recurringBadge}>
-          <Text style={styles.recurringText}>Lich hang thang</Text>
-        </View>
-      ) : null}
-
-      <View style={styles.summary}>
-        <Text style={styles.summaryLabel}>Tam tinh</Text>
-        <Text style={styles.summaryValue}>{totalPrice.toLocaleString('vi-VN')} VND</Text>
+      <View style={styles.bookingHeader}>
+        <TouchableOpacity onPress={goBackStep} style={styles.headerIconButton}>
+          <Ionicons color="#ff8128" name="chevron-back" size={22} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Booking Details</Text>
+        <TouchableOpacity onPress={loadData} style={styles.headerIconButton}>
+          <Ionicons color="#ff8128" name="refresh" size={18} />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.stepper}>
@@ -569,9 +489,9 @@ export default function CreateBookingScreen() {
         })}
       </View>
 
-      {currentStep === 'Dich vu' ? (
-        <>
-          <Text style={styles.label}>Dich vu</Text>
+      {currentStep === 'Location' ? (
+        <View style={styles.bookingSection}>
+          <Text style={styles.sectionTitle}>Service</Text>
           <View style={styles.servicePicker}>
             <View style={styles.serviceOptions}>
               {(serviceOptions.length > 0 ? serviceOptions : [service || 'House cleaning']).map((item) => {
@@ -590,42 +510,59 @@ export default function CreateBookingScreen() {
               })}
             </View>
           </View>
-        </>
-      ) : null}
 
-      {currentStep === 'Dia chi' ? (
-        <>
-          <Text style={styles.label}>Dia chi lam viec</Text>
+          <Text style={styles.sectionTitle}>Service Location</Text>
           <View style={styles.locationCard}>
             <View style={styles.locationPin}>
-              <Text style={styles.locationPinText}>PIN</Text>
+              <Ionicons color="#ff8128" name="location-outline" size={18} />
             </View>
             <View style={styles.locationBody}>
-              <Text style={styles.locationTitle}>{location ? 'Dia chi da chon' : 'Chua chon dia chi'}</Text>
+              <Text style={styles.locationTitle}>{location ? 'Địa chỉ đã chọn' : 'Chưa chọn địa chỉ'}</Text>
               <Text numberOfLines={3} style={styles.locationText}>
-                {location || 'Vui long chon dia chi tu so dia chi hoac tren ban do.'}
+                {location || 'Vui lòng chọn địa chỉ từ sổ địa chỉ hoặc trên bản đồ.'}
               </Text>
             </View>
+            <TouchableOpacity onPress={() => router.push('/addresses')} style={styles.changeButton}>
+              <Text style={styles.changeButtonText}>CHANGE</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity activeOpacity={0.86} onPress={() => router.push('/addresses')} style={styles.addressBookButton}>
-            <Text style={styles.addressBookButtonText}>Chon tu so dia chi</Text>
+
+          <TouchableOpacity activeOpacity={0.9} onPress={openMapPicker} style={styles.mapPreview}>
+            {selectedLocation ? (
+              <MapView
+                pointerEvents="none"
+                region={{
+                  latitude: selectedLocation.latitude,
+                  longitude: selectedLocation.longitude,
+                  latitudeDelta: 0.01,
+                  longitudeDelta: 0.01,
+                }}
+                style={styles.previewMap}
+              >
+                <Marker coordinate={{ latitude: selectedLocation.latitude, longitude: selectedLocation.longitude }} />
+              </MapView>
+            ) : (
+              <View style={styles.mapPreviewPlaceholder}>
+                <View style={styles.largePin}>
+                  <Ionicons color="#fff" name="location" size={30} />
+                </View>
+                <Text style={styles.mapPreviewText}>Chọn vị trí trên bản đồ</Text>
+              </View>
+            )}
           </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.86} onPress={openMapPicker} style={styles.mapButton}>
-            <Text style={styles.mapButtonText}>{selectedLocation ? 'Chon lai tren ban do' : 'Chon tren ban do'}</Text>
-          </TouchableOpacity>
-        </>
+        </View>
       ) : null}
 
-      {currentStep === 'Ngay gio' ? (
-        <>
-          <Text style={styles.label}>Ngay lam</Text>
+      {currentStep === 'Time' ? (
+        <View style={styles.bookingSection}>
+          <Text style={styles.sectionTitle}>Schedule & Duration</Text>
           <ScrollView
             contentContainerStyle={styles.pickerRow}
             horizontal
             showsHorizontalScrollIndicator={false}
             style={styles.pickerScroller}
           >
-            {availableDates.map((item) => {
+            {availableDates.slice(0, 7).map((item, index) => {
               const isSelected = item.value === date;
 
               return (
@@ -635,139 +572,182 @@ export default function CreateBookingScreen() {
                   onPress={() => setDate(item.value)}
                   style={[styles.dateOption, isSelected && styles.dateOptionActive]}
                 >
-                  <Text style={[styles.dateOptionLabel, isSelected && styles.dateOptionLabelActive]}>{item.label}</Text>
+                  <Text style={[styles.dateOptionLabel, isSelected && styles.dateOptionLabelActive]}>
+                    {index === 0 ? 'Hôm nay' : item.label.split(',')[0]}
+                  </Text>
                   <Text style={[styles.dateOptionValue, isSelected && styles.dateOptionValueActive]}>{item.value.slice(5)}</Text>
                 </TouchableOpacity>
               );
             })}
           </ScrollView>
 
-          <Text style={styles.label}>Khung gio muon thue</Text>
-          <TextInput
-            onChangeText={setTime}
-            placeholder="Vi du: 08:00-11:00"
-            style={styles.input}
-            value={time}
-          />
           <View style={styles.timeGrid}>
-            {timeOptions.map((item) => {
+            {['09:00', '11:30', '14:00', '16:00'].map((item) => {
               const isSelected = item === time;
-              const isDisabled = isTimeOptionDisabled(item);
 
               return (
                 <TouchableOpacity
                   activeOpacity={0.82}
-                  disabled={isDisabled}
                   key={item}
                   onPress={() => setTime(item)}
-                  style={[styles.timeOption, isDisabled && styles.timeOptionDisabled, isSelected && !isDisabled && styles.timeOptionActive]}
+                  style={[styles.timeOption, isSelected && styles.timeOptionActive]}
                 >
-                  <Text style={[styles.timeOptionText, isDisabled && styles.timeOptionTextDisabled, isSelected && !isDisabled && styles.timeOptionTextActive]}>{item}</Text>
+                  <Text style={[styles.timeOptionText, isSelected && styles.timeOptionTextActive]}>{item}</Text>
                 </TouchableOpacity>
               );
             })}
           </View>
-        </>
-      ) : null}
 
-      {currentStep === 'Thoi luong' ? (
-        <>
-          <Text style={styles.label}>So gio</Text>
-          <TextInput
-            keyboardType="number-pad"
-            onChangeText={setDuration}
-            placeholder="2"
-            style={styles.input}
-            value={duration}
-          />
+          <View style={styles.customTimeRow}>
+            <Ionicons color="#ff8128" name="create-outline" size={18} />
+            <TextInput
+              onChangeText={setTime}
+              placeholder="Enter custom time, e.g. 08:00-11:00"
+              style={styles.customTimeInput}
+              value={time}
+            />
+          </View>
 
-          <Text style={styles.label}>Ghi chu</Text>
-          <TextInput
-            multiline
-            onChangeText={setNotes}
-            placeholder="Yeu cau them neu co"
-            style={[styles.input, styles.multiline]}
-            value={notes}
-          />
-        </>
-      ) : null}
-
-      {currentStep === 'Xac nhan' ? (
-        <View style={styles.reviewCard}>
-          <Text style={styles.reviewTitle}>Xac nhan don truoc khi dat</Text>
-          <View style={styles.reviewRow}>
-            <Text style={styles.reviewLabel}>Dich vu</Text>
-            <Text numberOfLines={2} style={styles.reviewValue}>{service || 'Chua chon'}</Text>
-          </View>
-          <View style={styles.reviewRow}>
-            <Text style={styles.reviewLabel}>Ngay gio</Text>
-            <Text style={styles.reviewValue}>{date} - {time}</Text>
-          </View>
-          <View style={styles.reviewRow}>
-            <Text style={styles.reviewLabel}>So gio</Text>
-            <Text style={styles.reviewValue}>{parseDuration(duration)} gio</Text>
-          </View>
-          <View style={styles.reviewRow}>
-            <Text style={styles.reviewLabel}>Don gia</Text>
-            <Text style={styles.reviewValue}>{unitPrice.toLocaleString('vi-VN')} VND/gio</Text>
-          </View>
-          <View style={styles.reviewRow}>
-            <Text style={styles.reviewLabel}>Tien dich vu</Text>
-            <Text style={styles.reviewValue}>{basePrice.toLocaleString('vi-VN')} VND</Text>
-          </View>
-          <View style={styles.reviewRow}>
-            <Text style={styles.reviewLabel}>Phi tu chon nguoi lam</Text>
-            <Text style={styles.reviewValue}>{PICK_HOUSEKEEPER_FEE.toLocaleString('vi-VN')} VND</Text>
-          </View>
-          <View style={styles.reviewRow}>
-            <Text style={styles.reviewLabel}>Dia chi</Text>
-            <Text numberOfLines={3} style={styles.reviewValue}>{location.trim() || 'Chua nhap'}</Text>
-          </View>
-          <Text style={styles.paymentTitle}>Phuong thuc thanh toan</Text>
-          <View style={styles.paymentMethodRow}>
-            {paymentMethods.map((method) => {
-              const selected = paymentMethod === method.key;
-
-              return (
-                <TouchableOpacity
-                  activeOpacity={0.84}
-                  key={method.key}
-                  onPress={() => setPaymentMethod(method.key)}
-                  style={[styles.paymentMethodButton, selected && styles.paymentMethodButtonActive]}
-                >
-                  <Text style={[styles.paymentMethodLabel, selected && styles.paymentMethodLabelActive]}>{method.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-          {notes.trim() ? (
-            <View style={styles.reviewRow}>
-              <Text style={styles.reviewLabel}>Ghi chu</Text>
-              <Text numberOfLines={3} style={styles.reviewValue}>{notes.trim()}</Text>
+          <View style={styles.durationCard}>
+            <View style={styles.durationHeader}>
+              <Text style={styles.durationLabel}>Cleaning Duration</Text>
+              <Text style={styles.durationValue}>{selectedDuration} Hours</Text>
             </View>
-          ) : null}
-          <View style={[styles.reviewRow, styles.reviewTotalRow]}>
-            <Text style={styles.reviewTotalLabel}>Tong tien</Text>
-            <Text style={styles.reviewTotalValue}>{totalPrice.toLocaleString('vi-VN')} VND</Text>
+            {/* <View style={styles.durationTrack}>
+              <View style={styles.durationTrackBase} />
+              <View style={[styles.durationTrackFill, { width: durationProgress }]} />
+              {durationOptions.map((item) => {
+                const isSelected = item === selectedDuration;
+                return (
+                  <TouchableOpacity
+                    activeOpacity={0.84}
+                    key={item}
+                    onPress={() => setDuration(String(item))}
+                    style={[styles.durationDot, isSelected && styles.durationDotActive]}
+                  />
+                );
+              })}
+            </View> */}
+            <View style={styles.durationSliderWrap}>
+  <Slider
+    minimumValue={0}
+    maximumValue={durationOptions.length - 1}
+    step={1}
+    value={selectedDurationIndex}
+    onValueChange={(index) => {
+      setDuration(String(durationOptions[index]));
+    }}
+    minimumTrackTintColor="#ff8128"
+    maximumTrackTintColor="#fed7aa"
+    thumbTintColor="#ff8128"
+  />
+</View>
+            <View style={styles.durationScale}>
+              {durationOptions.map((item) => (
+                <Text key={item} style={[styles.durationScaleText, item === selectedDuration && styles.durationScaleTextActive]}>
+                  {item}H
+                </Text>
+              ))}
+            </View>
           </View>
         </View>
       ) : null}
 
+      {currentStep === 'Notes' ? (
+        <View style={styles.bookingSection}>
+          <Text style={styles.sectionTitle}>Special Requirements</Text>
+          <View style={styles.requirementsGrid}>
+            {['Pets at home', 'Key under mat', 'Use eco-products'].map((item) => (
+              <TouchableOpacity
+                activeOpacity={0.84}
+                key={item}
+                onPress={() => setNotes((current) => (current.includes(item) ? current : `${current}${current ? '\n' : ''}${item}`))}
+                style={styles.requirementChip}
+              >
+                <Ionicons color="#ff8128" name="sparkles-outline" size={14} />
+                <Text style={styles.requirementText}>{item}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <TextInput
+            multiline
+            onChangeText={setNotes}
+            placeholder="Add any specific instructions for the housekeeper..."
+            style={[styles.input, styles.multiline]}
+            value={notes}
+          />
+        </View>
+      ) : null}
+
+      {currentStep === 'Payment' ? (
+        <View style={styles.reviewCard}>
+          <Text style={styles.reviewTitle}>Review & Payment</Text>
+          <View style={styles.reviewRow}>
+            <Text style={styles.reviewLabel}>Service</Text>
+            <Text numberOfLines={2} style={styles.reviewValue}>{service || 'Not selected'}</Text>
+          </View>
+          <View style={styles.reviewRow}>
+            <Text style={styles.reviewLabel}>Date & time</Text>
+            <Text style={styles.reviewValue}>{date} - {time}</Text>
+          </View>
+          <View style={styles.reviewRow}>
+            <Text style={styles.reviewLabel}>Duration</Text>
+            <Text style={styles.reviewValue}>{parseDuration(duration)} hours</Text>
+          </View>
+          <View style={styles.reviewRow}>
+            <Text style={styles.reviewLabel}>Unit price</Text>
+            <Text style={styles.reviewValue}>{unitPrice.toLocaleString('vi-VN')} VND/hour</Text>
+          </View>
+          <View style={styles.reviewRow}>
+            <Text style={styles.reviewLabel}>Service amount</Text>
+            <Text style={styles.reviewValue}>{basePrice.toLocaleString('vi-VN')} VND</Text>
+          </View>
+          <View style={styles.reviewRow}>
+            <Text style={styles.reviewLabel}>Pick housekeeper fee</Text>
+            <Text style={styles.reviewValue}>{PICK_HOUSEKEEPER_FEE.toLocaleString('vi-VN')} VND</Text>
+          </View>
+          <View style={styles.reviewRow}>
+            <Text style={styles.reviewLabel}>Address</Text>
+            <Text numberOfLines={3} style={styles.reviewValue}>{location.trim() || 'Not entered'}</Text>
+          </View>
+          {notes.trim() ? (
+            <View style={styles.reviewRow}>
+              <Text style={styles.reviewLabel}>Notes</Text>
+              <Text numberOfLines={3} style={styles.reviewValue}>{notes.trim()}</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      <View style={styles.estimateCard}>
+        <View style={styles.estimateTopRow}>
+          <View style={styles.estimateInfo}>
+            <Text style={styles.estimateLabel}>TOTAL ESTIMATE</Text>
+            <View style={styles.estimatePriceRow}>
+              <Text style={styles.estimatePrice}>{totalPrice.toLocaleString('vi-VN')} VND</Text>
+              <Text style={styles.estimateUnit}>/ session</Text>
+            </View>
+          </View>
+          <View style={styles.estimateSavings}>
+            <Text style={styles.estimateSavingsText}>Save 10%</Text>
+            <Text style={styles.breakdownText}>View Breakdown</Text>
+          </View>
+        </View>
+      </View>
+
       <View style={styles.stepActions}>
-        {currentStep !== 'Dich vu' ? (
-          <TouchableOpacity disabled={isSubmitting} onPress={goBackStep} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>Quay lai</Text>
-          </TouchableOpacity>
-        ) : null}
         <TouchableOpacity
           disabled={isSubmitting}
-          onPress={currentStep === 'Xac nhan' ? createBooking : goNext}
-          style={[styles.primaryButton, currentStep !== 'Dich vu' && styles.primaryButtonFlex]}
+          onPress={currentStep === 'Payment' ? createBooking : goNext}
+          style={styles.primaryButton}
         >
           {isSubmitting ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.primaryText}>{currentStep === 'Xac nhan' ? 'Xac nhan dat lich' : 'Tiep tuc'}</Text>
+            <View style={styles.primaryContent}>
+              <Text style={styles.primaryText}>Continue</Text>
+              <Ionicons color="#fff" name="arrow-forward" size={18} />
+            </View>
           )}
         </TouchableOpacity>
       </View>
@@ -776,11 +756,11 @@ export default function CreateBookingScreen() {
         <View style={[styles.mapScreen, { paddingTop: Math.max(insets.top, 12) }]}>
           <View style={styles.mapHeader}>
             <TouchableOpacity onPress={() => setIsMapVisible(false)} style={styles.mapHeaderButton}>
-              <Text style={styles.mapHeaderButtonText}>Dong</Text>
+              <Text style={styles.mapHeaderButtonText}>Đóng</Text>
             </TouchableOpacity>
             <View style={styles.mapHeaderTextWrap}>
-              <Text style={styles.mapTitle}>Chon dia chi</Text>
-              <Text style={styles.mapSubtitle}>Cham tren ban do de dat ghim vi tri lam viec.</Text>
+              <Text style={styles.mapTitle}>Chọn địa chỉ</Text>
+              <Text style={styles.mapSubtitle}>Chạm trên bản đồ để đặt ghim vị trí làm việc.</Text>
             </View>
           </View>
 
@@ -788,17 +768,17 @@ export default function CreateBookingScreen() {
             <TextInput
               onChangeText={setMapQuery}
               onSubmitEditing={searchAddressOnMap}
-              placeholder="Nhap dia chi de tim..."
+              placeholder="Nhập địa chỉ để tìm..."
               returnKeyType="search"
               style={styles.mapSearchInput}
               value={mapQuery}
             />
             <TouchableOpacity activeOpacity={0.84} onPress={searchAddressOnMap} style={styles.mapSearchButton}>
-              <Text style={styles.mapSearchButtonText}>Tim</Text>
+              <Text style={styles.mapSearchButtonText}>Tìm</Text>
             </TouchableOpacity>
           </View>
           <TouchableOpacity activeOpacity={0.84} onPress={centerOnDeviceLocation} style={styles.mapLocationButton}>
-            <Text style={styles.mapLocationButtonText}>Chuyen den vi tri hien tai</Text>
+            <Text style={styles.mapLocationButtonText}>Chuyển đến vị trí hiện tại</Text>
           </TouchableOpacity>
 
           <MapView
@@ -819,7 +799,7 @@ export default function CreateBookingScreen() {
                   const { latitude, longitude } = event.nativeEvent.coordinate;
                   chooseCoordinate(latitude, longitude);
                 }}
-                title="Vi tri lam viec"
+                title="Vị trí làm việc"
               />
             ) : null}
           </MapView>
@@ -830,20 +810,20 @@ export default function CreateBookingScreen() {
               <TextInput
                 multiline
                 onChangeText={updateLocationAddress}
-                placeholder="Bo sung so nha, tang, toa nha..."
+                placeholder="Bổ sung số nhà, tầng, tòa nhà..."
                 style={styles.mapAddressInput}
                 value={location}
               />
             ) : null}
             <Text numberOfLines={2} style={styles.mapAddress}>
-              {selectedLocation ? selectedLocation.address : 'Hay cham vao vi tri lam viec tren ban do.'}
+              {selectedLocation ? selectedLocation.address : 'Hãy chạm vào vị trí làm việc trên bản đồ.'}
             </Text>
             <TouchableOpacity
               disabled={!selectedLocation}
               onPress={() => setIsMapVisible(false)}
               style={[styles.confirmMapButton, !selectedLocation && styles.confirmMapButtonDisabled]}
             >
-              <Text style={styles.confirmMapText}>Dung vi tri nay</Text>
+              <Text style={styles.confirmMapText}>Dùng vị trí này</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -854,6 +834,193 @@ export default function CreateBookingScreen() {
 }
 
 const styles = StyleSheet.create({
+  bookingHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  bookingSection: {
+    marginBottom: 12,
+  },
+  changeButton: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 4,
+    paddingVertical: 3,
+  },
+  changeButtonText: {
+    color: '#ff8128',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  durationCard: {
+    backgroundColor: '#fff7ed',
+    borderRadius: 12,
+    marginBottom: 14,
+    padding: 12,
+  },
+  durationDot: {
+    backgroundColor: '#ffbe91',
+    borderColor: '#fff7ed',
+    borderRadius: 6,
+    borderWidth: 2,
+    height: 12,
+    width: 12,
+    zIndex: 2,
+  },
+  durationDotActive: {
+    backgroundColor: '#ff8128',
+    borderColor: '#fff',
+    borderWidth: 2,
+    height: 16,
+    width: 16,
+  },
+  durationHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  durationLabel: {
+    color: '#475569',
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  durationScale: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  durationScaleText: {
+    color: '#9ca3af',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  durationScaleTextActive: {
+    color: '#ff8128',
+  },
+  durationTrack: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    minHeight: 18,
+    position: 'relative',
+  },
+  durationTrackBase: {
+    backgroundColor: '#fed7aa',
+    borderRadius: 999,
+    height: 3,
+    left: 6,
+    position: 'absolute',
+    right: 6,
+  },
+  durationTrackFill: {
+    backgroundColor: '#ff8128',
+    borderRadius: 999,
+    height: 3,
+    left: 6,
+    position: 'absolute',
+  },
+  durationValue: {
+    color: '#ff8128',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  headerIconButton: {
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderColor: '#fed7aa',
+    borderRadius: 18,
+    borderWidth: 1,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  headerTitle: {
+    color: '#111827',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  largePin: {
+    alignItems: 'center',
+    backgroundColor: '#ff8128',
+    borderRadius: 28,
+    height: 56,
+    justifyContent: 'center',
+    width: 56,
+  },
+  mapPreview: {
+    backgroundColor: '#e8eef5',
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    height: 120,
+    marginBottom: 14,
+    marginTop: -12,
+    overflow: 'hidden',
+  },
+  mapPreviewPlaceholder: {
+    alignItems: 'center',
+    flex: 1,
+    gap: 8,
+    justifyContent: 'center',
+  },
+  mapPreviewText: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  previewMap: {
+    height: '100%',
+    width: '100%',
+  },
+  primaryContent: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+  },
+  requirementChip: {
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderColor: '#fed7aa',
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  requirementText: {
+    color: '#475569',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  requirementsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  savePill: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#dcfce7',
+    borderRadius: 999,
+    color: '#16a34a',
+    fontSize: 11,
+    fontWeight: '900',
+    marginTop: 4,
+    overflow: 'hidden',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  sectionTitle: {
+    color: '#111827',
+    fontSize: 13,
+    fontWeight: '900',
+    marginBottom: 8,
+  },
   addressBookButton: {
     alignItems: 'center',
     backgroundColor: '#ff8128',
@@ -882,17 +1049,44 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   content: {
-    padding: 16,
-    paddingBottom: 32,
+    flexGrow: 1,
+    padding: 14,
+    paddingBottom: 14,
+  },
+  breakdownText: {
+    color: '#64748b',
+    fontSize: 10,
+    fontWeight: '800',
+    marginTop: 5,
+    textDecorationLine: 'underline',
+  },
+  customTimeInput: {
+    color: '#111827',
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '800',
+    paddingVertical: 0,
+  },
+  customTimeRow: {
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderColor: '#fed7aa',
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
   },
   dateOption: {
     backgroundColor: '#fff',
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
+    borderColor: '#fed7aa',
+    borderRadius: 10,
     borderWidth: 1,
-    minWidth: 92,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
+    minWidth: 62,
+    paddingHorizontal: 8,
+    paddingVertical: 10,
   },
   dateOptionActive: {
     backgroundColor: '#ff8128',
@@ -919,8 +1113,8 @@ const styles = StyleSheet.create({
   },
   input: {
     backgroundColor: '#fff',
-    borderColor: '#d8dde3',
-    borderRadius: 8,
+    borderColor: '#fed7aa',
+    borderRadius: 10,
     borderWidth: 1,
     color: '#111827',
     fontSize: 15,
@@ -962,6 +1156,60 @@ const styles = StyleSheet.create({
   pickerScroller: {
     marginBottom: 14,
   },
+  estimateCard: {
+    backgroundColor: '#fff',
+    borderColor: '#fed7aa',
+    borderRadius: 16,
+    borderWidth: 1,
+    marginTop: 6,
+    padding: 14,
+  },
+  estimateInfo: {
+    flex: 1,
+  },
+  estimateLabel: {
+    color: '#94a3b8',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0,
+  },
+  estimatePrice: {
+    color: '#111827',
+    fontSize: 21,
+    fontWeight: '900',
+  },
+  estimatePriceRow: {
+    alignItems: 'flex-end',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 2,
+  },
+  estimateSavings: {
+    alignItems: 'flex-end',
+  },
+  estimateSavingsText: {
+    backgroundColor: '#dcfce7',
+    borderRadius: 999,
+    color: '#16a34a',
+    fontSize: 11,
+    fontWeight: '900',
+    overflow: 'hidden',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  estimateTopRow: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+  estimateUnit: {
+    color: '#64748b',
+    fontSize: 11,
+    fontWeight: '800',
+    marginBottom: 3,
+  },
   multiline: {
     minHeight: 82,
     textAlignVertical: 'top',
@@ -971,12 +1219,13 @@ const styles = StyleSheet.create({
   },
   locationCard: {
     backgroundColor: '#fff',
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
+    borderColor: '#fed7aa',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 10,
+    marginBottom: 0,
     padding: 14,
   },
   locationPin: {
@@ -1137,9 +1386,9 @@ const styles = StyleSheet.create({
   primaryButton: {
     alignItems: 'center',
     backgroundColor: '#ff8128',
-    borderRadius: 8,
-    marginTop: 10,
-    padding: 15,
+    borderRadius: 16,
+    padding: 16,
+    width: '100%',
   },
   primaryButtonFlex: {
     flex: 1,
@@ -1149,39 +1398,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '800',
-  },
-  paymentMethodButton: {
-    alignItems: 'center',
-    backgroundColor: '#f7f8fa',
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
-    borderWidth: 1,
-    flex: 1,
-    justifyContent: 'center',
-    minHeight: 48,
-    padding: 12,
-  },
-  paymentMethodButtonActive: {
-    backgroundColor: '#fff1e8',
-    borderColor: '#ff8128',
-  },
-  paymentMethodLabel: {
-    color: '#667085',
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  paymentMethodLabelActive: {
-    color: '#ff8128',
-  },
-  paymentMethodRow: {
-    flexDirection: 'row',
-    gap: 9,
-  },
-  paymentTitle: {
-    color: '#111827',
-    fontSize: 15,
-    fontWeight: '900',
-    marginTop: 4,
   },
   recurringBadge: {
     alignSelf: 'flex-start',
@@ -1199,7 +1415,7 @@ const styles = StyleSheet.create({
   },
   reviewCard: {
     backgroundColor: '#fff',
-    borderColor: '#e5e7eb',
+    borderColor: '#fed7aa',
     borderRadius: 12,
     borderWidth: 1,
     gap: 10,
@@ -1270,7 +1486,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#fff',
     borderColor: '#fed7aa',
-    borderRadius: 8,
+    borderRadius: 16,
     borderWidth: 1,
     flex: 1,
     padding: 15,
@@ -1287,7 +1503,7 @@ const styles = StyleSheet.create({
   },
   servicePicker: {
     backgroundColor: '#fff',
-    borderColor: '#e5e7eb',
+    borderColor: '#fed7aa',
     borderRadius: 12,
     borderWidth: 1,
     marginBottom: 14,
@@ -1334,13 +1550,14 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   stepActions: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 12,
+    marginTop: 'auto',
+    paddingTop: 14,
   },
   stepDot: {
     alignItems: 'center',
     backgroundColor: '#f1f5f9',
+    borderColor: '#e5e7eb',
+    borderWidth: 1,
     borderRadius: 14,
     height: 28,
     justifyContent: 'center',
@@ -1348,6 +1565,7 @@ const styles = StyleSheet.create({
   },
   stepDotActive: {
     backgroundColor: '#ff8128',
+    borderColor: '#ff8128',
   },
   stepDotText: {
     color: '#64748b',
@@ -1373,14 +1591,10 @@ const styles = StyleSheet.create({
     color: '#ff8128',
   },
   stepper: {
-    backgroundColor: '#fff',
-    borderColor: '#edf0f4',
-    borderRadius: 16,
-    borderWidth: 1,
     flexDirection: 'row',
     gap: 6,
     marginBottom: 18,
-    padding: 10,
+    paddingHorizontal: 2,
   },
   timeGrid: {
     flexDirection: 'row',
@@ -1391,21 +1605,17 @@ const styles = StyleSheet.create({
   timeOption: {
     alignItems: 'center',
     backgroundColor: '#fff',
-    borderColor: '#e5e7eb',
-    borderRadius: 999,
+    borderColor: '#fed7aa',
+    borderRadius: 8,
     borderWidth: 1,
-    minWidth: 68,
+    flex: 1,
+    minWidth: 74,
     paddingHorizontal: 13,
     paddingVertical: 10,
   },
   timeOptionActive: {
     backgroundColor: '#ff8128',
     borderColor: '#ff8128',
-  },
-  timeOptionDisabled: {
-    backgroundColor: '#f3f4f6',
-    borderColor: '#e5e7eb',
-    opacity: 0.55,
   },
   timeOptionText: {
     color: '#111827',
@@ -1415,13 +1625,14 @@ const styles = StyleSheet.create({
   timeOptionTextActive: {
     color: '#fff',
   },
-  timeOptionTextDisabled: {
-    color: '#9ca3af',
-  },
   title: {
     color: '#111827',
     fontSize: 28,
     fontWeight: '800',
     marginTop: 8,
   },
+  durationSliderWrap: {
+  marginTop: 10,
+  marginHorizontal: -8,
+},
 });

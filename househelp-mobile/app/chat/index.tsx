@@ -36,21 +36,26 @@ function initials(name?: string) {
 
 const copy = {
   en: {
+    conversationFallback: 'Conversation',
     customer: 'Customer',
     emptyCustomer: 'Open a housekeeper profile and tap Message to start chatting.',
     emptyHousekeeper: 'Conversations with customers will appear here after messages or bookings.',
     emptyTitle: 'No conversations yet',
+    loadError: 'Could not load conversations.',
     newMessages: 'new messages',
+    startServiceChat: 'Start discussing the service',
   },
   vi: {
+    conversationFallback: 'Cuộc trò chuyện',
     customer: 'Khách hàng',
     emptyCustomer: 'Vào hồ sơ housekeeper và bấm Nhắn tin để bắt đầu trao đổi.',
     emptyHousekeeper: 'Hội thoại với khách hàng sẽ hiện ở đây sau khi có tin nhắn hoặc booking.',
     emptyTitle: 'Chưa có hội thoại',
+    loadError: 'Không thể tải hội thoại.',
     newMessages: 'tin nhắn mới',
+    startServiceChat: 'Bắt đầu trao đổi dịch vụ',
   },
 } as const;
-
 function ConversationCard({ item, language, onOpen }: { item: Conversation; language: AppLanguage; onOpen: () => void }) {
   const unreadCount = Number(item.unreadCount || 0);
   const text = copy[language];
@@ -64,13 +69,13 @@ function ConversationCard({ item, language, onOpen }: { item: Conversation; lang
       <View style={styles.cardBody}>
         <View style={styles.cardHeader}>
           <Text numberOfLines={1} style={styles.name}>
-            {item.otherUserName || 'Cuoc tro chuyen'}
+            {item.otherUserName || text.conversationFallback}
           </Text>
           <Text style={styles.time}>{formatTime(item.lastMessageTime || item.bookingCreatedAt)}</Text>
         </View>
 
         <Text numberOfLines={1} style={styles.message}>
-          {item.lastMessage || item.service || 'Bat dau trao doi dich vu'}
+          {item.lastMessage || item.service || text.startServiceChat}
         </Text>
 
         <View style={styles.metaRow}>
@@ -145,12 +150,12 @@ export default function ChatListScreen() {
       const data = await messageService.getConversations(user.id);
       setConversations(groupConversationsByUser(data));
     } catch (loadError: any) {
-      setError(loadError.response?.data?.message || loadError.response?.data?.error || 'Khong the tai hoi thoai.');
+      setError(loadError.response?.data?.message || loadError.response?.data?.error || text.loadError);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [router]);
+  }, [router, text.loadError]);
 
   useFocusEffect(
     useCallback(() => {

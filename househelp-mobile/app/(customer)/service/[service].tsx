@@ -23,8 +23,10 @@ const copy = {
   en: {
     available: 'Available',
     book: 'Book',
+    contact: 'Contact',
     emptyText: 'This service has no approved housekeepers yet, or the backend service name does not match.',
     emptyTitle: 'No matching housekeepers',
+    errorFallback: 'Could not load the list.',
     home: 'Home',
     message: 'Message',
     monthlySuffix: ' for monthly schedule',
@@ -33,27 +35,28 @@ const copy = {
     unavailable: 'Paused',
   },
   vi: {
-    available: 'Nhận việc',
-    book: 'Đặt lịch',
-    emptyText: 'Dịch vụ này chưa có housekeeper đã được duyệt, hoặc tên dịch vụ trong backend chưa khớp.',
-    emptyTitle: 'Chưa có housekeeper phù hợp',
-    home: 'Trang chủ',
-    message: 'Nhắn tin',
-    monthlySuffix: ' cho lịch hàng tháng',
-    retry: 'Thử lại',
-    subtitle: (count: number) => `${count} housekeeper phù hợp`,
-    unavailable: 'Tạm nghỉ',
+    available: 'Nh\u1eadn vi\u1ec7c',
+    book: '\u0110\u1eb7t l\u1ecbch',
+    contact: 'Li\u00ean h\u1ec7',
+    emptyText: 'D\u1ecbch v\u1ee5 n\u00e0y ch\u01b0a c\u00f3 housekeeper \u0111\u00e3 \u0111\u01b0\u1ee3c duy\u1ec7t, ho\u1eb7c t\u00ean d\u1ecbch v\u1ee5 trong backend ch\u01b0a kh\u1edbp.',
+    emptyTitle: 'Ch\u01b0a c\u00f3 housekeeper ph\u00f9 h\u1ee3p',
+    errorFallback: 'Kh\u00f4ng th\u1ec3 t\u1ea3i danh s\u00e1ch.',
+    home: 'Trang ch\u1ee7',
+    message: 'Nh\u1eafn tin',
+    monthlySuffix: ' cho l\u1ecbch h\u00e0ng th\u00e1ng',
+    retry: 'Th\u1eed l\u1ea1i',
+    subtitle: (count: number) => `${count} housekeeper ph\u00f9 h\u1ee3p`,
+    unavailable: 'T\u1ea1m ngh\u1ec9',
   },
 } as const;
-
-function errorMessage(error: any) {
+function errorMessage(error: any, fallback: string) {
   const value = error?.response?.data?.message || error?.response?.data?.error || error?.message;
-  return typeof value === 'string' ? value : 'Khong the tai danh sach.';
+  return typeof value === 'string' ? value : fallback;
 }
 
-function formatPrice(price?: number | string) {
+function formatPrice(price: number | string | undefined, contactLabel: string) {
   const value = Number(price);
-  if (!Number.isFinite(value)) return 'Lien he';
+  if (!Number.isFinite(value)) return contactLabel;
   return `${value.toLocaleString('vi-VN')} VND`;
 }
 
@@ -88,7 +91,7 @@ function HousekeeperCard({
 
         <View style={styles.metaRow}>
           <Text style={styles.rating}>★ {item.rating ?? item.avgRating ?? '0.0'}</Text>
-          <Text style={styles.price}>{formatPrice(item.price)}</Text>
+          <Text style={styles.price}>{formatPrice(item.price, text.contact)}</Text>
         </View>
 
         <View style={styles.actionRow}>
@@ -148,12 +151,12 @@ export default function ServiceHousekeepersScreen() {
       const blockedIds = await housekeeperPreferenceService.getBlockedIds(storedUser.id);
       setHousekeepers(housekeeperPreferenceService.filterBlocked(data, blockedIds));
     } catch (loadError: any) {
-      setError(errorMessage(loadError));
+      setError(errorMessage(loadError, text.errorFallback));
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [dbService]);
+  }, [dbService, text.errorFallback]);
 
   useEffect(() => {
     loadHousekeepers();

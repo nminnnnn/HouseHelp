@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,29 +16,144 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { authService, type AuthUser } from '../../lib/auth';
 import { bookingService, type Booking } from '../../lib/bookings';
 import { housekeeperService, type Housekeeper, type HousekeeperEarnings } from '../../lib/housekeepers';
+import { useLanguage } from '../../lib/language';
+import type { AppLanguage } from '../../lib/storage';
 
 type FilterKey = 'all' | 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'rejected';
 
-const filters: { key: FilterKey; label: string }[] = [
-  { key: 'all', label: 'Tat ca' },
-  { key: 'pending', label: 'Cho xu ly' },
-  { key: 'confirmed', label: 'Da nhan' },
-  { key: 'in_progress', label: 'Dang lam' },
-  { key: 'completed', label: 'Hoan thanh' },
-  { key: 'rejected', label: 'Tu choi' },
-];
+const filters: FilterKey[] = ['all', 'pending', 'confirmed', 'in_progress', 'completed', 'rejected'];
 
-function statusLabel(status: string) {
-  const labels: Record<string, string> = {
-    cancelled: 'Da huy',
-    completed: 'Hoan thanh',
-    confirmed: 'Da xac nhan',
-    in_progress: 'Dang lam',
-    pending: 'Cho xu ly',
-    rejected: 'Da tu choi',
-  };
+const copy = {
+  en: {
+    account: 'Account',
+    all: 'All',
+    availabilityUpdating: 'Updating',
+    bookingLoadError: 'Could not load bookings.',
+    cancel: 'Cancel',
+    cannotComplete: 'Could not complete this booking',
+    cannotConfirm: 'Could not confirm this booking',
+    cannotReject: 'Could not reject this booking',
+    cannotUpdate: 'Could not update',
+    cashCollected: 'Cash collected',
+    chat: 'Chat',
+    customer: 'Customer',
+    date: 'Date',
+    detailVisible: 'Hide reconciliation details',
+    detailHidden: 'Tap to view details',
+    emptyText: 'Customer bookings will appear here.',
+    emptyTitle: 'No bookings yet',
+    filters: {
+      all: 'All',
+      completed: 'Completed',
+      confirmed: 'Accepted',
+      in_progress: 'In progress',
+      pending: 'Pending',
+      rejected: 'Rejected',
+    },
+    logout: 'Log out',
+    notes: 'Notes',
+    notifications: 'Notifications',
+    platformFeeDue: 'Platform fee due',
+    platformPayout: 'Platform payout',
+    ready: 'Available',
+    retry: 'Please try again.',
+    service: 'Service',
+    status: {
+      cancelled: 'Cancelled',
+      completed: 'Completed',
+      confirmed: 'Confirmed',
+      in_progress: 'In progress',
+      pending: 'Pending',
+      rejected: 'Rejected',
+    },
+    time: 'Time',
+    totalBookings: 'Total bookings',
+    pendingBookings: 'Pending',
+    unavailable: 'Paused',
+    verifyingNeeded: 'Verification required',
+    verifyingNeededText: 'You need admin verification and approval before turning on availability.',
+    verify: 'Verify',
+    reject: 'Reject',
+    rejectTitle: 'Reject booking',
+    rejectMessage: 'Are you sure you want to reject this booking?',
+    confirm: 'Confirm',
+    complete: 'Complete job',
+    completeTitle: 'Complete job',
+    completeMessage: 'Confirm this booking is finished?',
+    earnings: 'Earnings & reconciliation',
+    earningsDetail: 'Earnings details',
+    momoHolding: 'MoMo held by platform',
+    paidOut: 'Paid out',
+    address: 'Address',
+    noValue: 'Not available',
+  },
+  vi: {
+    account: 'Tài khoản',
+    all: 'Tất cả',
+    availabilityUpdating: 'Đang cập nhật',
+    bookingLoadError: 'Không thể tải booking.',
+    cancel: 'Hủy',
+    cannotComplete: 'Không thể hoàn thành',
+    cannotConfirm: 'Không thể xác nhận',
+    cannotReject: 'Không thể từ chối',
+    cannotUpdate: 'Không cập nhật được',
+    cashCollected: 'Tiền mặt đã thu',
+    chat: 'Chat',
+    customer: 'Khách hàng',
+    date: 'Ngày',
+    detailVisible: 'Ẩn thông tin đối soát',
+    detailHidden: 'Bấm để xem thông tin chi tiết',
+    emptyText: 'Khi khách hàng đặt lịch, booking sẽ hiện ở đây.',
+    emptyTitle: 'Chưa có booking',
+    filters: {
+      all: 'Tất cả',
+      completed: 'Hoàn thành',
+      confirmed: 'Đã nhận',
+      in_progress: 'Đang làm',
+      pending: 'Chờ xử lý',
+      rejected: 'Từ chối',
+    },
+    logout: 'Đăng xuất',
+    notes: 'Ghi chú',
+    notifications: 'Thông báo',
+    platformFeeDue: 'Phí platform cần đối soát',
+    platformPayout: 'Platform payout',
+    ready: 'Đang nhận việc',
+    retry: 'Vui lòng thử lại.',
+    service: 'Dịch vụ',
+    status: {
+      cancelled: 'Đã hủy',
+      completed: 'Hoàn thành',
+      confirmed: 'Đã xác nhận',
+      in_progress: 'Đang làm',
+      pending: 'Chờ xử lý',
+      rejected: 'Đã từ chối',
+    },
+    time: 'Giờ',
+    totalBookings: 'Tổng booking',
+    pendingBookings: 'Chờ xử lý',
+    unavailable: 'Đang tạm nghỉ',
+    verifyingNeeded: 'Cần xác minh',
+    verifyingNeededText: 'Bạn cần được admin xác minh và phê duyệt trước khi bật sẵn sàng nhận việc.',
+    verify: 'Xác minh',
+    reject: 'Từ chối',
+    rejectTitle: 'Từ chối booking',
+    rejectMessage: 'Bạn có chắc muốn từ chối booking này?',
+    confirm: 'Xác nhận',
+    complete: 'Hoàn thành công việc',
+    completeTitle: 'Hoàn thành công việc',
+    completeMessage: 'Bạn xác nhận đã hoàn thành booking này?',
+    earnings: 'Thu nhập & đối soát',
+    earningsDetail: 'Chi tiết thu nhập',
+    momoHolding: 'MoMo đang tạm giữ',
+    paidOut: 'Đã chi trả',
+    address: 'Địa chỉ',
+    noValue: 'Chưa có',
+  },
+} as const;
 
-  return labels[status] || status;
+function statusLabel(status: string, language: AppLanguage) {
+  return copy[language].status[status as keyof (typeof copy)[AppLanguage]['status']] || status;
 }
 
 function formatPrice(value?: number | string) {
@@ -46,8 +161,33 @@ function formatPrice(value?: number | string) {
   return `${price.toLocaleString('vi-VN')} VND`;
 }
 
-function formatDate(booking: Booking) {
-  return booking.startDate || booking.date || 'Chua co ngay';
+function formatDate(booking: Booking, language: AppLanguage) {
+  return booking.startDate || booking.date || (language === 'vi' ? 'Chưa có ngày' : 'No date');
+}
+
+function parseBookingStart(booking: Booking) {
+  if (booking.startDate) {
+    const parsed = new Date(booking.startDate);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+
+  if (!booking.date || !booking.time) {
+    return null;
+  }
+
+  const rawTime = booking.time.split('-')[0].trim();
+  const dateTime = new Date(`${booking.date}T${rawTime}:00`);
+  if (!Number.isNaN(dateTime.getTime())) {
+    return dateTime;
+  }
+
+  return null;
+}
+
+function minutesUntil(date: Date) {
+  return Math.round((date.getTime() - Date.now()) / 60000);
 }
 
 function truthy(value: unknown) {
@@ -61,6 +201,8 @@ function JobCard({
   onComplete,
   onConfirm,
   onReject,
+  text,
+  language,
 }: {
   item: Booking;
   isUpdating: boolean;
@@ -68,6 +210,8 @@ function JobCard({
   onComplete: () => void;
   onConfirm: () => void;
   onReject: () => void;
+  text: (typeof copy)[AppLanguage];
+  language: AppLanguage;
 }) {
   const isPending = item.status === 'pending';
   const canComplete = item.status === 'confirmed' || item.status === 'in_progress';
@@ -76,40 +220,40 @@ function JobCard({
     <View style={styles.card}>
       <View style={styles.cardHeader}>
         <Text numberOfLines={1} style={styles.service}>
-          {item.service || 'Dich vu'}
+          {item.service || text.service}
         </Text>
         <Text style={[styles.status, styles[`status_${item.status}` as keyof typeof styles] || styles.statusDefault]}>
-          {statusLabel(item.status)}
+          {statusLabel(item.status, language)}
         </Text>
       </View>
 
-      <Text style={styles.meta}>Khach hang: {item.customerName || `#${item.customerId}`}</Text>
-      <Text style={styles.meta}>Ngay: {formatDate(item)}</Text>
+      <Text style={styles.meta}>{text.customer}: {item.customerName || `#${item.customerId}`}</Text>
+      <Text style={styles.meta}>{text.date}: {formatDate(item, language)}</Text>
       <Text style={styles.meta}>
-        Gio: {item.time || 'Chua co'} - {item.duration || 0} gio
+        {text.time}: {item.time || text.noValue} - {item.duration || 0} {language === 'vi' ? 'giờ' : 'hours'}
       </Text>
-      <Text style={styles.meta}>Dia chi: {item.location || 'Chua co'}</Text>
-      {item.notes ? <Text style={styles.notes}>Ghi chu: {item.notes}</Text> : null}
+      <Text style={styles.meta}>{text.address}: {item.location || text.noValue}</Text>
+      {item.notes ? <Text style={styles.notes}>{text.notes}: {item.notes}</Text> : null}
       <Text style={styles.price}>{formatPrice(item.totalPrice)}</Text>
 
       <TouchableOpacity onPress={onChat} style={styles.chatButton}>
-        <Text style={styles.chatText}>Chat</Text>
+        <Text style={styles.chatText}>{text.chat}</Text>
       </TouchableOpacity>
 
       {isPending ? (
         <View style={styles.actions}>
           <TouchableOpacity disabled={isUpdating} onPress={onReject} style={[styles.actionButton, styles.rejectButton]}>
-            <Text style={styles.rejectText}>{isUpdating ? 'Dang xu ly' : 'Tu choi'}</Text>
+            <Text style={styles.rejectText}>{isUpdating ? text.availabilityUpdating : text.reject}</Text>
           </TouchableOpacity>
           <TouchableOpacity disabled={isUpdating} onPress={onConfirm} style={[styles.actionButton, styles.confirmButton]}>
-            <Text style={styles.confirmText}>{isUpdating ? 'Dang xu ly' : 'Xac nhan'}</Text>
+            <Text style={styles.confirmText}>{isUpdating ? text.availabilityUpdating : text.confirm}</Text>
           </TouchableOpacity>
         </View>
       ) : null}
 
       {canComplete ? (
         <TouchableOpacity disabled={isUpdating} onPress={onComplete} style={styles.completeButton}>
-          <Text style={styles.completeText}>{isUpdating ? 'Dang xu ly' : 'Hoan thanh cong viec'}</Text>
+          <Text style={styles.completeText}>{isUpdating ? text.availabilityUpdating : text.complete}</Text>
         </TouchableOpacity>
       ) : null}
     </View>
@@ -128,8 +272,11 @@ export default function HousekeeperDashboard() {
   const [showEarnings, setShowEarnings] = useState(false);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
+  const { language } = useLanguage();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const text = copy[language];
+  const alertedBookingIdsRef = useRef(new Set<number>());
 
   const loadBookings = useCallback(async (refreshing = false) => {
     try {
@@ -157,12 +304,12 @@ export default function HousekeeperDashboard() {
       setProfile(housekeeperProfile);
       setEarnings(housekeeperEarnings);
     } catch (loadError: any) {
-      setError(loadError.response?.data?.message || loadError.response?.data?.error || 'Khong the tai booking.');
+      setError(loadError.response?.data?.message || loadError.response?.data?.error || text.bookingLoadError);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [router]);
+  }, [router, text.bookingLoadError]);
 
   useEffect(() => {
     loadBookings();
@@ -176,6 +323,35 @@ export default function HousekeeperDashboard() {
     return bookings.filter((booking) => booking.status === activeFilter);
   }, [activeFilter, bookings]);
 
+  const checkUpcomingBookingReminder = useCallback(() => {
+    const upcomingBooking = bookings
+      .filter((booking) => booking.status === 'confirmed')
+      .map((booking) => ({ booking, start: parseBookingStart(booking) }))
+      .filter((value) => value.start !== null)
+      .filter((value) => {
+        const minutes = minutesUntil(value.start!);
+        return minutes >= 0 && minutes <= 30 && !alertedBookingIdsRef.current.has(value.booking.id);
+      })
+      .sort((left, right) => (left.start!.getTime() - right.start!.getTime()))[0];
+
+    if (!upcomingBooking) {
+      return;
+    }
+
+    alertedBookingIdsRef.current.add(upcomingBooking.booking.id);
+    const timeText = upcomingBooking.start!.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    Alert.alert(
+      'Nhắc giờ hẹn',
+      `Booking với ${upcomingBooking.booking.customerName || `khách #${upcomingBooking.booking.customerId}`} sẽ bắt đầu lúc ${timeText}. Hãy chuẩn bị.`,
+    );
+  }, [bookings]);
+
+  useEffect(() => {
+    checkUpcomingBookingReminder();
+    const intervalId = setInterval(checkUpcomingBookingReminder, 60000);
+    return () => clearInterval(intervalId);
+  }, [checkUpcomingBookingReminder]);
+
   const pendingCount = useMemo(() => bookings.filter((booking) => booking.status === 'pending').length, [bookings]);
   const isVerifiedHousekeeper = truthy(profile?.isVerified) && truthy(profile?.isApproved);
 
@@ -188,7 +364,7 @@ export default function HousekeeperDashboard() {
     if (!user) return;
 
     if (!isVerifiedHousekeeper) {
-      Alert.alert('Can xac minh', 'Ban can duoc admin xac minh va phe duyet truoc khi bat san sang nhan viec.');
+      Alert.alert(text.verifyingNeeded, text.verifyingNeededText);
       return;
     }
 
@@ -200,8 +376,8 @@ export default function HousekeeperDashboard() {
       setProfile((current) => ({ ...(current || updatedProfile), ...updatedProfile, available: nextAvailable }));
     } catch (toggleError: any) {
       Alert.alert(
-        'Khong cap nhat duoc',
-        toggleError.response?.data?.message || toggleError.response?.data?.error || 'Vui long thu lai.',
+        text.cannotUpdate,
+        toggleError.response?.data?.message || toggleError.response?.data?.error || text.retry,
       );
     } finally {
       setIsTogglingAvailability(false);
@@ -215,8 +391,8 @@ export default function HousekeeperDashboard() {
       await loadBookings(true);
     } catch (confirmError: any) {
       Alert.alert(
-        'Khong the xac nhan',
-        confirmError.response?.data?.message || confirmError.response?.data?.error || 'Vui long thu lai.',
+        text.cannotConfirm,
+        confirmError.response?.data?.message || confirmError.response?.data?.error || text.retry,
       );
     } finally {
       setUpdatingId(null);
@@ -224,10 +400,10 @@ export default function HousekeeperDashboard() {
   };
 
   const handleReject = async (booking: Booking) => {
-    Alert.alert('Tu choi booking', 'Ban co chac muon tu choi booking nay?', [
-      { text: 'Huy', style: 'cancel' },
+    Alert.alert(text.rejectTitle, text.rejectMessage, [
+      { text: text.cancel, style: 'cancel' },
       {
-        text: 'Tu choi',
+        text: text.reject,
         style: 'destructive',
         onPress: async () => {
           try {
@@ -236,8 +412,8 @@ export default function HousekeeperDashboard() {
             await loadBookings(true);
           } catch (rejectError: any) {
             Alert.alert(
-              'Khong the tu choi',
-              rejectError.response?.data?.message || rejectError.response?.data?.error || 'Vui long thu lai.',
+              text.cannotReject,
+              rejectError.response?.data?.message || rejectError.response?.data?.error || text.retry,
             );
           } finally {
             setUpdatingId(null);
@@ -248,10 +424,10 @@ export default function HousekeeperDashboard() {
   };
 
   const handleComplete = async (booking: Booking) => {
-    Alert.alert('Hoan thanh cong viec', 'Ban xac nhan da hoan thanh booking nay?', [
-      { text: 'Huy', style: 'cancel' },
+    Alert.alert(text.completeTitle, text.completeMessage, [
+      { text: text.cancel, style: 'cancel' },
       {
-        text: 'Hoan thanh',
+        text: text.complete,
         onPress: async () => {
           try {
             setUpdatingId(booking.id);
@@ -259,8 +435,8 @@ export default function HousekeeperDashboard() {
             await loadBookings(true);
           } catch (completeError: any) {
             Alert.alert(
-              'Khong the hoan thanh',
-              completeError.response?.data?.message || completeError.response?.data?.error || 'Vui long thu lai.',
+              text.cannotComplete,
+              completeError.response?.data?.message || completeError.response?.data?.error || text.retry,
             );
           } finally {
             setUpdatingId(null);
@@ -308,39 +484,39 @@ export default function HousekeeperDashboard() {
                   style={[styles.availabilityButton, profile?.available ? styles.availableButton : styles.pausedButton]}
                 >
                   <Text style={[styles.availabilityText, profile?.available ? styles.availableText : styles.pausedText]}>
-                    {isTogglingAvailability ? 'Dang cap nhat' : profile?.available ? 'Dang nhan viec' : 'Dang tam nghi'}
+                    {isTogglingAvailability ? text.availabilityUpdating : profile?.available ? text.ready : text.unavailable}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => router.push({ pathname: '/notifications', params: { returnTo: 'housekeeper' } })}
                   style={styles.notificationButton}
                 >
-                  <Text style={styles.notificationText}>Thong bao</Text>
+                  <Text style={styles.notificationText}>{text.notifications}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => router.push({ pathname: '/profile', params: { returnTo: 'housekeeper' } })}
                   style={styles.profileHeaderButton}
                 >
-                  <Text style={styles.profileHeaderText}>Tai khoan</Text>
+                  <Text style={styles.profileHeaderText}>{text.account}</Text>
                 </TouchableOpacity>
                 {!isVerifiedHousekeeper ? (
                   <TouchableOpacity onPress={() => router.push('/(housekeeper)/verification')} style={styles.verifyHeaderButton}>
-                    <Text style={styles.verifyHeaderText}>Xac minh</Text>
+                    <Text style={styles.verifyHeaderText}>{text.verify}</Text>
                   </TouchableOpacity>
                 ) : null}
                 <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-                  <Text style={styles.logoutText}>Dang xuat</Text>
+                  <Text style={styles.logoutText}>{text.logout}</Text>
                 </TouchableOpacity>
               </View>
 
               <View style={styles.summaryRow}>
                 <View style={styles.summaryBox}>
                   <Text style={styles.summaryValue}>{bookings.length}</Text>
-                  <Text style={styles.summaryLabel}>Tong booking</Text>
+                  <Text style={styles.summaryLabel}>{text.totalBookings}</Text>
                 </View>
                 <View style={styles.summaryBox}>
                   <Text style={styles.summaryValue}>{pendingCount}</Text>
-                  <Text style={styles.summaryLabel}>Cho xu ly</Text>
+                  <Text style={styles.summaryLabel}>{text.pendingBookings}</Text>
                 </View>
               </View>
 
@@ -350,9 +526,9 @@ export default function HousekeeperDashboard() {
                 style={styles.earningsToggle}
               >
                 <View>
-                  <Text style={styles.earningsToggleTitle}>Thu nhap & doi soat</Text>
+                  <Text style={styles.earningsToggleTitle}>{text.earnings}</Text>
                   <Text style={styles.earningsToggleSubtitle}>
-                    {showEarnings ? 'An thong tin doi soat' : 'Bam de xem thong tin chi tiet'}
+                    {showEarnings ? text.detailVisible : text.detailHidden}
                   </Text>
                 </View>
                 <Ionicons color="#ff8128" name={showEarnings ? 'chevron-up' : 'chevron-down'} size={22} />
@@ -361,25 +537,25 @@ export default function HousekeeperDashboard() {
               {showEarnings ? (
                 <View style={styles.earningsCard}>
                   <View style={styles.earningsHeader}>
-                    <Text style={styles.earningsTitle}>Chi tiet thu nhap</Text>
-                    <Text style={styles.earningsBadge}>Platform payout</Text>
+                    <Text style={styles.earningsTitle}>{text.earningsDetail}</Text>
+                    <Text style={styles.earningsBadge}>{text.platformPayout}</Text>
                   </View>
                   <View style={styles.earningsGrid}>
                     <View style={styles.earningsItem}>
                       <Text style={styles.earningsValue}>{formatPrice(earnings?.pendingPayout)}</Text>
-                      <Text style={styles.earningsLabel}>MoMo dang tam giu</Text>
+                      <Text style={styles.earningsLabel}>{text.momoHolding}</Text>
                     </View>
                     <View style={styles.earningsItem}>
                       <Text style={styles.earningsValue}>{formatPrice(earnings?.paidOut)}</Text>
-                      <Text style={styles.earningsLabel}>Da chi tra</Text>
+                      <Text style={styles.earningsLabel}>{text.paidOut}</Text>
                     </View>
                     <View style={styles.earningsItem}>
                       <Text style={styles.earningsValue}>{formatPrice(earnings?.cashCollected)}</Text>
-                      <Text style={styles.earningsLabel}>Tien mat da thu</Text>
+                      <Text style={styles.earningsLabel}>{text.cashCollected}</Text>
                     </View>
                     <View style={styles.earningsItem}>
                       <Text style={styles.earningsValue}>{formatPrice(earnings?.cashPlatformFeeDue)}</Text>
-                      <Text style={styles.earningsLabel}>Phi platform can doi soat</Text>
+                      <Text style={styles.earningsLabel}>{text.platformFeeDue}</Text>
                     </View>
                   </View>
                 </View>
@@ -389,11 +565,11 @@ export default function HousekeeperDashboard() {
             <View style={styles.filterRow}>
               {filters.map((filter) => (
                 <TouchableOpacity
-                  key={filter.key}
-                  onPress={() => setActiveFilter(filter.key)}
-                  style={[styles.filterButton, activeFilter === filter.key && styles.filterButtonActive]}
+                  key={filter}
+                  onPress={() => setActiveFilter(filter)}
+                  style={[styles.filterButton, activeFilter === filter && styles.filterButtonActive]}
                 >
-                  <Text style={[styles.filterText, activeFilter === filter.key && styles.filterTextActive]}>{filter.label}</Text>
+                  <Text style={[styles.filterText, activeFilter === filter && styles.filterTextActive]}>{text.filters[filter]}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -413,12 +589,14 @@ export default function HousekeeperDashboard() {
             onComplete={() => handleComplete(item)}
             onConfirm={() => handleConfirm(item)}
             onReject={() => handleReject(item)}
+            text={text}
+            language={language}
           />
         )}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>Chua co booking</Text>
-            <Text style={styles.emptyText}>Khi khach hang dat lich, booking se hien o day.</Text>
+            <Text style={styles.emptyTitle}>{text.emptyTitle}</Text>
+            <Text style={styles.emptyText}>{text.emptyText}</Text>
           </View>
         }
       />

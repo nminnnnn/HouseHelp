@@ -6,6 +6,7 @@ import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { authService } from '../../lib/auth';
+import { useLanguage } from '../../lib/language';
 import { getSocket } from '../../lib/socket';
 
 function sanitizeRoom(value?: string) {
@@ -15,6 +16,37 @@ function sanitizeRoom(value?: string) {
 }
 
 const JITSI_BASE_URL = (process.env.EXPO_PUBLIC_JITSI_URL || 'https://meet.ffmuc.net').replace(/\/+$/, '');
+
+const copy = {
+  en: {
+    audioTitle: 'Audio call',
+    body: 'If the browser does not open automatically, you can reopen the call.',
+    callFailed: 'Could not start call',
+    callFailedText: 'The recipient is offline or has not opened the app.',
+    callRejected: 'Call rejected',
+    callRejectedText: 'The recipient rejected the call.',
+    end: 'End',
+    jitsiError: 'Could not open Jitsi',
+    jitsiErrorText: 'Please try again or open the call link in your browser.',
+    opening: 'Opening Jitsi Meet',
+    reopen: 'Reopen call',
+    videoTitle: 'Video call',
+  },
+  vi: {
+    audioTitle: 'Cuộc gọi âm thanh',
+    body: 'Nếu trình duyệt không tự mở, bạn có thể bấm mở lại cuộc gọi.',
+    callFailed: 'Không gọi được',
+    callFailedText: 'Người nhận đang offline hoặc chưa mở ứng dụng.',
+    callRejected: 'Cuộc gọi bị từ chối',
+    callRejectedText: 'Người nhận đã từ chối cuộc gọi.',
+    end: 'Kết thúc',
+    jitsiError: 'Không mở được Jitsi',
+    jitsiErrorText: 'Hãy thử lại hoặc mở link cuộc gọi bằng trình duyệt.',
+    opening: 'Đang mở Jitsi Meet',
+    reopen: 'Mở lại cuộc gọi',
+    videoTitle: 'Video call',
+  },
+} as const;
 
 export default function CallScreen() {
   const { bookingId, roomId, targetUserId, type, title } = useLocalSearchParams<{
@@ -26,6 +58,8 @@ export default function CallScreen() {
   }>();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { language } = useLanguage();
+  const text = copy[language];
   const isAudio = type === 'audio';
   const url = useMemo(() => {
     const room = sanitizeRoom(roomId);
@@ -41,9 +75,9 @@ export default function CallScreen() {
 
   useEffect(() => {
     WebBrowser.openBrowserAsync(url).catch(() => {
-      Alert.alert('Khong mo duoc Jitsi', 'Hay thu lai hoac mo link cuoc goi bang trinh duyet.');
+      Alert.alert(text.jitsiError, text.jitsiErrorText);
     });
-  }, [url]);
+  }, [text.jitsiError, text.jitsiErrorText, url]);
 
   useEffect(() => {
     let isMounted = true;
@@ -76,7 +110,7 @@ export default function CallScreen() {
         return;
       }
 
-      Alert.alert('Cuoc goi bi tu choi', 'Nguoi nhan da tu choi cuoc goi.', [
+      Alert.alert(text.callRejected, text.callRejectedText, [
         {
           text: 'OK',
           onPress: () => {
@@ -88,7 +122,7 @@ export default function CallScreen() {
     };
 
     const handleCallFailed = (payload?: { error?: string }) => {
-      Alert.alert('Khong goi duoc', payload?.error || 'Nguoi nhan dang offline hoac chua mo ung dung.', [
+      Alert.alert(text.callFailed, payload?.error || text.callFailedText, [
         {
           text: 'OK',
           onPress: () => {
@@ -108,7 +142,7 @@ export default function CallScreen() {
       socket.off('call_rejected', handleCallRejected);
       socket.off('call_failed', handleCallFailed);
     };
-  }, [bookingId, roomId, router]);
+  }, [bookingId, roomId, router, text.callFailed, text.callFailedText, text.callRejected, text.callRejectedText]);
 
   const endCall = () => {
     WebBrowser.dismissBrowser();
@@ -129,10 +163,10 @@ export default function CallScreen() {
       <View style={styles.header}>
         <TouchableOpacity onPress={endCall} style={styles.endButton}>
           <Ionicons color="#fff" name="call" size={18} />
-          <Text style={styles.endText}>Ket thuc</Text>
+          <Text style={styles.endText}>{text.end}</Text>
         </TouchableOpacity>
         <View style={styles.headerText}>
-          <Text numberOfLines={1} style={styles.title}>{title || (isAudio ? 'Cuoc goi am thanh' : 'Video call')}</Text>
+          <Text numberOfLines={1} style={styles.title}>{title || (isAudio ? text.audioTitle : text.videoTitle)}</Text>
           <Text style={styles.subtitle}>HouseHelp Call</Text>
         </View>
       </View>
@@ -140,11 +174,11 @@ export default function CallScreen() {
         <View style={styles.statusIcon}>
           <Ionicons color="#ff8128" name={isAudio ? 'call-outline' : 'videocam-outline'} size={36} />
         </View>
-        <Text style={styles.bodyTitle}>Dang mo Jitsi Meet</Text>
-        <Text style={styles.bodyText}>Neu trinh duyet khong tu mo, ban co the bam mo lai cuoc goi.</Text>
+        <Text style={styles.bodyTitle}>{text.opening}</Text>
+        <Text style={styles.bodyText}>{text.body}</Text>
         <TouchableOpacity activeOpacity={0.84} onPress={() => WebBrowser.openBrowserAsync(url)} style={styles.openButton}>
           <Ionicons color="#111827" name="open-outline" size={18} />
-          <Text style={styles.openText}>Mo lai cuoc goi</Text>
+          <Text style={styles.openText}>{text.reopen}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>

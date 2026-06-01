@@ -4,6 +4,36 @@ import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, Touc
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { authService } from '../../lib/auth';
+import { useLanguage } from '../../lib/language';
+
+const copy = {
+  en: {
+    backLogin: 'Back to login',
+    create: 'Create account',
+    createError: 'Could not create account.',
+    errorTitle: 'Registration failed',
+    fullName: 'Full name',
+    password: 'Password',
+    phone: 'Phone number',
+    services: 'Services, separated by commas',
+    title: 'Register housekeeper',
+    validation: 'Please enter full name, email, and password.',
+    validationTitle: 'Notice',
+  },
+  vi: {
+    backLogin: 'Quay lại đăng nhập',
+    create: 'Tạo tài khoản',
+    createError: 'Không thể tạo tài khoản.',
+    errorTitle: 'Đăng ký thất bại',
+    fullName: 'Họ tên',
+    password: 'Mật khẩu',
+    phone: 'Số điện thoại',
+    services: 'Dịch vụ, cách nhau bằng dấu phẩy',
+    title: 'Đăng ký người giúp việc',
+    validation: 'Vui lòng nhập họ tên, email và mật khẩu.',
+    validationTitle: 'Thông báo',
+  },
+} as const;
 
 function parseServices(value: string) {
   return value
@@ -19,12 +49,14 @@ export default function RegisterHousekeeperScreen() {
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
   const [services, setServices] = useState('');
+  const { language } = useLanguage();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const text = copy[language];
 
   const handleRegister = async () => {
     if (!fullName.trim() || !email.trim() || !password) {
-      Alert.alert('Thong bao', 'Vui long nhap ho ten, email va mat khau.');
+      Alert.alert(text.validationTitle, text.validation);
       return;
     }
 
@@ -40,8 +72,8 @@ export default function RegisterHousekeeperScreen() {
       router.replace('/(housekeeper)');
     } catch (error: any) {
       Alert.alert(
-        'Dang ky that bai',
-        error.response?.data?.message || error.response?.data?.error || 'Khong the tao tai khoan.',
+        text.errorTitle,
+        error.response?.data?.message || error.response?.data?.error || text.createError,
       );
     } finally {
       setIsSubmitting(false);
@@ -54,9 +86,9 @@ export default function RegisterHousekeeperScreen() {
         contentContainerStyle={[styles.container, { paddingBottom: Math.max(insets.bottom + 30, 44) }]}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.title}>Dang ky nguoi giup viec</Text>
+        <Text style={styles.title}>{text.title}</Text>
 
-        <TextInput onChangeText={setFullName} placeholder="Ho ten" style={styles.input} value={fullName} />
+        <TextInput onChangeText={setFullName} placeholder={text.fullName} style={styles.input} value={fullName} />
         <TextInput
           autoCapitalize="none"
           keyboardType="email-address"
@@ -65,21 +97,21 @@ export default function RegisterHousekeeperScreen() {
           style={styles.input}
           value={email}
         />
-        <TextInput keyboardType="phone-pad" onChangeText={setPhone} placeholder="So dien thoai" style={styles.input} value={phone} />
-        <TextInput onChangeText={setPassword} placeholder="Mat khau" secureTextEntry style={styles.input} value={password} />
+        <TextInput keyboardType="phone-pad" onChangeText={setPhone} placeholder={text.phone} style={styles.input} value={phone} />
+        <TextInput onChangeText={setPassword} placeholder={text.password} secureTextEntry style={styles.input} value={password} />
         <TextInput
           onChangeText={setServices}
-          placeholder="Dich vu, cach nhau bang dau phay"
+          placeholder={text.services}
           style={styles.input}
           value={services}
         />
 
         <TouchableOpacity disabled={isSubmitting} onPress={handleRegister} style={styles.button}>
-          {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Tao tai khoan</Text>}
+          {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{text.create}</Text>}
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => router.back()} style={styles.secondaryButton}>
-          <Text style={styles.secondaryText}>Quay lai dang nhap</Text>
+          <Text style={styles.secondaryText}>{text.backLogin}</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>

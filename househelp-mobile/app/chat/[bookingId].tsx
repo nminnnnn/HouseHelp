@@ -19,6 +19,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { authService, type AuthUser } from '../../lib/auth';
 import { bookingService, type Booking } from '../../lib/bookings';
 import { housekeeperService } from '../../lib/housekeepers';
+import { useLanguage } from '../../lib/language';
 import { messageService, type ChatMessage } from '../../lib/messages';
 import { getSocket } from '../../lib/socket';
 
@@ -108,6 +109,53 @@ function emitCallInvite(payload: {
   socket.connect();
 }
 
+const copy = {
+  en: {
+    back: 'Back',
+    cannotCall: 'Cannot call yet',
+    cannotCallText: 'Please wait for the chat information to load before starting a call.',
+    cannotOpenChat: 'Could not open chat',
+    directSubtitle: 'Direct conversation',
+    emptyText: 'Send the first message in this conversation.',
+    emptyTitle: 'No messages yet',
+    housekeeper: 'Housekeeper',
+    customer: 'Customer',
+    loadError: 'Could not load chat',
+    missingReceiver: 'Missing recipient information.',
+    newAudioCall: 'Started an audio call.',
+    newVideoCall: 'Started a video call.',
+    noAccess: 'This account does not have permission to view this chat.',
+    noBooking: 'Booking not found',
+    placeholder: 'Type a message...',
+    retry: 'Please try again later.',
+    send: 'Send',
+    sendError: 'Could not send message',
+    syncError: 'Could not sync new messages.',
+  },
+  vi: {
+    back: 'Quay lại',
+    cannotCall: 'Chưa thể gọi',
+    cannotCallText: 'Cần tải thông tin cuộc chat trước khi bắt đầu cuộc gọi.',
+    cannotOpenChat: 'Không mở được chat',
+    directSubtitle: 'Trao đổi trực tiếp',
+    emptyText: 'Hãy gửi lời chào đầu tiên trong cuộc trò chuyện này.',
+    emptyTitle: 'Chưa có tin nhắn',
+    housekeeper: 'Người giúp việc',
+    customer: 'Khách hàng',
+    loadError: 'Không tải được chat',
+    missingReceiver: 'Thiếu thông tin người nhận.',
+    newAudioCall: 'Đã bắt đầu cuộc gọi âm thanh.',
+    newVideoCall: 'Đã bắt đầu video call.',
+    noAccess: 'Tài khoản này không có quyền xem cuộc chat này.',
+    noBooking: 'Không tìm thấy booking',
+    placeholder: 'Nhập tin nhắn...',
+    retry: 'Thử lại sau.',
+    send: 'Gửi',
+    sendError: 'Không gửi được tin nhắn',
+    syncError: 'Không đồng bộ được tin mới.',
+  },
+} as const;
+
 export default function ChatScreen() {
   const [booking, setBooking] = useState<Booking | null>(null);
   const [backgroundError, setBackgroundError] = useState<string | null>(null);
@@ -126,6 +174,8 @@ export default function ChatScreen() {
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { language } = useLanguage();
+  const text = copy[language];
 
   const title = useMemo(() => {
     if (bookingId === 'direct') {
@@ -137,15 +187,15 @@ export default function ChatScreen() {
     }
 
     return user.id === booking.customerId
-      ? booking.housekeeperName || 'Nguoi giup viec'
-      : booking.customerName || 'Khach hang';
-  }, [booking, bookingId, receiverName, user]);
+      ? booking.housekeeperName || text.housekeeper
+      : booking.customerName || text.customer;
+  }, [booking, bookingId, receiverName, text.customer, text.housekeeper, user]);
 
   const resolveReceiverId = useCallback(async (currentUser: AuthUser, currentBooking: Booking) => {
     if (currentUser.id === currentBooking.customerId) {
       const housekeeper = await housekeeperService.getById(currentBooking.housekeeperId);
       if (!housekeeper.userId) {
-        throw new Error('Khong tim thay userId cua housekeeper.');
+        throw new Error('Missing housekeeper userId.');
       }
 
       return housekeeper.userId;
@@ -178,7 +228,7 @@ export default function ChatScreen() {
         const nextReceiverId = Number(directReceiverId);
 
         if (!Number.isFinite(nextReceiverId) || nextReceiverId <= 0) {
-          Alert.alert('Khong mo duoc chat', 'Thieu thong tin nguoi nhan.');
+          Alert.alert(text.cannotOpenChat, text.missingReceiver);
           router.back();
           return;
         }
@@ -200,7 +250,7 @@ export default function ChatScreen() {
       const currentBooking = allBookings.find((item) => String(item.id) === String(bookingId));
 
       if (!currentBooking) {
-        Alert.alert('Khong tim thay booking', 'Tai khoan nay khong co quyen xem cuoc chat nay.');
+        Alert.alert(text.noBooking, text.noAccess);
         router.back();
         return;
       }
@@ -214,12 +264,12 @@ export default function ChatScreen() {
       setUser(currentUser);
       setBackgroundError(null);
     } catch (error: any) {
-      Alert.alert('Khong tai duoc chat', error.response?.data?.message || error.response?.data?.error || 'Thu lai sau.');
+      Alert.alert(text.loadError, error.response?.data?.message || error.response?.data?.error || text.retry);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [bookingId, directReceiverId, resolveReceiverId, router]);
+  }, [bookingId, directReceiverId, resolveReceiverId, router, text.cannotOpenChat, text.loadError, text.missingReceiver, text.noAccess, text.noBooking, text.retry]);
 
   useEffect(() => {
     loadChat();
@@ -291,12 +341,12 @@ export default function ChatScreen() {
         setMessages((current) => mergeMessages(current, mergeMessages(latestBookingMessages, latestDirectMessages)));
         setBackgroundError(null);
       } catch (error: any) {
-        setBackgroundError(error.response?.data?.message || error.response?.data?.error || 'Khong dong bo duoc tin moi.');
+        setBackgroundError(error.response?.data?.message || error.response?.data?.error || text.syncError);
       }
     }, 3000);
 
     return () => clearInterval(intervalId);
-  }, [bookingId, receiverId, user]);
+  }, [bookingId, receiverId, text.syncError, user]);
 
   useEffect(() => {
     if (messages.length) {
@@ -335,7 +385,7 @@ export default function ChatScreen() {
       });
     } catch (error: any) {
       setInput(trimmed);
-      Alert.alert('Khong gui duoc tin nhan', error.response?.data?.message || error.response?.data?.error || 'Thu lai sau.');
+      Alert.alert(text.sendError, error.response?.data?.message || error.response?.data?.error || text.retry);
     } finally {
       setIsSending(false);
     }
@@ -343,16 +393,16 @@ export default function ChatScreen() {
 
   const startCall = async (type: 'audio' | 'video') => {
     if (!bookingId || !user || !receiverId) {
-      Alert.alert('Chua the goi', 'Can tai thong tin cuoc chat truoc khi bat dau cuoc goi.');
+      Alert.alert(text.cannotCall, text.cannotCallText);
       return;
     }
 
     const roomId = callRoomId(bookingId, user.id, receiverId);
-    const callText = type === 'audio' ? 'Da bat dau cuoc goi am thanh.' : 'Da bat dau video call.';
+    const callText = type === 'audio' ? text.newAudioCall : text.newVideoCall;
 
     emitCallInvite({
       bookingId,
-      callerName: user.fullName || user.email || 'Khach hang',
+      callerName: user.fullName || user.email || text.customer,
       callType: type,
       roomName: roomId,
       targetUserId: receiverId,
@@ -373,7 +423,7 @@ export default function ChatScreen() {
         });
       }
     } catch {
-      // Cuoc goi van co the bat dau ke ca khi tin thong bao khong gui duoc.
+      // The call can still start even if the status message fails to send.
     }
 
     router.push({
@@ -407,12 +457,12 @@ export default function ChatScreen() {
       >
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Text style={styles.backText}>Quay lai</Text>
+            <Text style={styles.backText}>{text.back}</Text>
           </TouchableOpacity>
           <View style={styles.headerMain}>
             <View style={styles.headerTitleBlock}>
               <Text numberOfLines={1} style={styles.title}>{title}</Text>
-              <Text style={styles.subtitle}>{bookingId === 'direct' ? 'Trao doi truc tiep' : `Booking #${bookingId}`}</Text>
+              <Text style={styles.subtitle}>{bookingId === 'direct' ? text.directSubtitle : `Booking #${bookingId}`}</Text>
             </View>
             <View style={styles.callActions}>
               <TouchableOpacity activeOpacity={0.84} onPress={() => startCall('audio')} style={styles.callButton}>
@@ -434,8 +484,8 @@ export default function ChatScreen() {
           renderItem={({ item }) => <MessageBubble currentUserId={user?.id || 0} item={item} />}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>Chua co tin nhan</Text>
-              <Text style={styles.emptyText}>Hay gui loi chao dau tien cho booking nay.</Text>
+              <Text style={styles.emptyTitle}>{text.emptyTitle}</Text>
+              <Text style={styles.emptyText}>{text.emptyText}</Text>
             </View>
           }
         />
@@ -450,12 +500,12 @@ export default function ChatScreen() {
           <TextInput
             multiline
             onChangeText={setInput}
-            placeholder="Nhap tin nhan..."
+            placeholder={text.placeholder}
             style={styles.input}
             value={input}
           />
           <TouchableOpacity disabled={isSending || !input.trim()} onPress={handleSend} style={styles.sendButton}>
-            <Text style={styles.sendText}>{isSending ? '...' : 'Gui'}</Text>
+            <Text style={styles.sendText}>{isSending ? '...' : text.send}</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>

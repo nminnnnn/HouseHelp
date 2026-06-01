@@ -24,19 +24,19 @@ import { storage, type AppLanguage } from '../lib/storage';
 import { verificationService, type VerificationStatus } from '../lib/verification';
 
 const accountRows = [
-  { action: 'edit', icon: 'person', label: { en: 'Personal Profile', vi: 'Hồ sơ cá nhân' } },
-  { action: 'addresses', icon: 'location', label: { en: 'Saved Addresses', vi: 'Địa chỉ đã lưu' } },
-  { action: 'transactions', icon: 'time', label: { en: 'Transaction History', vi: 'Lịch sử giao dịch' } },
-  { action: 'rewards', icon: 'gift', label: { en: 'My Rewards', vi: 'Ưu đãi của tôi' } },
-  { action: 'favorites', icon: 'heart', label: { en: 'Favorite Housekeepers', vi: 'Người giúp việc yêu thích' } },
-  { action: 'blockList', icon: 'ban', label: { en: 'Block List', vi: 'Danh sách chặn' } },
-  { action: 'business', icon: 'business', label: { en: 'Create a Business Account', vi: 'Tạo tài khoản người giúp việc' } },
+  { action: 'edit', icon: 'person', label: { en: 'Personal Profile', vi: 'H\u1ed3 s\u01a1 c\u00e1 nh\u00e2n' } },
+  { action: 'addresses', icon: 'location', label: { en: 'Saved Addresses', vi: '\u0110\u1ecba ch\u1ec9 \u0111\u00e3 l\u01b0u' } },
+  { action: 'transactions', icon: 'time', label: { en: 'Transaction History', vi: 'L\u1ecbch s\u1eed giao d\u1ecbch' } },
+  { action: 'rewards', icon: 'gift', label: { en: 'My Rewards', vi: '\u01afu \u0111\u00e3i c\u1ee7a t\u00f4i' } },
+  { action: 'favorites', icon: 'heart', label: { en: 'Favorite Housekeepers', vi: 'Ng\u01b0\u1eddi gi\u00fap vi\u1ec7c y\u00eau th\u00edch' } },
+  { action: 'blockList', icon: 'ban', label: { en: 'Block List', vi: 'Danh s\u00e1ch ch\u1eb7n' } },
+  { action: 'business', icon: 'business', label: { en: 'Create a Business Account', vi: 'T\u1ea1o t\u00e0i kho\u1ea3n ng\u01b0\u1eddi gi\u00fap vi\u1ec7c' } },
 ];
 
 const utilityRows = [
-  { action: 'pay', icon: 'wallet', label: { en: 'HouseHelp Pay', vi: 'Thanh toán HouseHelp' } },
-  { action: 'language', icon: 'globe', label: { en: 'Language', vi: 'Ngôn ngữ' } },
-  { action: 'help', icon: 'help-circle', label: { en: 'Help Center', vi: 'Trung tâm trợ giúp' } },
+  { action: 'pay', icon: 'wallet', label: { en: 'HouseHelp Pay', vi: 'Thanh to\u00e1n HouseHelp' } },
+  { action: 'language', icon: 'globe', label: { en: 'Language', vi: 'Ng\u00f4n ng\u1eef' } },
+  { action: 'help', icon: 'help-circle', label: { en: 'Help Center', vi: 'Trung t\u00e2m tr\u1ee3 gi\u00fap' } },
 ];
 
 const copy = {
@@ -50,41 +50,69 @@ const copy = {
     dashboard: 'Dashboard',
     doneAddress: 'Use this address',
     editProfile: 'Personal Profile',
+    enterAddress: 'Enter address',
+    enterAddressText: 'Please enter the address to search.',
     fullName: 'Full name',
     language: 'Language',
     languageHint: 'Choose the display language for the mobile app.',
+    loadProfileError: 'Could not load profile',
+    loadRetry: 'Please try again later.',
+    locationError: 'Could not get location',
+    locationErrorText: 'You can search for an address or tap directly on the map.',
     logout: 'Log out',
     memberTier: 'Member tier',
+    notFound: 'Not found',
+    notFoundText: 'Please enter a more specific address.',
+    permissionNeeded: 'Location permission needed',
+    permissionNeededText: 'Please allow location access to use this feature.',
     phone: 'Phone number',
     profileSaved: 'Profile has been updated.',
     profileSaveTitle: 'Saved',
     rewardsEmpty: 'Reward points will appear after completed bookings or promotions.',
+    saveError: 'Could not save',
     saveProfile: 'Save profile',
+    searchFailed: 'Could not find address',
+    searchFailedText: 'Please try again or tap directly on the map.',
     selectLanguage: 'Select language',
+    selectedLocationPrefix: 'Selected location',
     useCurrentLocation: 'Use current location',
   },
   vi: {
-    account: 'Tài khoản',
-    chooseAddress: 'Chọn địa chỉ trên bản đồ',
-    chooseAddressTitle: 'Chọn địa chỉ',
-    chooseAddressSubtitle: 'Tìm địa chỉ hoặc chạm trên bản đồ để đặt ghim.',
-    close: 'Đóng',
-    currentLanguage: 'Ngôn ngữ hiện tại',
+    account: 'T\u00e0i kho\u1ea3n',
+    chooseAddress: 'Ch\u1ecdn \u0111\u1ecba ch\u1ec9 tr\u00ean b\u1ea3n \u0111\u1ed3',
+    chooseAddressTitle: 'Ch\u1ecdn \u0111\u1ecba ch\u1ec9',
+    chooseAddressSubtitle: 'T\u00ecm \u0111\u1ecba ch\u1ec9 ho\u1eb7c ch\u1ea1m tr\u00ean b\u1ea3n \u0111\u1ed3 \u0111\u1ec3 \u0111\u1eb7t ghim.',
+    close: '\u0110\u00f3ng',
+    currentLanguage: 'Ng\u00f4n ng\u1eef hi\u1ec7n t\u1ea1i',
     dashboard: 'Dashboard',
-    doneAddress: 'Dùng địa chỉ này',
-    editProfile: 'Hồ sơ cá nhân',
-    fullName: 'Họ tên',
-    language: 'Ngôn ngữ',
-    languageHint: 'Chọn ngôn ngữ hiển thị cho ứng dụng mobile.',
-    logout: 'Đăng xuất',
-    memberTier: 'Hạng thành viên',
-    phone: 'Số điện thoại',
-    profileSaved: 'Hồ sơ đã được cập nhật.',
-    profileSaveTitle: 'Đã lưu',
-    rewardsEmpty: 'Điểm thưởng sẽ xuất hiện sau khi bạn hoàn thành booking hoặc nhận ưu đãi.',
-    saveProfile: 'Lưu hồ sơ',
-    selectLanguage: 'Chọn ngôn ngữ',
-    useCurrentLocation: 'Dùng vị trí hiện tại',
+    doneAddress: 'D\u00f9ng \u0111\u1ecba ch\u1ec9 n\u00e0y',
+    editProfile: 'H\u1ed3 s\u01a1 c\u00e1 nh\u00e2n',
+    enterAddress: 'Nh\u1eadp \u0111\u1ecba ch\u1ec9',
+    enterAddressText: 'Vui l\u00f2ng nh\u1eadp \u0111\u1ecba ch\u1ec9 c\u1ea7n t\u00ecm.',
+    fullName: 'H\u1ecd t\u00ean',
+    language: 'Ng\u00f4n ng\u1eef',
+    languageHint: 'Ch\u1ecdn ng\u00f4n ng\u1eef hi\u1ec3n th\u1ecb cho \u1ee9ng d\u1ee5ng mobile.',
+    loadProfileError: 'Kh\u00f4ng t\u1ea3i \u0111\u01b0\u1ee3c h\u1ed3 s\u01a1',
+    loadRetry: 'Th\u1eed l\u1ea1i sau.',
+    locationError: 'Kh\u00f4ng l\u1ea5y \u0111\u01b0\u1ee3c v\u1ecb tr\u00ed',
+    locationErrorText: 'B\u1ea1n c\u00f3 th\u1ec3 t\u00ecm \u0111\u1ecba ch\u1ec9 ho\u1eb7c ch\u1ea1m tr\u1ef1c ti\u1ebfp tr\u00ean b\u1ea3n \u0111\u1ed3.',
+    logout: '\u0110\u0103ng xu\u1ea5t',
+    memberTier: 'H\u1ea1ng th\u00e0nh vi\u00ean',
+    notFound: 'Kh\u00f4ng t\u00ecm th\u1ea5y',
+    notFoundText: 'Vui l\u00f2ng nh\u1eadp \u0111\u1ecba ch\u1ec9 c\u1ee5 th\u1ec3 h\u01a1n.',
+    permissionNeeded: 'C\u1ea7n quy\u1ec1n v\u1ecb tr\u00ed',
+    permissionNeededText: 'Vui l\u00f2ng cho ph\u00e9p truy c\u1eadp v\u1ecb tr\u00ed \u0111\u1ec3 d\u00f9ng ch\u1ee9c n\u0103ng n\u00e0y.',
+    phone: 'S\u1ed1 \u0111i\u1ec7n tho\u1ea1i',
+    profileSaved: 'H\u1ed3 s\u01a1 \u0111\u00e3 \u0111\u01b0\u1ee3c c\u1eadp nh\u1eadt.',
+    profileSaveTitle: '\u0110\u00e3 l\u01b0u',
+    rewardsEmpty: '\u0110i\u1ec3m th\u01b0\u1edfng s\u1ebd xu\u1ea5t hi\u1ec7n sau khi b\u1ea1n ho\u00e0n th\u00e0nh booking ho\u1eb7c nh\u1eadn \u01b0u \u0111\u00e3i.',
+    saveError: 'Kh\u00f4ng l\u01b0u \u0111\u01b0\u1ee3c',
+    saveProfile: 'L\u01b0u h\u1ed3 s\u01a1',
+    searchFailed: 'Kh\u00f4ng t\u00ecm \u0111\u01b0\u1ee3c \u0111\u1ecba ch\u1ec9',
+    searchFailedText: 'Vui l\u00f2ng th\u1eed l\u1ea1i ho\u1eb7c ch\u1ea1m tr\u1ef1c ti\u1ebfp tr\u00ean b\u1ea3n \u0111\u1ed3.',
+    selectLanguage: 'Ch\u1ecdn ng\u00f4n ng\u1eef',
+    selectedLocationPrefix: 'V\u1ecb tr\u00ed \u0111\u00e3 ch\u1ecdn',
+    useCurrentLocation: 'D\u00f9ng v\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i',
   },
 } as const;
 
@@ -176,11 +204,11 @@ export default function ProfileScreen() {
         setVerificationStatus(null);
       }
     } catch (error: any) {
-      Alert.alert('Không tải được hồ sơ', error.response?.data?.message || error.response?.data?.error || 'Thử lại sau.');
+      Alert.alert(text.loadProfileError, error.response?.data?.message || error.response?.data?.error || text.loadRetry);
     } finally {
       setIsLoading(false);
     }
-  }, [returnTo, router]);
+  }, [returnTo, router, text.loadProfileError, text.loadRetry]);
 
   const goBackToRoleHome = () => {
     router.replace(isHousekeeperAccount ? '/(housekeeper)' : '/(customer)');
@@ -200,11 +228,11 @@ export default function ProfileScreen() {
       const place: any = results[0];
       const parts = [place?.name, place?.street, place?.district, place?.city, place?.region].filter(Boolean);
 
-      return parts.length ? parts.join(', ') : `Vi tri da chon ${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}`;
+      return parts.length ? parts.join(', ') : `${text.selectedLocationPrefix} ${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}`;
     } catch {
-      return `Vi tri da chon ${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}`;
+      return `${text.selectedLocationPrefix} ${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}`;
     }
-  }, []);
+  }, [text.selectedLocationPrefix]);
 
   const chooseCoordinate = useCallback(async (latitude: number, longitude: number, addressOverride?: string) => {
     setMapRegion((current) => ({ ...current, latitude, longitude }));
@@ -225,11 +253,11 @@ export default function ProfileScreen() {
         await chooseCoordinate(current.coords.latitude, current.coords.longitude);
       }
     } catch {
-      Alert.alert('Không lấy được vị trí', 'Bạn có thể tìm địa chỉ hoặc chạm trực tiếp trên bản đồ.');
+      Alert.alert(text.locationError, text.locationErrorText);
     } finally {
       setIsMapLoading(false);
     }
-  }, [chooseCoordinate]);
+  }, [chooseCoordinate, text.locationError, text.locationErrorText]);
 
   const centerOnDeviceLocation = useCallback(async () => {
     try {
@@ -237,7 +265,7 @@ export default function ProfileScreen() {
       const permission = await Location.requestForegroundPermissionsAsync();
 
       if (permission.status !== 'granted') {
-        Alert.alert('Cần quyền vị trí', 'Vui lòng cho phép truy cập vị trí để dùng chức năng này.');
+        Alert.alert(text.permissionNeeded, text.permissionNeededText);
         return;
       }
 
@@ -246,13 +274,13 @@ export default function ProfileScreen() {
     } finally {
       setIsMapLoading(false);
     }
-  }, [chooseCoordinate]);
+  }, [chooseCoordinate, text.permissionNeeded, text.permissionNeededText]);
 
   const searchAddressOnMap = async () => {
     const query = mapQuery.trim();
 
     if (!query) {
-      Alert.alert('Nhập địa chỉ', 'Vui lòng nhập địa chỉ cần tìm.');
+      Alert.alert(text.enterAddress, text.enterAddressText);
       return;
     }
 
@@ -261,13 +289,13 @@ export default function ProfileScreen() {
       const results = await Location.geocodeAsync(query);
 
       if (!results.length) {
-        Alert.alert('Không tìm thấy', 'Vui lòng nhập địa chỉ cụ thể hơn.');
+        Alert.alert(text.notFound, text.notFoundText);
         return;
       }
 
       await chooseCoordinate(results[0].latitude, results[0].longitude, query);
     } catch {
-      Alert.alert('Không tìm được địa chỉ', 'Vui lòng thử lại hoặc chạm trực tiếp trên bản đồ.');
+      Alert.alert(text.searchFailed, text.searchFailedText);
     } finally {
       setIsMapLoading(false);
     }
@@ -324,7 +352,7 @@ export default function ProfileScreen() {
       setIsEditing(false);
       Alert.alert(text.profileSaveTitle, text.profileSaved);
     } catch (error: any) {
-      Alert.alert('Không lưu được', error.response?.data?.message || error.response?.data?.error || 'Thử lại sau.');
+      Alert.alert(text.saveError, error.response?.data?.message || error.response?.data?.error || text.loadRetry);
     } finally {
       setIsSaving(false);
     }

@@ -4,6 +4,36 @@ import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { authService, type AuthUser } from '../../lib/auth';
+import { useLanguage } from '../../lib/language';
+
+const copy = {
+  en: {
+    alertTitle: 'Notice',
+    customerRegister: 'Register as customer',
+    errorTitle: 'Login failed',
+    housekeeperRegister: 'Register as housekeeper',
+    login: 'Log in',
+    password: 'Password',
+    subtitle: 'Log in to continue',
+    unsupported: 'Not supported',
+    unsupportedText: 'This account is not supported on mobile yet.',
+    validation: 'Please enter email and password.',
+    wrongCredentials: 'Email or password is incorrect.',
+  },
+  vi: {
+    alertTitle: 'Thông báo',
+    customerRegister: 'Đăng ký khách hàng',
+    errorTitle: 'Đăng nhập thất bại',
+    housekeeperRegister: 'Đăng ký người giúp việc',
+    login: 'Đăng nhập',
+    password: 'Mật khẩu',
+    subtitle: 'Đăng nhập để tiếp tục',
+    unsupported: 'Không hỗ trợ',
+    unsupportedText: 'Tài khoản này chưa được hỗ trợ trên mobile.',
+    validation: 'Vui lòng nhập đầy đủ email và mật khẩu.',
+    wrongCredentials: 'Email hoặc mật khẩu không đúng.',
+  },
+} as const;
 
 function routeAfterAuth(user: AuthUser) {
   if (user.role === 'customer') {
@@ -21,12 +51,14 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [password, setPassword] = useState('');
+  const { language } = useLanguage();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const text = copy[language];
 
   const handleLogin = async () => {
     if (!email.trim() || !password) {
-      Alert.alert('Thong bao', 'Vui long nhap day du email va mat khau.');
+      Alert.alert(text.alertTitle, text.validation);
       return;
     }
 
@@ -40,11 +72,11 @@ export default function LoginScreen() {
         return;
       }
 
-      Alert.alert('Khong ho tro', 'Tai khoan nay chua duoc ho tro tren mobile.');
+      Alert.alert(text.unsupported, text.unsupportedText);
     } catch (error: any) {
       Alert.alert(
-        'Dang nhap that bai',
-        error.response?.data?.message || error.response?.data?.error || 'Email hoac mat khau khong dung.',
+        text.errorTitle,
+        error.response?.data?.message || error.response?.data?.error || text.wrongCredentials,
       );
     } finally {
       setIsSubmitting(false);
@@ -60,7 +92,7 @@ export default function LoginScreen() {
       ]}
     >
       <Text style={styles.title}>HouseHelp</Text>
-      <Text style={styles.subtitle}>Dang nhap de tiep tuc</Text>
+      <Text style={styles.subtitle}>{text.subtitle}</Text>
 
       <TextInput
         autoCapitalize="none"
@@ -73,22 +105,22 @@ export default function LoginScreen() {
 
       <TextInput
         onChangeText={setPassword}
-        placeholder="Mat khau"
+        placeholder={text.password}
         secureTextEntry
         style={styles.input}
         value={password}
       />
 
       <TouchableOpacity disabled={isSubmitting} onPress={handleLogin} style={styles.button}>
-        {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Dang nhap</Text>}
+        {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{text.login}</Text>}
       </TouchableOpacity>
 
       <View style={styles.links}>
         <TouchableOpacity onPress={() => router.push('/(auth)/register-customer')}>
-          <Text style={styles.linkText}>Dang ky khach hang</Text>
+          <Text style={styles.linkText}>{text.customerRegister}</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => router.push('/(auth)/register-housekeeper')}>
-          <Text style={styles.linkText}>Dang ky nguoi giup viec</Text>
+          <Text style={styles.linkText}>{text.housekeeperRegister}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>

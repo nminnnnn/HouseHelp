@@ -12,23 +12,24 @@ import { useLanguage } from '../lib/language';
 const copy = {
   en: {
     account: 'Account',
+    contact: 'Contact',
     emptyText: 'Open a housekeeper profile and tap the heart to save them here.',
     emptyTitle: 'No favorite housekeepers yet',
     title: 'Favorite Housekeepers',
     subtitle: 'People you want to prioritize for rebooking.',
   },
   vi: {
-    account: 'Tài khoản',
-    emptyText: 'Mở hồ sơ housekeeper và bấm trái tim để lưu vào danh sách này.',
-    emptyTitle: 'Chưa có housekeeper yêu thích',
-    title: 'Người giúp việc yêu thích',
-    subtitle: 'Những người bạn muốn ưu tiên đặt lại.',
+    account: 'T\u00e0i kho\u1ea3n',
+    contact: 'Li\u00ean h\u1ec7',
+    emptyText: 'M\u1edf h\u1ed3 s\u01a1 housekeeper v\u00e0 b\u1ea5m tr\u00e1i tim \u0111\u1ec3 l\u01b0u v\u00e0o danh s\u00e1ch n\u00e0y.',
+    emptyTitle: 'Ch\u01b0a c\u00f3 housekeeper y\u00eau th\u00edch',
+    title: 'Ng\u01b0\u1eddi gi\u00fap vi\u1ec7c y\u00eau th\u00edch',
+    subtitle: 'Nh\u1eefng ng\u01b0\u1eddi b\u1ea1n mu\u1ed1n \u01b0u ti\u00ean \u0111\u1eb7t l\u1ea1i.',
   },
 } as const;
-
-function formatPrice(price?: number | string) {
+function formatPrice(price: number | string | undefined, contactLabel: string) {
   const value = Number(price);
-  if (!Number.isFinite(value)) return 'Lien he';
+  if (!Number.isFinite(value)) return contactLabel;
   return `${value.toLocaleString('vi-VN')} VND`;
 }
 
@@ -127,7 +128,7 @@ export default function FavoriteHousekeepersScreen() {
                 <View style={styles.cardBody}>
                   <Text numberOfLines={1} style={styles.name}>{housekeeper.fullName}</Text>
                   <Text numberOfLines={1} style={styles.meta}>{housekeeper.services || 'House cleaning'}</Text>
-                  <Text style={styles.price}>{formatPrice(housekeeper.price)}</Text>
+                  <Text style={styles.price}>{formatPrice(housekeeper.price, text.contact)}</Text>
                 </View>
                 <TouchableOpacity onPress={() => removeFavorite(housekeeper.id)} style={styles.iconButton}>
                   <Ionicons color="#ff8128" name="heart" size={22} />

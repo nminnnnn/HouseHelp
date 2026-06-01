@@ -19,22 +19,21 @@ import { housekeeperPreferenceService } from '../../lib/housekeeper-preferences'
 import { housekeeperService, type Housekeeper } from '../../lib/housekeepers';
 import { useLanguage } from '../../lib/language';
 
-function errorMessage(error: any) {
+function errorMessage(error: any, fallback: string) {
   const value = error?.response?.data?.message || error?.response?.data?.error || error?.message;
-  return typeof value === 'string' ? value : 'Khong the tai danh sach.';
+  return typeof value === 'string' ? value : fallback;
 }
 
 const services = [
-  { title: 'Cleaning', subtitle: 'on-demand', icon: 'sparkles-outline', key: 'cleaning', filter: 'Dọn dẹp nhà cửa' },
-  { title: 'Cleaning', subtitle: 'monthly', icon: 'calendar-outline', key: 'cleaning-monthly', filter: 'Dọn dẹp nhà cửa' },
-  { title: 'Deep', subtitle: 'Cleaning', icon: 'home-outline', key: 'deep-cleaning', filter: 'Dọn dẹp nhà cửa' },
-  { title: 'A/C Cleaning', subtitle: '', icon: 'snow-outline', key: 'industrial-cleaning', filter: 'Vệ sinh công nghiệp' },
-  { title: 'Cooking', subtitle: '', icon: 'restaurant-outline', key: 'cooking', filter: 'Nấu ăn' },
-  { title: 'Laundry', subtitle: '', icon: 'shirt-outline', key: 'laundry', filter: 'Giặt ủi quần áo' },
-  { title: 'Elderly Care', subtitle: '', icon: 'heart-outline', key: 'elder-care', filter: 'Chăm sóc người già' },
+  { title: 'Cleaning', subtitle: 'on-demand', icon: 'sparkles-outline', key: 'cleaning', filter: 'D\u1ecdn d\u1eb9p nh\u00e0 c\u1eeda' },
+  { title: 'Cleaning', subtitle: 'monthly', icon: 'calendar-outline', key: 'cleaning-monthly', filter: 'D\u1ecdn d\u1eb9p nh\u00e0 c\u1eeda' },
+  { title: 'Deep', subtitle: 'Cleaning', icon: 'home-outline', key: 'deep-cleaning', filter: 'D\u1ecdn d\u1eb9p nh\u00e0 c\u1eeda' },
+  { title: 'A/C Cleaning', subtitle: '', icon: 'snow-outline', key: 'industrial-cleaning', filter: 'V\u1ec7 sinh c\u00f4ng nghi\u1ec7p' },
+  { title: 'Cooking', subtitle: '', icon: 'restaurant-outline', key: 'cooking', filter: 'N\u1ea5u \u0103n' },
+  { title: 'Laundry', subtitle: '', icon: 'shirt-outline', key: 'laundry', filter: 'Gi\u1eb7t \u1ee7i qu\u1ea7n \u00e1o' },
+  { title: 'Elderly Care', subtitle: '', icon: 'heart-outline', key: 'elder-care', filter: 'Ch\u0103m s\u00f3c ng\u01b0\u1eddi gi\u00e0' },
   { title: 'More', subtitle: 'services', icon: 'add-circle-outline', key: 'all', filter: '' },
 ];
-
 const featured = [
   { title: 'Wellness Office', icon: 'leaf-outline' },
   { title: 'Pet Care', icon: 'heart-circle-outline' },
@@ -45,37 +44,46 @@ const featured = [
 const copy = {
   en: {
     bookAgain: 'Book again',
+    bookNow: 'Book now',
+    contact: 'Contact',
+    errorFallback: 'Could not load the list.',
     greeting: 'Hi',
     heroCopy: 'Book home care services quickly with clear pricing.',
     housekeepersNearYou: 'Housekeepers near you',
+    noAddress: 'Add an address to book faster',
     previousHousekeepers: 'People who worked for you',
+    promoTitle: 'Clean home, lighter chores',
     retry: 'Try again',
     service: 'Service',
     seeAll: 'See all',
   },
   vi: {
-    bookAgain: 'Đặt lại',
-    greeting: 'Xin chào',
-    heroCopy: 'Đặt dịch vụ chăm sóc nhà cửa nhanh và rõ giá.',
-    housekeepersNearYou: 'Người giúp việc gần bạn',
-    previousHousekeepers: 'Người từng làm cho bạn',
-    retry: 'Thử lại',
-    service: 'Dịch vụ',
-    seeAll: 'Xem tất cả',
+    bookAgain: '\u0110\u1eb7t l\u1ea1i',
+    bookNow: '\u0110\u1eb7t ngay',
+    contact: 'Li\u00ean h\u1ec7',
+    errorFallback: 'Kh\u00f4ng th\u1ec3 t\u1ea3i danh s\u00e1ch.',
+    greeting: 'Xin ch\u00e0o',
+    heroCopy: '\u0110\u1eb7t d\u1ecbch v\u1ee5 ch\u0103m s\u00f3c nh\u00e0 c\u1eeda nhanh v\u00e0 r\u00f5 gi\u00e1.',
+    housekeepersNearYou: 'Ng\u01b0\u1eddi gi\u00fap vi\u1ec7c g\u1ea7n b\u1ea1n',
+    noAddress: 'Th\u00eam \u0111\u1ecba ch\u1ec9 \u0111\u1ec3 \u0111\u1eb7t l\u1ecbch nhanh h\u01a1n',
+    previousHousekeepers: 'Ng\u01b0\u1eddi t\u1eebng l\u00e0m cho b\u1ea1n',
+    promoTitle: 'L\u00e0m s\u1ea1ch nh\u00e0 c\u1eeda, nh\u1eb9 \u0111\u1ea7u vi\u1ec7c nh\u00e0',
+    retry: 'Th\u1eed l\u1ea1i',
+    service: 'D\u1ecbch v\u1ee5',
+    seeAll: 'Xem t\u1ea5t c\u1ea3',
   },
 } as const;
-
-function formatPrice(price?: number | string) {
+function formatPrice(price: number | string | undefined, contactLabel: string) {
   const value = Number(price);
-  if (!Number.isFinite(value)) return 'Lien he';
+  if (!Number.isFinite(value)) return contactLabel;
   return `${value.toLocaleString('vi-VN')} VND`;
 }
 
-function compactName(name?: string) {
-  return name?.split(' ')[0] || 'ban';
+function compactName(name: string | undefined, fallback: string) {
+  return name?.split(' ')[0] || fallback;
 }
 
-function HousekeeperCard({ item, onPress }: { item: Housekeeper; onPress: () => void }) {
+function HousekeeperCard({ contactLabel, item, onPress }: { contactLabel: string; item: Housekeeper; onPress: () => void }) {
   return (
     <TouchableOpacity activeOpacity={0.86} onPress={onPress} style={styles.housekeeperCard}>
       <View style={styles.housekeeperAvatar}>
@@ -86,7 +94,7 @@ function HousekeeperCard({ item, onPress }: { item: Housekeeper; onPress: () => 
         <Text numberOfLines={1} style={styles.housekeeperMeta}>{item.services || 'House cleaning'}</Text>
         <View style={styles.housekeeperFooter}>
           <Text style={styles.rating}>★ {item.rating ?? item.avgRating ?? '0.0'}</Text>
-          <Text style={styles.price}>{formatPrice(item.price)}</Text>
+          <Text style={styles.price}>{formatPrice(item.price, contactLabel)}</Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -138,12 +146,12 @@ export default function CustomerHome() {
       setHousekeepers(visibleHousekeepers);
       setPreviousHousekeepers(previousIds.map((housekeeperId) => visibleMap.get(housekeeperId)!).slice(0, 4));
     } catch (loadError: any) {
-      setError(errorMessage(loadError));
+      setError(errorMessage(loadError, text.errorFallback));
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
+  }, [text.errorFallback]);
 
   useEffect(() => {
     loadData();
@@ -170,7 +178,7 @@ export default function CustomerHome() {
           <View style={styles.hero}>
             <View style={styles.heroTop}>
               <View>
-                <Text style={styles.greeting}>{text.greeting} {compactName(user?.fullName)}</Text>
+                <Text style={styles.greeting}>{text.greeting} {compactName(user?.fullName, language === 'vi' ? 'bạn' : 'there')}</Text>
                 <Text style={styles.heroCopy}>{text.heroCopy}</Text>
               </View>
               <TouchableOpacity onPress={() => router.push('/notifications')} style={styles.messageButton}>
@@ -184,7 +192,7 @@ export default function CustomerHome() {
                 <View>
                   <Text style={styles.recentTitle}>Cleaning</Text>
                   <Text numberOfLines={1} style={styles.recentAddress}>
-                    {String(user?.address || 'Them dia chi de dat lich nhanh hon')}
+                    {String(user?.address || text.noAddress)}
                   </Text>
                 </View>
                 <TouchableOpacity onPress={() => router.push('/(customer)/bookings')}>
@@ -258,10 +266,10 @@ export default function CustomerHome() {
           <View style={styles.banner}>
             <View>
               <Text style={styles.bannerKicker}>SPECIAL OFFER</Text>
-              <Text style={styles.bannerTitle}>Lam sach nha cua, nhe dau viec nha</Text>
+              <Text style={styles.bannerTitle}>{text.promoTitle}</Text>
             </View>
             <TouchableOpacity onPress={() => router.push('/(customer)/bookings')} style={styles.bannerButton}>
-              <Text style={styles.bannerButtonText}>Dat ngay</Text>
+              <Text style={styles.bannerButtonText}>{text.bookNow}</Text>
             </TouchableOpacity>
           </View>
 
@@ -297,7 +305,7 @@ export default function CustomerHome() {
 
           <View style={styles.housekeeperList}>
             {housekeepers.slice(0, 6).map((item) => (
-              <HousekeeperCard key={String(item.id)} item={item} onPress={() => router.push(`/(customer)/housekeeper/${item.id}`)} />
+              <HousekeeperCard contactLabel={text.contact} key={String(item.id)} item={item} onPress={() => router.push(`/(customer)/housekeeper/${item.id}`)} />
             ))}
           </View>
         </ScrollView>

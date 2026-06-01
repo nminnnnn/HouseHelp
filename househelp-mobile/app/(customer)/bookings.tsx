@@ -21,15 +21,15 @@ import { bookingService, type Booking } from '../../lib/bookings';
 import { useLanguage } from '../../lib/language';
 import type { AppLanguage } from '../../lib/storage';
 
-function errorMessage(error: any) {
+function errorMessage(error: any, fallback: string) {
   const value = error?.response?.data?.message || error?.response?.data?.error || error?.message;
-  return typeof value === 'string' ? value : 'Khong the tai booking.';
+  return typeof value === 'string' ? value : fallback;
 }
 
-const tabs = ['upcoming', 'schedule', 'monthly', 'history'] as const;
+const tabs = ['upcoming', 'history'] as const;
 const paymentMethods = [
-  { key: 'cash', label: 'Tiền mặt' },
-  { key: 'momo', label: 'MoMo',  },
+  { key: 'cash', label: { en: 'Cash', vi: 'Ti\u1ec1n m\u1eb7t' } },
+  { key: 'momo', label: 'MoMo' },
 ] as const;
 const copy = {
   en: {
@@ -39,39 +39,64 @@ const copy = {
     date: 'Date',
     emptyCta: 'Post your task now',
     emptyText: 'Enjoy life in a crystal clean house.',
+    errorFallback: 'Could not load bookings.',
     history: 'History',
     housekeeper: 'Housekeeper',
     later: 'Later',
     location: 'Address',
+    noDate: 'No date',
+    noValue: 'Not available',
+    paymentSuccessTitle: 'Paid',
+    paymentMomoSuccess: (code: string) => `HouseHelp Platform recorded the MoMo payment. Transaction code: ${code}.`,
+    paymentCashSuccess: 'Thank you for confirming cash payment and reviewing this service.',
+    paymentError: 'Could not complete payment',
     paymentMethod: 'Payment method',
     paymentReview: 'Payment & review',
     rating: 'Review',
     reviewPlaceholder: 'Review this service...',
-    tabs: { history: 'History', monthly: 'Monthly', schedule: 'Schedule', upcoming: 'Upcoming' },
+    service: 'Service',
+    cancelBooking: 'Cancel booking',
+    cancelMessage: 'Are you sure you want to cancel this booking?',
+    cancelSuccessTitle: 'Cancelled',
+    cancelSuccessText: 'Booking has been cancelled.',
+    cancelError: 'Could not cancel',
+    tabs: { history: 'History', upcoming: 'Upcoming' },
     unpaid: 'Pay',
     paid: 'Paid',
   },
   vi: {
-    activity: 'Hoạt động',
-    cancel: 'Hủy',
-    confirm: 'Xác nhận',
-    date: 'Ngày',
-    emptyCta: 'Đặt dịch vụ ngay',
-    emptyText: 'Tận hưởng cuộc sống trong ngôi nhà sạch tinh tươm.',
-    history: 'Lịch sử',
-    housekeeper: 'Người giúp việc',
-    later: 'Để sau',
-    location: 'Địa chỉ',
-    paymentMethod: 'Phương thức thanh toán',
-    paymentReview: 'Thanh toán & đánh giá',
-    rating: 'Đánh giá',
-    reviewPlaceholder: 'Nhận xét về dịch vụ...',
-    tabs: { history: 'Lịch sử', monthly: 'Hàng tháng', schedule: 'Lịch hẹn', upcoming: 'Sắp tới' },
-    unpaid: 'Thanh toán',
-    paid: 'Đã thanh toán',
+    activity: 'Ho\u1ea1t \u0111\u1ed9ng',
+    cancel: 'H\u1ee7y',
+    confirm: 'X\u00e1c nh\u1eadn',
+    date: 'Ng\u00e0y',
+    emptyCta: '\u0110\u1eb7t d\u1ecbch v\u1ee5 ngay',
+    emptyText: 'T\u1eadn h\u01b0\u1edfng cu\u1ed9c s\u1ed1ng trong ng\u00f4i nh\u00e0 s\u1ea1ch tinh t\u01b0\u01a1m.',
+    errorFallback: 'Kh\u00f4ng th\u1ec3 t\u1ea3i booking.',
+    history: 'L\u1ecbch s\u1eed',
+    housekeeper: 'Ng\u01b0\u1eddi gi\u00fap vi\u1ec7c',
+    later: '\u0110\u1ec3 sau',
+    location: '\u0110\u1ecba ch\u1ec9',
+    noDate: 'Ch\u01b0a c\u00f3 ng\u00e0y',
+    noValue: 'Ch\u01b0a c\u00f3',
+    paymentSuccessTitle: '\u0110\u00e3 thanh to\u00e1n',
+    paymentMomoSuccess: (code: string) => `HouseHelp Platform \u0111\u00e3 ghi nh\u1eadn thanh to\u00e1n MoMo. M\u00e3 giao d\u1ecbch: ${code}.`,
+    paymentCashSuccess: 'C\u1ea3m \u01a1n b\u1ea1n \u0111\u00e3 x\u00e1c nh\u1eadn thanh to\u00e1n ti\u1ec1n m\u1eb7t v\u00e0 \u0111\u00e1nh gi\u00e1 d\u1ecbch v\u1ee5.',
+    paymentError: 'Kh\u00f4ng thanh to\u00e1n \u0111\u01b0\u1ee3c',
+    paymentMethod: 'Ph\u01b0\u01a1ng th\u1ee9c thanh to\u00e1n',
+    paymentReview: 'Thanh to\u00e1n & \u0111\u00e1nh gi\u00e1',
+    rating: '\u0110\u00e1nh gi\u00e1',
+    reviewPlaceholder: 'Nh\u1eadn x\u00e9t v\u1ec1 d\u1ecbch v\u1ee5...',
+    service: 'D\u1ecbch v\u1ee5',
+    cancelBooking: 'H\u1ee7y booking',
+    cancelMessage: 'B\u1ea1n c\u00f3 ch\u1eafc mu\u1ed1n h\u1ee7y booking n\u00e0y?',
+    cancelSuccessTitle: '\u0110\u00e3 h\u1ee7y',
+    cancelSuccessText: 'Booking \u0111\u00e3 \u0111\u01b0\u1ee3c h\u1ee7y.',
+    cancelError: 'Kh\u00f4ng h\u1ee7y \u0111\u01b0\u1ee3c',
+    tabs: { history: 'L\u1ecbch s\u1eed', upcoming: 'S\u1eafp t\u1edbi' },
+    unpaid: 'Thanh to\u00e1n',
+    paid: '\u0110\u00e3 thanh to\u00e1n',
   },
 } as const;
-
 function formatPrice(value?: number | string) {
   const price = Number(value || 0);
   return `${price.toLocaleString('vi-VN')} VND`;
@@ -110,8 +135,8 @@ function bookingTimeValue(booking: Booking) {
   return Number.isFinite(time) ? time : 0;
 }
 
-function sortRecentFirst(items: Booking[]) {
-  return [...items].sort((a, b) => bookingTimeValue(b) - bookingTimeValue(a));
+function sortChronological(items: Booking[]) {
+  return [...items].sort((a, b) => bookingTimeValue(a) - bookingTimeValue(b));
 }
 
 function statusLabel(status: string, language: AppLanguage) {
@@ -149,12 +174,12 @@ function BookingCard({
   return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
-        <Text numberOfLines={1} style={styles.service}>{item.service || 'Dich vu'}</Text>
+        <Text numberOfLines={1} style={styles.service}>{item.service || text.service}</Text>
         <Text style={styles.status}>{statusLabel(item.status, language)}</Text>
       </View>
       <Text style={styles.meta}>{text.housekeeper}: {item.housekeeperName || `#${item.housekeeperId}`}</Text>
-      <Text style={styles.meta}>{text.date}: {formatDate(item, language)} - {item.time || 'Chưa có'}</Text>
-      <Text style={styles.meta}>{text.location}: {item.location || 'Chưa có'}</Text>
+      <Text style={styles.meta}>{text.date}: {formatDate(item, language)} - {item.time || text.noValue}</Text>
+      <Text style={styles.meta}>{text.location}: {item.location || text.noValue}</Text>
       <View style={styles.cardFooter}>
         <Text style={styles.price}>{formatPrice(item.totalPrice)}</Text>
         <View style={styles.actions}>
@@ -213,31 +238,23 @@ export default function CustomerBookingsScreen() {
       const data = await bookingService.getForUser(user.id);
       setBookings(data);
     } catch (loadError: any) {
-      setError(errorMessage(loadError));
+      setError(errorMessage(loadError, text.errorFallback));
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [router]);
+  }, [router, text.errorFallback]);
 
   useEffect(() => {
     loadBookings();
   }, [loadBookings, refresh]);
 
   const visibleBookings = useMemo(() => {
-    if (activeTab === 'monthly') {
-      return sortRecentFirst(bookings.filter((item) => String(item.service || '').toLowerCase().includes('monthly')));
-    }
-
     if (activeTab === 'history') {
-      return sortRecentFirst(bookings.filter((item) => ['completed', 'cancelled', 'rejected'].includes(item.status)));
+      return sortChronological(bookings.filter((item) => ['completed', 'cancelled', 'rejected'].includes(item.status)));
     }
 
-    if (activeTab === 'schedule') {
-      return sortRecentFirst(bookings.filter((item) => ['confirmed', 'in_progress'].includes(item.status)));
-    }
-
-    return sortRecentFirst(bookings.filter((item) => !['completed', 'cancelled', 'rejected'].includes(item.status)));
+    return sortChronological(bookings.filter((item) => !['completed', 'cancelled', 'rejected'].includes(item.status)));
   }, [activeTab, bookings]);
 
   const openPaymentReview = (booking: Booking) => {
@@ -266,32 +283,32 @@ export default function CustomerBookingsScreen() {
       });
       setSelectedBooking(null);
       Alert.alert(
-        'Da thanh toan',
+        text.paymentSuccessTitle,
         paymentMethod === 'momo'
-          ? `HouseHelp Platform da ghi nhan thanh toan MoMo. Ma giao dich: ${result.payment?.transactionCode || 'dang cap nhat'}.`
-          : 'Cam on ban da xac nhan thanh toan tien mat va danh gia dich vu.',
+          ? text.paymentMomoSuccess(result.payment?.transactionCode || (language === 'vi' ? 'đang cập nhật' : 'updating'))
+          : text.paymentCashSuccess,
       );
       await loadBookings(true);
     } catch (paymentError: any) {
-      Alert.alert('Khong thanh toan duoc', errorMessage(paymentError));
+      Alert.alert(text.paymentError, errorMessage(paymentError, text.errorFallback));
     } finally {
       setIsSubmittingPayment(false);
     }
   };
 
   const handleCancelBooking = (booking: Booking) => {
-    Alert.alert('Huy booking', 'Ban co chac muon huy booking nay?', [
-      { text: 'De sau', style: 'cancel' },
+    Alert.alert(text.cancelBooking, text.cancelMessage, [
+      { text: text.later, style: 'cancel' },
       {
-        text: 'Huy booking',
+        text: text.cancelBooking,
         style: 'destructive',
         onPress: async () => {
           try {
             await bookingService.cancel(booking.id);
-            Alert.alert('Da huy', 'Booking da duoc huy.');
+            Alert.alert(text.cancelSuccessTitle, text.cancelSuccessText);
             await loadBookings(true);
           } catch (cancelError: any) {
-            Alert.alert('Khong huy duoc', errorMessage(cancelError));
+            Alert.alert(text.cancelError, errorMessage(cancelError, text.errorFallback));
           }
         },
       },
@@ -318,9 +335,6 @@ export default function CustomerBookingsScreen() {
         >
           <View style={styles.header}>
             <Text style={styles.title}>{text.activity}</Text>
-            <TouchableOpacity onPress={() => setActiveTab('history')}>
-              {/* <Text style={styles.history}>{text.history}</Text> */}
-            </TouchableOpacity>
           </View>
 
           <View style={styles.tabs}>
@@ -385,7 +399,7 @@ export default function CustomerBookingsScreen() {
                     onPress={() => setPaymentMethod(method.key)}
                     style={[styles.methodButton, paymentMethod === method.key && styles.methodButtonActive]}
                   >
-                    <Text style={[styles.methodText, paymentMethod === method.key && styles.methodTextActive]}>{method.label}</Text>
+                    <Text style={[styles.methodText, paymentMethod === method.key && styles.methodTextActive]}>{typeof method.label === 'string' ? method.label : method.label[language]}</Text>
                     {/* <Text style={[styles.methodHint, paymentMethod === method.key && styles.methodHintActive]}>{method.description}</Text> */}
                   </TouchableOpacity>
                 ))}

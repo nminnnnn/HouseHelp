@@ -4,7 +4,44 @@ import { ActivityIndicator, Alert, FlatList, RefreshControl, StyleSheet, Text, T
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { authService } from '../lib/auth';
+import { useLanguage } from '../lib/language';
 import { notificationService, type AppNotification } from '../lib/notifications';
+import type { AppLanguage } from '../lib/storage';
+
+const copy = {
+  en: {
+    back: 'Back',
+    delete: 'Delete',
+    deleteError: 'Could not delete',
+    deleteMessage: 'Are you sure you want to delete this notification?',
+    deleteTitle: 'Delete notification',
+    emptyText: 'Booking, chat, and system notifications will appear here.',
+    emptyTitle: 'No notifications yet',
+    loadError: 'Could not load notifications.',
+    newBadge: 'New',
+    newCount: 'new notifications',
+    retry: 'Please try again.',
+    title: 'Notifications',
+    updateError: 'Could not update',
+    cancel: 'Cancel',
+  },
+  vi: {
+    back: 'Quay lại',
+    delete: 'Xóa',
+    deleteError: 'Không thể xóa',
+    deleteMessage: 'Bạn có chắc muốn xóa thông báo này?',
+    deleteTitle: 'Xóa thông báo',
+    emptyText: 'Thông báo booking, chat và hệ thống sẽ hiển thị tại đây.',
+    emptyTitle: 'Chưa có thông báo',
+    loadError: 'Không thể tải thông báo.',
+    newBadge: 'Mới',
+    newCount: 'thông báo mới',
+    retry: 'Thử lại sau.',
+    title: 'Thông báo',
+    updateError: 'Không thể cập nhật',
+    cancel: 'Hủy',
+  },
+} as const;
 
 function formatTime(notification: AppNotification) {
   const value = notification.createdAt || notification.timestamp;
@@ -29,10 +66,12 @@ function NotificationCard({
   item,
   onDelete,
   onOpen,
+  text,
 }: {
   item: AppNotification;
   onDelete: () => void;
   onOpen: () => void;
+  text: (typeof copy)[AppLanguage];
 }) {
   const unread = isUnread(item);
 
@@ -42,7 +81,7 @@ function NotificationCard({
         <Text numberOfLines={1} style={styles.cardTitle}>
           {item.title}
         </Text>
-        {unread ? <Text style={styles.unreadBadge}>Moi</Text> : null}
+        {unread ? <Text style={styles.unreadBadge}>{text.newBadge}</Text> : null}
       </View>
 
       <Text style={styles.message}>{item.message}</Text>
@@ -52,7 +91,7 @@ function NotificationCard({
       </View>
 
       <TouchableOpacity onPress={onDelete} style={styles.deleteButton}>
-        <Text style={styles.deleteText}>Xoa</Text>
+        <Text style={styles.deleteText}>{text.delete}</Text>
       </TouchableOpacity>
     </TouchableOpacity>
   );
@@ -64,8 +103,10 @@ export default function NotificationsScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
+  const { language } = useLanguage();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const text = copy[language];
 
   const unreadCount = useMemo(() => notifications.filter(isUnread).length, [notifications]);
 
@@ -88,12 +129,12 @@ export default function NotificationsScreen() {
       const data = await notificationService.getForUser(user.id);
       setNotifications(data);
     } catch (loadError: any) {
-      setError(loadError.response?.data?.message || loadError.response?.data?.error || 'Khong the tai thong bao.');
+      setError(loadError.response?.data?.message || loadError.response?.data?.error || text.loadError);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [router]);
+  }, [router, text.loadError]);
 
   useEffect(() => {
     loadNotifications();
@@ -112,15 +153,15 @@ export default function NotificationsScreen() {
         router.push(`/chat/${notification.bookingId}`);
       }
     } catch (markError: any) {
-      Alert.alert('Khong the cap nhat', markError.response?.data?.message || markError.response?.data?.error || 'Thu lai sau.');
+      Alert.alert(text.updateError, markError.response?.data?.message || markError.response?.data?.error || text.retry);
     }
   };
 
   const handleDelete = (notification: AppNotification) => {
-    Alert.alert('Xoa thong bao', 'Ban co chac muon xoa thong bao nay?', [
-      { text: 'Huy', style: 'cancel' },
+    Alert.alert(text.deleteTitle, text.deleteMessage, [
+      { text: text.cancel, style: 'cancel' },
       {
-        text: 'Xoa',
+        text: text.delete,
         style: 'destructive',
         onPress: async () => {
           try {
@@ -128,8 +169,8 @@ export default function NotificationsScreen() {
             setNotifications((current) => current.filter((item) => item.id !== notification.id));
           } catch (deleteError: any) {
             Alert.alert(
-              'Khong the xoa',
-              deleteError.response?.data?.message || deleteError.response?.data?.error || 'Thu lai sau.',
+              text.deleteError,
+              deleteError.response?.data?.message || deleteError.response?.data?.error || text.retry,
             );
           }
         },
@@ -155,10 +196,10 @@ export default function NotificationsScreen() {
             onPress={() => (returnTo === 'housekeeper' ? router.replace('/(housekeeper)') : router.back())}
             style={styles.backButton}
           >
-            <Text style={styles.backText}>Quay lai</Text>
+            <Text style={styles.backText}>{text.back}</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>Thong bao</Text>
-          <Text style={styles.subtitle}>{unreadCount} thong bao moi</Text>
+          <Text style={styles.title}>{text.title}</Text>
+          <Text style={styles.subtitle}>{unreadCount} {text.newCount}</Text>
         </View>
 
       {error ? (
@@ -173,12 +214,12 @@ export default function NotificationsScreen() {
         keyExtractor={(item) => String(item.id)}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadNotifications(true)} tintColor="#ff8128" />}
         renderItem={({ item }) => (
-          <NotificationCard item={item} onDelete={() => handleDelete(item)} onOpen={() => handleOpen(item)} />
+          <NotificationCard item={item} onDelete={() => handleDelete(item)} onOpen={() => handleOpen(item)} text={text} />
         )}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>Chua co thong bao</Text>
-            <Text style={styles.emptyText}>Thong bao booking, chat va he thong se hien thi tai day.</Text>
+            <Text style={styles.emptyTitle}>{text.emptyTitle}</Text>
+            <Text style={styles.emptyText}>{text.emptyText}</Text>
           </View>
         }
       />

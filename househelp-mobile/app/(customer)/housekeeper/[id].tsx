@@ -7,19 +7,21 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { authService, type AuthUser } from '../../../lib/auth';
 import { housekeeperPreferenceService } from '../../../lib/housekeeper-preferences';
 import { housekeeperService, type Housekeeper } from '../../../lib/housekeepers';
+import { useLanguage } from '../../../lib/language';
+import type { AppLanguage } from '../../../lib/storage';
 
-function formatPrice(price?: number | string) {
+function formatPrice(price?: number | string, language: AppLanguage = 'vi') {
   const value = Number(price);
   if (!Number.isFinite(value)) {
-    return 'Lien he';
+    return language === 'vi' ? 'Liên hệ' : 'Contact';
   }
 
   return `${value.toLocaleString('vi-VN')} VND`;
 }
 
-function formatServices(services?: string) {
+function formatServices(services?: string, language: AppLanguage) {
   if (!services) {
-    return ['Chua cap nhat dich vu'];
+    return [language === 'vi' ? 'Chưa cập nhật dịch vụ' : 'No services updated'];
   }
 
   const items = services
@@ -27,7 +29,7 @@ function formatServices(services?: string) {
     .map((item) => item.trim())
     .filter(Boolean);
 
-  return items.length ? items : ['Chua cap nhat dich vu'];
+  return items.length ? items : [language === 'vi' ? 'Chưa cập nhật dịch vụ' : 'No services updated'];
 }
 
 function listFromValue(value?: string[] | string) {
@@ -51,23 +53,23 @@ function truthy(value?: number | boolean) {
   return value === true || value === 1;
 }
 
-function formatExperience(value?: number | string) {
+function formatExperience(value?: number | string, language: AppLanguage) {
   const years = Number(value);
   if (Number.isFinite(years) && years > 0) {
-    return `${years} nam`;
+    return language === 'vi' ? `${years} năm` : `${years} yr`;
   }
 
-  return 'Chua cap nhat';
+  return language === 'vi' ? 'Chưa cập nhật' : 'Not updated';
 }
 
-function formatPriceType(value?: string) {
-  const labels: Record<string, string> = {
-    daily: 'ngay',
-    hourly: 'gio',
-    per_service: 'dich vu',
+function formatPriceType(value: string | undefined, language: AppLanguage) {
+  const labels: Record<string, Record<AppLanguage, string>> = {
+    daily: { en: 'day', vi: 'ngày' },
+    hourly: { en: 'hour', vi: 'giờ' },
+    per_service: { en: 'service', vi: 'dịch vụ' },
   };
 
-  return labels[value || 'hourly'] || 'gio';
+  return (labels[value || 'hourly'] || labels.hourly)[language];
 }
 
 function avatarSource(path?: string) {
@@ -77,6 +79,105 @@ function avatarSource(path?: string) {
   const baseUrl = process.env.EXPO_PUBLIC_API_URL?.replace(/\/api\/?$/, '').replace(/\/$/, '');
   return baseUrl ? { uri: `${baseUrl}${path.startsWith('/') ? path : `/${path}`}` } : null;
 }
+
+const copy = {
+  en: {
+    about: 'About',
+    available: 'Available',
+    back: 'Back',
+    block: 'Block',
+    blockConfirm: 'Block housekeeper?',
+    blockConfirmText: 'This person will no longer appear in your booking list.',
+    blocked: 'Blocked',
+    blockedBooking: 'This housekeeper is blocked',
+    book: 'Book',
+    cancel: 'Cancel',
+    certifications: 'Verification & certificates',
+    contact: 'Contact',
+    customer: 'Customer',
+    errorTitle: 'Could not load profile',
+    favorite: 'Favorite',
+    favorited: 'Favorited',
+    introFallback: 'This profile has no description yet.',
+    login: 'Log in',
+    loginLater: 'Later',
+    loginRequired: 'Login required',
+    loginRequiredText: 'Please log in to use this feature.',
+    messageSubtitle: 'Ask about availability, requirements, and service details.',
+    messageTitle: 'Message housekeeper',
+    noLocation: 'No service area updated',
+    noRadius: 'No service radius updated',
+    noWorkingDays: 'No working days updated',
+    noWorkingHours: 'No working hours updated',
+    pendingVerify: 'Pending verification',
+    rating: 'Rating',
+    rejectBlock: 'Block',
+    response: 'Response',
+    retry: 'Try again',
+    reviews: 'Reviews',
+    serviceArea: 'Service area',
+    serviceRadius: (radius: number) => `Service radius ${radius} km`,
+    services: 'Services',
+    skills: 'Skills',
+    statsJobs: 'Completed jobs',
+    unavailable: 'Unavailable',
+    unblock: 'Unblock',
+    verified: 'Verified',
+    verifiedAccount: 'This account has been verified by admin.',
+    backgroundChecked: 'Background checked.',
+    insured: 'Work insurance available.',
+    workingSchedule: 'Availability',
+    experience: 'Experience',
+  },
+  vi: {
+    about: 'Giới thiệu',
+    available: 'Nhận việc',
+    back: 'Quay lại',
+    block: 'Chặn',
+    blockConfirm: 'Chặn housekeeper?',
+    blockConfirmText: 'Người này sẽ không còn hiện trong danh sách đặt lịch của bạn.',
+    blocked: 'Đã chặn',
+    blockedBooking: 'Đã chặn housekeeper này',
+    book: 'Đặt lịch',
+    cancel: 'Hủy',
+    certifications: 'Xác minh và chứng chỉ',
+    contact: 'Liên hệ',
+    customer: 'Khách hàng',
+    errorTitle: 'Không tải được hồ sơ',
+    favorite: 'Yêu thích',
+    favorited: 'Đã yêu thích',
+    introFallback: 'Hồ sơ chưa có mô tả.',
+    login: 'Đăng nhập',
+    loginLater: 'Để sau',
+    loginRequired: 'Cần đăng nhập',
+    loginRequiredText: 'Vui lòng đăng nhập để dùng tính năng này.',
+    messageSubtitle: 'Hỏi lịch trống, trao đổi yêu cầu và thông tin dịch vụ.',
+    messageTitle: 'Nhắn tin với housekeeper',
+    noLocation: 'Chưa cập nhật khu vực',
+    noRadius: 'Chưa cập nhật bán kính nhận việc',
+    noWorkingDays: 'Chưa cập nhật ngày làm việc',
+    noWorkingHours: 'Chưa cập nhật khung giờ làm việc',
+    pendingVerify: 'Chờ xác minh',
+    rating: 'Đánh giá',
+    rejectBlock: 'Chặn',
+    response: 'Phản hồi',
+    retry: 'Thử lại',
+    reviews: 'Nhận xét',
+    serviceArea: 'Khu vực phục vụ',
+    serviceRadius: (radius: number) => `Bán kính nhận việc ${radius} km`,
+    services: 'Dịch vụ',
+    skills: 'Kỹ năng',
+    statsJobs: 'Job hoàn thành',
+    unavailable: 'Tạm nghỉ',
+    unblock: 'Bỏ chặn',
+    verified: 'Đã xác minh',
+    verifiedAccount: 'Tài khoản đã được admin xác minh.',
+    backgroundChecked: 'Đã kiểm tra lý lịch.',
+    insured: 'Có bảo hiểm công việc.',
+    workingSchedule: 'Lịch rảnh',
+    experience: 'Kinh nghiệm',
+  },
+} as const;
 
 export default function HousekeeperDetailScreen() {
   const [error, setError] = useState<string | null>(null);
@@ -88,10 +189,12 @@ export default function HousekeeperDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { language } = useLanguage();
+  const text = copy[language];
 
   const loadDetail = useCallback(async () => {
     if (!id) {
-      setError('Thieu ma ho so housekeeper.');
+      setError(language === 'vi' ? 'Thiếu mã hồ sơ housekeeper.' : 'Missing housekeeper profile id.');
       setIsLoading(false);
       return;
     }
@@ -115,11 +218,11 @@ export default function HousekeeperDetailScreen() {
         setIsBlocked(blocked);
       }
     } catch (detailError: any) {
-      setError(detailError.response?.data?.message || detailError.response?.data?.error || 'Khong the tai ho so.');
+      setError(detailError.response?.data?.message || detailError.response?.data?.error || text.errorTitle);
     } finally {
       setIsLoading(false);
     }
-  }, [id]);
+  }, [id, language, text.errorTitle]);
 
   useEffect(() => {
     loadDetail();
@@ -139,20 +242,20 @@ export default function HousekeeperDetailScreen() {
     return (
       <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
         <View style={styles.centered}>
-          <Text style={styles.errorTitle}>Khong tai duoc ho so</Text>
+          <Text style={styles.errorTitle}>{text.errorTitle}</Text>
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity onPress={loadDetail} style={styles.primaryButton}>
-            <Text style={styles.primaryText}>Thu lai</Text>
+            <Text style={styles.primaryText}>{text.retry}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => router.back()} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>Quay lai</Text>
+            <Text style={styles.secondaryText}>{text.back}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
 
-  const services = formatServices(housekeeper.services);
+  const services = formatServices(housekeeper.services, language);
   const skills = listFromValue(housekeeper.skills);
   const certifications = listFromValue(housekeeper.certifications);
   const workingDays = listFromValue(housekeeper.workingDays);
@@ -161,7 +264,7 @@ export default function HousekeeperDetailScreen() {
   const isVerified = truthy(housekeeper.isVerified) && truthy(housekeeper.isApproved);
   const isBackgroundChecked = truthy(housekeeper.backgroundChecked);
   const isInsured = truthy(housekeeper.insured) || truthy(housekeeper.hasInsurance);
-  const priceType = formatPriceType(housekeeper.priceType);
+  const priceType = formatPriceType(housekeeper.priceType, language);
   const serviceRadius = Number(housekeeper.serviceRadius || 0);
 
   const requireUser = () => {
@@ -169,9 +272,9 @@ export default function HousekeeperDetailScreen() {
       return true;
     }
 
-    Alert.alert('Can dang nhap', 'Vui long dang nhap de dung tinh nang nay.', [
-      { text: 'Dang nhap', onPress: () => router.push('/(auth)/login') },
-      { text: 'De sau', style: 'cancel' },
+    Alert.alert(text.loginRequired, text.loginRequiredText, [
+      { text: text.login, onPress: () => router.push('/(auth)/login') },
+      { text: text.loginLater, style: 'cancel' },
     ]);
     return false;
   };
@@ -194,10 +297,10 @@ export default function HousekeeperDetailScreen() {
       return;
     }
 
-    Alert.alert('Chan housekeeper?', 'Nguoi nay se khong con hien trong danh sach dat lich cua ban.', [
-      { text: 'Huy', style: 'cancel' },
+    Alert.alert(text.blockConfirm, text.blockConfirmText, [
+      { text: text.cancel, style: 'cancel' },
       {
-        text: 'Chan',
+        text: text.rejectBlock,
         style: 'destructive',
         onPress: async () => {
           await housekeeperPreferenceService.block(user!.id, housekeeper.id);
@@ -230,7 +333,7 @@ export default function HousekeeperDetailScreen() {
         style={styles.screen}
       >
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Text style={styles.backText}>Quay lai</Text>
+          <Text style={styles.backText}>{text.back}</Text>
         </TouchableOpacity>
 
         <View style={styles.profileHeader}>
@@ -244,32 +347,32 @@ export default function HousekeeperDetailScreen() {
             </View>
           )}
           <Text style={styles.name}>{housekeeper.fullName}</Text>
-          <Text style={styles.location}>{housekeeper.location || 'Chua cap nhat khu vuc'}</Text>
+          <Text style={styles.location}>{housekeeper.location || text.noLocation}</Text>
           <View style={styles.badgeRow}>
             <View style={[styles.verifyBadge, isVerified ? styles.verifiedBadge : styles.pendingBadge]}>
               <Ionicons color={isVerified ? '#15803d' : '#92400e'} name={isVerified ? 'checkmark-circle' : 'time-outline'} size={16} />
               <Text style={[styles.verifyText, isVerified ? styles.verifiedText : styles.pendingText]}>
-                {isVerified ? 'Da xac minh' : 'Cho xac minh'}
+                {isVerified ? text.verified : text.pendingVerify}
               </Text>
             </View>
             {isBackgroundChecked ? (
               <View style={styles.verifyBadge}>
                 <Ionicons color="#15803d" name="shield-checkmark-outline" size={16} />
-                <Text style={styles.verifiedText}>Da kiem tra ly lich</Text>
+                <Text style={styles.verifiedText}>{text.backgroundChecked}</Text>
               </View>
             ) : null}
           </View>
           <Text style={[styles.status, housekeeper.available ? styles.available : styles.unavailable]}>
-            {isBlocked ? 'Da chan' : housekeeper.available ? 'Nhan viec' : 'Tam nghi'}
+            {isBlocked ? text.blocked : housekeeper.available ? text.available : text.unavailable}
           </Text>
           <View style={styles.preferenceRow}>
             <TouchableOpacity activeOpacity={0.85} onPress={toggleFavorite} style={styles.preferenceButton}>
               <Ionicons color="#ff8128" name={isFavorite ? 'heart' : 'heart-outline'} size={20} />
-              <Text style={styles.preferenceText}>{isFavorite ? 'Da yeu thich' : 'Yeu thich'}</Text>
+              <Text style={styles.preferenceText}>{isFavorite ? text.favorited : text.favorite}</Text>
             </TouchableOpacity>
             <TouchableOpacity activeOpacity={0.85} onPress={toggleBlock} style={[styles.preferenceButton, isBlocked && styles.blockedButton]}>
               <Ionicons color={isBlocked ? '#fff' : '#ef4444'} name={isBlocked ? 'ban' : 'ban-outline'} size={20} />
-              <Text style={[styles.preferenceText, isBlocked && styles.blockedButtonText]}>{isBlocked ? 'Bo chan' : 'Chan'}</Text>
+              <Text style={[styles.preferenceText, isBlocked && styles.blockedButtonText]}>{isBlocked ? text.unblock : text.block}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -277,16 +380,16 @@ export default function HousekeeperDetailScreen() {
         <View style={styles.stats}>
           <View style={styles.statItem}>
             <Text style={styles.statValue}>{housekeeper.rating ?? housekeeper.avgRating ?? '0.0'}</Text>
-            <Text style={styles.statLabel}>Danh gia</Text>
+            <Text style={styles.statLabel}>{text.rating}</Text>
           </View>
           <View style={styles.divider} />
           <View style={styles.statItem}>
             <Text style={styles.statValue}>{completedJobs}</Text>
-            <Text style={styles.statLabel}>Job hoan thanh</Text>
+            <Text style={styles.statLabel}>{text.statsJobs}</Text>
           </View>
           <View style={styles.divider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{formatPrice(housekeeper.price)}</Text>
+            <Text style={styles.statValue}>{formatPrice(housekeeper.price, language)}</Text>
             <Text style={styles.statLabel}>VND/{priceType}</Text>
           </View>
         </View>
@@ -294,30 +397,30 @@ export default function HousekeeperDetailScreen() {
         <View style={styles.stats}>
           <View style={styles.statItem}>
             <Text style={styles.statValue}>{housekeeper.reviewCount ?? housekeeper.totalReviews ?? 0}</Text>
-            <Text style={styles.statLabel}>Nhan xet</Text>
+            <Text style={styles.statLabel}>{text.reviews}</Text>
           </View>
           <View style={styles.divider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{formatExperience(housekeeper.experience)}</Text>
-            <Text style={styles.statLabel}>Kinh nghiem</Text>
+            <Text style={styles.statValue}>{formatExperience(housekeeper.experience, language)}</Text>
+            <Text style={styles.statLabel}>{text.experience}</Text>
           </View>
           <View style={styles.divider} />
           <View style={styles.statItem}>
             <Text style={styles.statValue}>{housekeeper.responseTime ? `${housekeeper.responseTime}p` : '--'}</Text>
-            <Text style={styles.statLabel}>Phan hoi</Text>
+            <Text style={styles.statLabel}>{text.response}</Text>
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Gioi thieu</Text>
+          <Text style={styles.sectionTitle}>{text.about}</Text>
           <Text style={styles.bodyText}>
-            {housekeeper.bio || housekeeper.description || housekeeper.experience || 'Ho so chua co mo ta.'}
+            {housekeeper.bio || housekeeper.description || housekeeper.experience || text.introFallback}
           </Text>
         </View>
 
         {skills.length ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Ky nang</Text>
+            <Text style={styles.sectionTitle}>{text.skills}</Text>
             <View style={styles.chips}>
               {skills.map((skill) => (
                 <Text key={skill} style={styles.neutralChip}>
@@ -330,11 +433,11 @@ export default function HousekeeperDetailScreen() {
 
         {certifications.length || isInsured ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Xac minh va chung chi</Text>
+            <Text style={styles.sectionTitle}>{text.certifications}</Text>
             <View style={styles.infoList}>
-              {isVerified ? <Text style={styles.infoLine}>Tai khoan da duoc admin xac minh.</Text> : null}
-              {isBackgroundChecked ? <Text style={styles.infoLine}>Da kiem tra ly lich.</Text> : null}
-              {isInsured ? <Text style={styles.infoLine}>Co bao hiem cong viec.</Text> : null}
+              {isVerified ? <Text style={styles.infoLine}>{text.verifiedAccount}</Text> : null}
+              {isBackgroundChecked ? <Text style={styles.infoLine}>{text.backgroundChecked}</Text> : null}
+              {isInsured ? <Text style={styles.infoLine}>{text.insured}</Text> : null}
               {certifications.map((item) => (
                 <Text key={item} style={styles.infoLine}>{item}</Text>
               ))}
@@ -343,7 +446,7 @@ export default function HousekeeperDetailScreen() {
         ) : null}
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Dich vu</Text>
+          <Text style={styles.sectionTitle}>{text.services}</Text>
           <View style={styles.chips}>
             {services.map((service) => (
               <Text key={service} style={styles.chip}>
@@ -354,30 +457,30 @@ export default function HousekeeperDetailScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Lich ranh</Text>
+          <Text style={styles.sectionTitle}>{text.workingSchedule}</Text>
           <Text style={styles.bodyText}>
-            {workingDays.length ? workingDays.join(', ') : 'Chua cap nhat ngay lam viec'}
+            {workingDays.length ? workingDays.join(', ') : text.noWorkingDays}
           </Text>
           <Text style={styles.sectionSubText}>
-            {housekeeper.workingHours || housekeeper.availability || 'Chua cap nhat khung gio lam viec'}
+            {housekeeper.workingHours || housekeeper.availability || text.noWorkingHours}
           </Text>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Khu vuc phuc vu</Text>
-          <Text style={styles.bodyText}>{housekeeper.location || 'Chua cap nhat khu vuc'}</Text>
+          <Text style={styles.sectionTitle}>{text.serviceArea}</Text>
+          <Text style={styles.bodyText}>{housekeeper.location || text.noLocation}</Text>
           <Text style={styles.sectionSubText}>
-            {serviceRadius > 0 ? `Ban kinh nhan viec ${serviceRadius} km` : 'Chua cap nhat ban kinh nhan viec'}
+            {serviceRadius > 0 ? text.serviceRadius(serviceRadius) : text.noRadius}
           </Text>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Lien he</Text>
+          <Text style={styles.sectionTitle}>{text.contact}</Text>
           <TouchableOpacity disabled={!housekeeper.userId} onPress={openChat} style={styles.chatButton}>
             <Ionicons color="#ff8128" name="chatbubble-ellipses-outline" size={22} />
             <View style={styles.chatCopy}>
-              <Text style={styles.chatTitle}>Nhan tin voi housekeeper</Text>
-              <Text style={styles.chatSubtitle}>Hoi lich trong, trao doi yeu cau va thong tin dich vu.</Text>
+              <Text style={styles.chatTitle}>{text.messageTitle}</Text>
+              <Text style={styles.chatSubtitle}>{text.messageSubtitle}</Text>
             </View>
             <Ionicons color="#ff8128" name="chevron-forward" size={20} />
           </TouchableOpacity>
@@ -388,7 +491,7 @@ export default function HousekeeperDetailScreen() {
           onPress={() => router.push(`/(customer)/booking/${housekeeper.id}`)}
           style={[styles.primaryButton, isBlocked && styles.disabledButton]}
         >
-          <Text style={styles.primaryText}>{isBlocked ? 'Da chan housekeeper nay' : 'Dat lich'}</Text>
+          <Text style={styles.primaryText}>{isBlocked ? text.blockedBooking : text.book}</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>

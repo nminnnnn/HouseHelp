@@ -17,7 +17,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { addressService, addressText, type SavedAddress } from '../lib/addresses';
 import { authService, type AuthUser } from '../lib/auth';
-import { useLanguage } from '../lib/language';
 import { profileService, type UserProfile } from '../lib/profile';
 
 function AddressCard({
@@ -25,13 +24,11 @@ function AddressCard({
   isSelected,
   onDelete,
   onSelect,
-  selectedLabel,
 }: {
   address: SavedAddress;
   isSelected: boolean;
   onDelete: () => void;
   onSelect: () => void;
-  selectedLabel: string;
 }) {
   return (
     <TouchableOpacity activeOpacity={0.86} onPress={onSelect} style={[styles.card, isSelected && styles.selectedCard]}>
@@ -41,7 +38,7 @@ function AddressCard({
       <View style={styles.cardBody}>
         <View style={styles.cardTitleRow}>
           <Text numberOfLines={1} style={styles.cardTitle}>{address.label}</Text>
-          {isSelected ? <Text style={styles.selectedPill}>{selectedLabel}</Text> : null}
+          {isSelected ? <Text style={styles.selectedPill}>Dang dung</Text> : null}
         </View>
         <Text style={styles.cardAddress}>{addressText(address)}</Text>
         {address.note ? <Text style={styles.cardNote}>{address.note}</Text> : null}
@@ -65,53 +62,8 @@ export default function AddressesScreen() {
   const [profile, setProfile] = useState<Partial<UserProfile>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
-  const { language } = useLanguage();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const text = {
-    en: {
-      add: 'Add new address',
-      address: 'Detailed address',
-      addressPlaceholder: 'House number, street, building...',
-      city: 'City',
-      currentAddress: 'Use current address',
-      delete: 'Delete',
-      deleteTitle: 'Delete address',
-      district: 'District',
-      emptyText: 'Add your home, office, or frequently used address.',
-      emptyTitle: 'No addresses yet',
-      helper: 'Choose the default address for booking services, similar to Shopee/bTaskee.',
-      label: 'Address name',
-      labelPlaceholder: 'Home, Office...',
-      note: 'Note',
-      notePlaceholder: 'Example: call before arriving',
-      profileAddress: 'Use profile address',
-      save: 'Save and select address',
-      selected: 'Using',
-      title: 'Saved Addresses',
-    },
-    vi: {
-      add: 'Thêm địa chỉ mới',
-      address: 'Địa chỉ chi tiết',
-      addressPlaceholder: 'Số nhà, tên đường, tòa nhà...',
-      city: 'Thành phố',
-      currentAddress: 'Dùng địa chỉ hiện tại',
-      delete: 'Xóa',
-      deleteTitle: 'Xóa địa chỉ',
-      district: 'Quận/Huyện',
-      emptyText: 'Thêm địa chỉ nhà riêng, công ty hoặc địa chỉ thường dùng.',
-      emptyTitle: 'Chưa có địa chỉ',
-      helper: 'Chọn địa chỉ mặc định khi đặt dịch vụ, giống cách chọn địa chỉ trên Shopee/bTaskee.',
-      label: 'Tên địa chỉ',
-      labelPlaceholder: 'Nhà riêng, Công ty...',
-      note: 'Ghi chú',
-      notePlaceholder: 'Ví dụ: gọi trước khi đến',
-      profileAddress: 'Dùng địa chỉ trong profile',
-      save: 'Lưu và chọn địa chỉ',
-      selected: 'Đang dùng',
-      title: 'Địa chỉ đã lưu',
-    },
-  }[language];
 
   const loadAddresses = useCallback(async () => {
     try {
@@ -159,15 +111,15 @@ export default function AddressesScreen() {
   const deleteAddress = async (address: SavedAddress) => {
     if (!user || address.isDefault) return;
 
-    Alert.alert(text.deleteTitle, `Ban muon xoa "${address.label}"?`, [
-      { style: 'cancel', text: 'Hủy' },
+    Alert.alert('Xoa dia chi', `Ban muon xoa "${address.label}"?`, [
+      { style: 'cancel', text: 'Huy' },
       {
         onPress: async () => {
           await addressService.remove(user.id, address.id);
           await loadAddresses();
         },
         style: 'destructive',
-        text: text.delete,
+        text: 'Xoa',
       },
     ]);
   };
@@ -262,20 +214,20 @@ export default function AddressesScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <Ionicons color="#ff8128" name="chevron-back" size={24} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>{text.title}</Text>
+          <Text style={styles.headerTitle}>Saved Addresses</Text>
           <TouchableOpacity onPress={() => setIsFormOpen(true)} style={styles.addIconButton}>
             <Ionicons color="#fff" name="add" size={24} />
           </TouchableOpacity>
         </View>
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <Text style={styles.helperText}>{text.helper}</Text>
+          <Text style={styles.helperText}>Chon dia chi mac dinh khi dat dich vu, giong cach chon dia chi tren Shopee/bTaskee.</Text>
 
           {addresses.length === 0 ? (
             <View style={styles.emptyBox}>
               <Ionicons color="#cbd5e1" name="location-outline" size={46} />
-              <Text style={styles.emptyTitle}>{text.emptyTitle}</Text>
-              <Text style={styles.emptyText}>{text.emptyText}</Text>
+              <Text style={styles.emptyTitle}>Chua co dia chi</Text>
+              <Text style={styles.emptyText}>Them dia chi nha rieng, cong ty hoac dia chi thuong dung.</Text>
             </View>
           ) : (
             <View style={styles.list}>
@@ -286,7 +238,6 @@ export default function AddressesScreen() {
                   key={address.id}
                   onDelete={() => deleteAddress(address)}
                   onSelect={() => selectAddress(address)}
-                  selectedLabel={text.selected}
                 />
               ))}
             </View>
@@ -294,7 +245,7 @@ export default function AddressesScreen() {
 
           <TouchableOpacity onPress={useProfileAddress} style={styles.secondaryButton}>
             <Ionicons color="#ff8128" name="person-circle-outline" size={20} />
-            <Text style={styles.secondaryText}>{text.profileAddress}</Text>
+            <Text style={styles.secondaryText}>Dung dia chi trong profile</Text>
           </TouchableOpacity>
           <TouchableOpacity disabled={isLocationLoading} onPress={useCurrentLocationAddress} style={styles.secondaryButton}>
             {isLocationLoading ? (
@@ -302,14 +253,14 @@ export default function AddressesScreen() {
             ) : (
               <>
                 <Ionicons color="#ff8128" name="locate-outline" size={20} />
-                <Text style={styles.secondaryText}>{text.currentAddress}</Text>
+                <Text style={styles.secondaryText}>Dung dia chi hien tai</Text>
               </>
             )}
           </TouchableOpacity>
 
           <TouchableOpacity onPress={() => setIsFormOpen(true)} style={styles.primaryButton}>
             <Ionicons color="#fff" name="add-circle-outline" size={21} />
-            <Text style={styles.primaryText}>{text.add}</Text>
+            <Text style={styles.primaryText}>Them dia chi moi</Text>
           </TouchableOpacity>
         </ScrollView>
 
@@ -318,34 +269,34 @@ export default function AddressesScreen() {
             <TouchableOpacity activeOpacity={1} onPress={() => setIsFormOpen(false)} style={styles.modalScrim} />
             <View style={styles.formPanel}>
               <View style={styles.formHeader}>
-                <Text style={styles.formTitle}>{text.add}</Text>
+                <Text style={styles.formTitle}>Them dia chi</Text>
                 <TouchableOpacity onPress={() => setIsFormOpen(false)} style={styles.closeButton}>
                   <Ionicons color="#172033" name="close" size={22} />
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.label}>{text.label}</Text>
-              <TextInput onChangeText={(value) => setForm((current) => ({ ...current, label: value }))} placeholder={text.labelPlaceholder} style={styles.input} value={form.label} />
+              <Text style={styles.label}>Ten dia chi</Text>
+              <TextInput onChangeText={(value) => setForm((current) => ({ ...current, label: value }))} placeholder="Nha rieng, Cong ty..." style={styles.input} value={form.label} />
 
-              <Text style={styles.label}>{text.address}</Text>
-              <TextInput multiline onChangeText={(value) => setForm((current) => ({ ...current, address: value }))} placeholder={text.addressPlaceholder} style={[styles.input, styles.multiline]} value={form.address} />
+              <Text style={styles.label}>Dia chi chi tiet</Text>
+              <TextInput multiline onChangeText={(value) => setForm((current) => ({ ...current, address: value }))} placeholder="So nha, ten duong, toa nha..." style={[styles.input, styles.multiline]} value={form.address} />
 
               <View style={styles.formRow}>
                 <View style={styles.formColumn}>
-                  <Text style={styles.label}>{text.district}</Text>
+                  <Text style={styles.label}>Quan/Huyen</Text>
                   <TextInput onChangeText={(value) => setForm((current) => ({ ...current, district: value }))} style={styles.input} value={form.district} />
                 </View>
                 <View style={styles.formColumn}>
-                  <Text style={styles.label}>{text.city}</Text>
+                  <Text style={styles.label}>Thanh pho</Text>
                   <TextInput onChangeText={(value) => setForm((current) => ({ ...current, city: value }))} style={styles.input} value={form.city} />
                 </View>
               </View>
 
-              <Text style={styles.label}>{text.note}</Text>
-              <TextInput onChangeText={(value) => setForm((current) => ({ ...current, note: value }))} placeholder={text.notePlaceholder} style={styles.input} value={form.note} />
+              <Text style={styles.label}>Ghi chu</Text>
+              <TextInput onChangeText={(value) => setForm((current) => ({ ...current, note: value }))} placeholder="Vi du: goi truoc khi den" style={styles.input} value={form.note} />
 
               <TouchableOpacity disabled={isSaving} onPress={saveAddress} style={styles.saveButton}>
-                {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>{text.save}</Text>}
+                {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Luu va chon dia chi</Text>}
               </TouchableOpacity>
             </View>
           </View>
