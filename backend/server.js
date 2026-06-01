@@ -10,6 +10,7 @@ const path = require('path');
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const axios = require('axios');
 const ChatbotService = require('./services/chatbotService');
 
 const app = express();
@@ -128,6 +129,8 @@ db.connect(err => {
   if (err) throw err;
   console.log('MySQL Connected!');
   ensurePaymentSettlementColumns();
+  ensureVerificationAiColumns();
+  ensureVerificationDocumentColumns();
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'househelp_dev_secret_change_me';
@@ -137,6 +140,24 @@ const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || 'http://localhost:5000')
 const publicFileUrl = (filePath) => `${PUBLIC_BASE_URL}${filePath}`;
 const PLATFORM_PAYMENT_ACCOUNT = process.env.PLATFORM_MOMO_ACCOUNT || 'HouseHelp Platform MoMo';
 const PLATFORM_SERVICE_FEE = Number(process.env.PLATFORM_SERVICE_FEE || 50000);
+const FPT_AI_API_KEY = process.env.FPT_AI_API_KEY || '';
+const FPT_ID_RECOGNITION_ENDPOINT = process.env.FPT_ID_RECOGNITION_ENDPOINT || 'https://api.fpt.ai/vision/idr/vnm/';
+const FPT_FACE_MATCH_ENDPOINT = process.env.FPT_FACE_MATCH_ENDPOINT || 'https://api.fpt.ai/dmp/checkface/v1';
+const FPT_FACE_MATCH_PASS_SCORE = Number(process.env.FPT_FACE_MATCH_PASS_SCORE || 80);
+const FPT_AI_TIMEOUT_MS = Number(process.env.FPT_AI_TIMEOUT_MS || 30000);
+
+function serviceSearchTerms(serviceName) {
+  const value = String(serviceName || '').trim();
+  const terms = new Set([value]);
+  const aliases = {
+    'D\u1ecdn d\u1eb9p nh\u00e0 c\u1eeda': ['D\u1ecdn d\u1eb9p', 'd\u1ecdn d\u1eb9p', 'don dep', 'Don dep'],
+    'V\u1ec7 sinh c\u00f4ng nghi\u1ec7p': ['V\u1ec7 sinh', 'v\u1ec7 sinh'],
+    'Gi\u1eb7t \u1ee7i qu\u1ea7n \u00e1o': ['Gi\u1eb7t \u1ee7i', 'gi\u1eb7t \u1ee7i'],
+  };
+
+  (aliases[value] || []).forEach((term) => terms.add(term));
+  return [...terms].filter(Boolean);
+}
 
 function normalizePaymentMethod(method) {
   return method === 'momo' ? 'momo' : 'cash';
@@ -170,6 +191,303 @@ function ensurePaymentSettlementColumns() {
       }
     });
   });
+}
+
+function ensureVerificationAiColumns() {
+  const statements = [
+    "ALTER TABLE verification_requests ADD COLUMN aiStatus ENUM('not_configured','pending','passed','failed','needs_review','error') DEFAULT 'pending'",
+    "ALTER TABLE verification_requests ADD COLUMN aiProvider VARCHAR(50)",
+    "ALTER TABLE verification_requests ADD COLUMN aiScore DECIMAL(8,2)",
+    "ALTER TABLE verification_requests ADD COLUMN aiOcrName VARCHAR(255)",
+    "ALTER TABLE verification_requests ADD COLUMN aiOcrIdNumber VARCHAR(64)",
+    "ALTER TABLE verification_requests ADD COLUMN aiOcrDob VARCHAR(64)",
+    "ALTER TABLE verification_requests ADD COLUMN aiOcrAddress TEXT",
+    "ALTER TABLE verification_requests ADD COLUMN aiOcrFront JSON",
+    "ALTER TABLE verification_requests ADD COLUMN aiOcrBack JSON",
+    "ALTER TABLE verification_requests ADD COLUMN aiFaceMatch JSON",
+    "ALTER TABLE verification_requests ADD COLUMN aiRawResult JSON",
+    "ALTER TABLE verification_requests ADD COLUMN aiCheckedAt DATETIME"
+  ];
+
+  statements.forEach((sql) => {
+    db.query(sql, (err) => {
+      if (err && err.code !== 'ER_DUP_FIELDNAME') {
+        console.error('Verification AI migration warning:', err.message);
+      }
+    });
+  });
+}
+
+function ensureVerificationDocumentColumns() {
+  const statements = [
+    "ALTER TABLE verification_documents MODIFY documentType ENUM('id_card_front','id_card_back','selfie','certificate','license','insurance','other') NOT NULL",
+    "ALTER TABLE verification_documents ADD COLUMN requestId INT NULL AFTER userId",
+    "ALTER TABLE verification_documents ADD INDEX idx_request_status (requestId, status)"
+  ];
+
+  statements.forEach((sql) => {
+    db.query(sql, (err) => {
+      if (err && err.code !== 'ER_DUP_FIELDNAME' && err.code !== 'ER_DUP_KEYNAME') {
+        console.error('Verification document migration warning:', err.message);
+      }
+    });
+  });
+}
+
+function uploadedFilePathToAbsolute(filePath) {
+  const relativePath = String(filePath || '')
+    .replace(/^https?:\/\/[^/]+\/uploads\//, '')
+    .replace(/^\/?uploads[\\/]/, '')
+    .replace(/\\/g, '/');
+  const absolutePath = path.resolve(uploadsDir, relativePath);
+
+  if (!absolutePath.startsWith(uploadsDir)) {
+    throw new Error('Invalid uploaded file path');
+  }
+
+  return absolutePath;
+}
+
+function mimeTypeForFile(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  return 'image/jpeg';
+}
+
+async function appendLocalImage(formData, fieldName, filePath) {
+  const absolutePath = uploadedFilePathToAbsolute(filePath);
+  const fileBuffer = await fs.promises.readFile(absolutePath);
+  const blob = new Blob([fileBuffer], { type: mimeTypeForFile(absolutePath) });
+  formData.append(fieldName, blob, path.basename(absolutePath));
+}
+
+async function callFptIdRecognition(filePath) {
+  const formData = new FormData();
+  await appendLocalImage(formData, 'image', filePath);
+
+  const response = await axios.post(FPT_ID_RECOGNITION_ENDPOINT, formData, {
+    headers: {
+      api_key: FPT_AI_API_KEY,
+      'api-key': FPT_AI_API_KEY,
+    },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+    timeout: FPT_AI_TIMEOUT_MS,
+  });
+
+  return response.data;
+}
+
+async function callFptFaceMatch(idCardFrontPath, selfiePath) {
+  const formData = new FormData();
+  await appendLocalImage(formData, 'file[]', idCardFrontPath);
+  await appendLocalImage(formData, 'file[]', selfiePath);
+
+  const response = await axios.post(FPT_FACE_MATCH_ENDPOINT, formData, {
+    headers: {
+      api_key: FPT_AI_API_KEY,
+      'api-key': FPT_AI_API_KEY,
+    },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+    timeout: FPT_AI_TIMEOUT_MS,
+  });
+
+  return response.data;
+}
+
+function firstFptDataItem(result) {
+  if (Array.isArray(result?.data)) return result.data[0] || {};
+  if (result?.data && typeof result.data === 'object') return result.data;
+  return {};
+}
+
+function numberFromUnknown(value) {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(String(value).replace(/[^\d.]/g, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function extractFaceScore(result) {
+  const candidates = [
+    result?.similarity,
+    result?.score,
+    result?.data?.similarity,
+    result?.data?.score,
+    result?.data?.confidence,
+    result?.data?.result?.similarity,
+    result?.data?.result?.score,
+  ];
+
+  for (const candidate of candidates) {
+    const score = numberFromUnknown(candidate);
+    if (score !== null) return score <= 1 ? score * 100 : score;
+  }
+
+  return null;
+}
+
+function extractFaceMatched(result, score) {
+  const candidates = [
+    result?.isMatch,
+    result?.is_match,
+    result?.matched,
+    result?.data?.isMatch,
+    result?.data?.is_match,
+    result?.data?.matched,
+    result?.data?.result?.isMatch,
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate === true || candidate === 1 || candidate === '1') return true;
+    if (candidate === false || candidate === 0 || candidate === '0') return false;
+    if (typeof candidate === 'string') {
+      const normalized = candidate.toLowerCase();
+      if (['true', 'match', 'matched', 'yes'].includes(normalized)) return true;
+      if (['false', 'not_match', 'not matched', 'no'].includes(normalized)) return false;
+    }
+  }
+
+  return score !== null ? score >= FPT_FACE_MATCH_PASS_SCORE : false;
+}
+
+function buildAiDecision(frontResult, backResult, faceResult) {
+  const frontData = firstFptDataItem(frontResult);
+  const backData = firstFptDataItem(backResult);
+  const faceScore = extractFaceScore(faceResult);
+  const faceMatched = extractFaceMatched(faceResult, faceScore);
+  const frontOk = Number(frontResult?.errorCode ?? 0) === 0 && Boolean(frontData.id || frontData.name);
+  const backOk = Number(backResult?.errorCode ?? 0) === 0 && Boolean(backData.issue_date || backData.features || backData.type);
+
+  let aiStatus = 'needs_review';
+  if (frontOk && backOk && faceMatched) {
+    aiStatus = 'passed';
+  } else if (!frontOk || !faceMatched) {
+    aiStatus = 'failed';
+  }
+
+  return {
+    aiStatus,
+    aiScore: faceScore,
+    aiOcrName: frontData.name || null,
+    aiOcrIdNumber: frontData.id || null,
+    aiOcrDob: frontData.dob || null,
+    aiOcrAddress: frontData.address || null,
+    aiOcrFront: frontData,
+    aiOcrBack: backData,
+    aiFaceMatch: {
+      ...((faceResult && typeof faceResult === 'object') ? faceResult : { result: faceResult }),
+      normalized: {
+        isMatch: faceMatched,
+        score: faceScore,
+      },
+    },
+    aiRawResult: {
+      front: frontResult,
+      back: backResult,
+      faceMatch: faceResult,
+    },
+  };
+}
+
+function updateVerificationAiResult(requestId, aiResult) {
+  return new Promise((resolve, reject) => {
+    const sql = `
+      UPDATE verification_requests
+      SET aiStatus = ?, aiProvider = ?, aiScore = ?, aiOcrName = ?, aiOcrIdNumber = ?,
+          aiOcrDob = ?, aiOcrAddress = ?, aiOcrFront = ?, aiOcrBack = ?,
+          aiFaceMatch = ?, aiRawResult = ?, aiCheckedAt = NOW()
+      WHERE id = ?
+    `;
+
+    db.query(sql, [
+      aiResult.aiStatus,
+      'fpt_ai',
+      aiResult.aiScore,
+      aiResult.aiOcrName,
+      aiResult.aiOcrIdNumber,
+      aiResult.aiOcrDob,
+      aiResult.aiOcrAddress,
+      JSON.stringify(aiResult.aiOcrFront || {}),
+      JSON.stringify(aiResult.aiOcrBack || {}),
+      JSON.stringify(aiResult.aiFaceMatch || {}),
+      JSON.stringify(aiResult.aiRawResult || {}),
+      requestId,
+    ], (err, result) => {
+      if (err) reject(err);
+      else resolve(result);
+    });
+  });
+}
+
+async function runVerificationAiCheck(requestId, documents) {
+  if (!FPT_AI_API_KEY) {
+    const notConfiguredResult = {
+      aiStatus: 'not_configured',
+      aiScore: null,
+      aiOcrName: null,
+      aiOcrIdNumber: null,
+      aiOcrDob: null,
+      aiOcrAddress: null,
+      aiOcrFront: {},
+      aiOcrBack: {},
+      aiFaceMatch: {},
+      aiRawResult: { error: 'Missing FPT_AI_API_KEY' },
+    };
+    await updateVerificationAiResult(requestId, notConfiguredResult);
+    return notConfiguredResult;
+  }
+
+  const idCardFront = documents.find((doc) => doc.type === 'id_card_front');
+  const idCardBack = documents.find((doc) => doc.type === 'id_card_back');
+  const selfie = documents.find((doc) => doc.type === 'selfie');
+
+  if (!idCardFront?.path || !idCardBack?.path || !selfie?.path) {
+    const missingResult = {
+      aiStatus: 'needs_review',
+      aiScore: null,
+      aiOcrName: null,
+      aiOcrIdNumber: null,
+      aiOcrDob: null,
+      aiOcrAddress: null,
+      aiOcrFront: {},
+      aiOcrBack: {},
+      aiFaceMatch: {},
+      aiRawResult: { error: 'Missing id_card_front, id_card_back, or selfie document' },
+    };
+    await updateVerificationAiResult(requestId, missingResult);
+    return missingResult;
+  }
+
+  try {
+    const [frontResult, backResult, faceResult] = await Promise.all([
+      callFptIdRecognition(idCardFront.path),
+      callFptIdRecognition(idCardBack.path),
+      callFptFaceMatch(idCardFront.path, selfie.path),
+    ]);
+    const aiResult = buildAiDecision(frontResult, backResult, faceResult);
+    await updateVerificationAiResult(requestId, aiResult);
+    return aiResult;
+  } catch (error) {
+    const errorResult = {
+      aiStatus: 'error',
+      aiScore: null,
+      aiOcrName: null,
+      aiOcrIdNumber: null,
+      aiOcrDob: null,
+      aiOcrAddress: null,
+      aiOcrFront: {},
+      aiOcrBack: {},
+      aiFaceMatch: {},
+      aiRawResult: {
+        error: error.message,
+        response: error.response?.data || null,
+      },
+    };
+    await updateVerificationAiResult(requestId, errorResult);
+    return errorResult;
+  }
 }
 
 const ACCESS_POLICIES = [
@@ -330,6 +648,7 @@ app.get('/api/housekeepers', (req, res) => {
   // Nếu có filter services, trước tiên cần chuyển tên service thành serviceId
   if (services) {
     const serviceNames = services.split(",");
+    const serviceTerms = serviceNames.flatMap(serviceSearchTerms);
     const getServiceIdsSql = `SELECT id FROM services WHERE name IN (${serviceNames.map(() => "?").join(",")})`;
     
     db.query(getServiceIdsSql, serviceNames, (err, serviceResults) => {
@@ -341,20 +660,20 @@ app.get('/api/housekeepers', (req, res) => {
       const serviceIds = serviceResults.map(s => s.id);
       console.log('ServiceIds:', serviceIds);
       
-      if (serviceIds.length === 0) {
+      if (serviceIds.length === 0 && serviceTerms.length === 0) {
         console.log('No services found, returning empty array');
         return res.json([]); // Không có service nào match
       }
       
       // Tiếp tục với query chính
-      executeMainQuery(serviceIds);
+      executeMainQuery(serviceIds, serviceTerms);
     });
   } else {
     // Không có filter services, query bình thường
-    executeMainQuery(null);
+    executeMainQuery(null, []);
   }
   
-  function executeMainQuery(serviceIds) {
+  function executeMainQuery(serviceIds, serviceTerms = []) {
     let sql = `
       SELECT h.*, u.fullName, u.email, u.phone, u.avatar, u.address, u.city, u.district, u.isVerified, u.isApproved,
              COALESCE(AVG(r.rating), 0) as avgRating,
@@ -367,10 +686,18 @@ app.get('/api/housekeepers', (req, res) => {
     const having = [];
     const params = [];
 
-    if (serviceIds && serviceIds.length > 0) {
-      sql += ` JOIN housekeeper_services hs ON h.id = hs.housekeeperId`;
-      where.push(`hs.serviceId IN (${serviceIds.map(() => "?").join(",")})`);
-      params.push(...serviceIds);
+    if ((serviceIds && serviceIds.length > 0) || serviceTerms.length > 0) {
+      sql += ` LEFT JOIN housekeeper_services hs ON h.id = hs.housekeeperId`;
+      const serviceConditions = [];
+      if (serviceIds && serviceIds.length > 0) {
+        serviceConditions.push(`hs.serviceId IN (${serviceIds.map(() => "?").join(",")})`);
+        params.push(...serviceIds);
+      }
+      if (serviceTerms.length > 0) {
+        serviceConditions.push(`(${serviceTerms.map(() => 'LOWER(h.services) LIKE LOWER(?)').join(' OR ')})`);
+        params.push(...serviceTerms.map((term) => `%${term}%`));
+      }
+      where.push(`(${serviceConditions.join(' OR ')})`);
     }
     if (maxPrice) {
       where.push(`h.price <= ?`);
@@ -536,7 +863,8 @@ app.post('/api/register', (req, res) => {
     city,
     district,
     dateOfBirth,
-    gender
+    gender,
+    emergencyContact
   } = req.body;
 
   console.log('📝 Registration request:', { fullName, email, role, phone });
@@ -584,9 +912,10 @@ app.post('/api/register', (req, res) => {
     const hashedPassword = bcrypt.hashSync(password, 10);
 
     const normalizedRole = role || 'customer';
+    const normalizedEmergencyContact = emergencyContact || (normalizedRole === 'housekeeper' ? phone : null);
     const sql = `INSERT INTO users 
-      (fullName, email, password, phone, role, idCardFront, idCardBack, address, city, district, dateOfBirth, gender, authProvider) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'local')`;
+      (fullName, email, password, phone, role, idCardFront, idCardBack, address, city, district, dateOfBirth, gender, emergencyContact, authProvider) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'local')`;
     
     const values = [
       fullName, 
@@ -600,7 +929,8 @@ app.post('/api/register', (req, res) => {
       city,
       district,
       dateOfBirth,
-      gender
+      gender,
+      normalizedEmergencyContact
     ];
 
     db.query(sql, values, (err, result) => {
@@ -1050,6 +1380,28 @@ app.post('/api/verification/submit', (req, res) => {
     });
   }
 
+  return db.query(
+    'SELECT id, submittedAt, TIMESTAMPDIFF(MINUTE, submittedAt, NOW()) AS minutesSince FROM verification_requests WHERE userId = ? ORDER BY submittedAt DESC LIMIT 1',
+    [userId],
+    (cooldownErr, cooldownRows) => {
+      if (cooldownErr) {
+        console.error('Error checking verification cooldown:', cooldownErr);
+        return res.status(500).json({ error: 'Could not check verification cooldown', message: cooldownErr.message });
+      }
+
+      const latestRequest = cooldownRows?.[0];
+      const minutesSince = Number(latestRequest?.minutesSince);
+      if (latestRequest && Number.isFinite(minutesSince) && minutesSince < 1440) {
+        const remainingMinutes = 1440 - minutesSince;
+        const remainingHours = Math.floor(remainingMinutes / 60);
+        const remainingMins = remainingMinutes % 60;
+        return res.status(429).json({
+          error: 'Verification cooldown',
+          message: `Please wait ${remainingHours}h ${remainingMins}m before submitting verification again.`,
+          remainingMinutes,
+        });
+      }
+
   // Check if user exists and is housekeeper
   db.query('SELECT * FROM users WHERE id = ? AND role = "housekeeper"', [userId], (err, userResults) => {
     if (err) {
@@ -1098,12 +1450,12 @@ app.post('/api/verification/submit', (req, res) => {
             }
             
             const docSql = `INSERT INTO verification_documents 
-              (userId, documentType, filePath, originalName) 
-              VALUES (?, ?, ?, ?)`;
+              (userId, requestId, documentType, filePath, originalName) 
+              VALUES (?, ?, ?, ?, ?)`;
             
             console.log('Inserting document:', { userId, type: doc.type, path: doc.path, originalName: doc.originalName });
             
-            db.query(docSql, [userId, doc.type, doc.path, doc.originalName], (err, result) => {
+            db.query(docSql, [userId, requestId, doc.type, doc.path, doc.originalName], (err, result) => {
               if (err) {
                 console.error('Database error inserting document:', err);
                 reject(err);
@@ -1116,9 +1468,11 @@ app.post('/api/verification/submit', (req, res) => {
         });
 
         Promise.all(documentPromises)
-          .then(() => {
-            console.log('✅ All verification documents saved');
+          .then(async () => {
+            console.log('All verification documents saved');
             
+            const aiResult = await runVerificationAiCheck(requestId, documents || []);
+
             // Create notification for admins
             const notificationSql = `INSERT INTO notifications 
               (userId, type, title, message, data) 
@@ -1142,7 +1496,8 @@ app.post('/api/verification/submit', (req, res) => {
             res.json({
               success: true,
               message: 'Gửi yêu cầu xác thực thành công! Admin sẽ xem xét trong vòng 24-48 giờ.',
-              requestId: requestId
+              requestId: requestId,
+              aiResult
             });
           })
           .catch(err => {
@@ -1157,6 +1512,7 @@ app.post('/api/verification/submit', (req, res) => {
         });
       }
     });
+  });
   });
 });
 
@@ -1209,9 +1565,18 @@ app.get('/api/verification/status/:userId', (req, res) => {
     
     const request = results[0];
     
-    // Get documents for this request
-    db.query('SELECT * FROM verification_documents WHERE userId = ? ORDER BY uploadedAt DESC', 
-      [userId], (docErr, documents) => {
+    // Get documents for this request. Fallback to userId for legacy rows created before requestId existed.
+    db.query(`
+      SELECT * FROM verification_documents
+      WHERE requestId = ?
+         OR (
+           requestId IS NULL
+           AND userId = ?
+           AND NOT EXISTS (SELECT 1 FROM verification_documents vd2 WHERE vd2.requestId = ?)
+         )
+      ORDER BY uploadedAt DESC
+    `, 
+      [request.id, userId, request.id], (docErr, documents) => {
         if (docErr) {
           console.error('Error fetching verification documents:', docErr);
         }
@@ -1243,11 +1608,18 @@ app.get('/api/admin/verification/pending', (req, res) => {
       vr.*,
       u.fullName, u.email, u.phone, u.createdAt as userCreatedAt,
       h.experience, h.services,
-      (SELECT COUNT(*) FROM verification_documents vd WHERE vd.userId = vr.userId) AS documentCount
+      (SELECT COUNT(*) FROM verification_documents vd WHERE vd.requestId = vr.id) AS documentCount
     FROM verification_requests vr
     JOIN users u ON vr.userId = u.id
     LEFT JOIN housekeepers h ON u.id = h.userId
     WHERE u.role = 'housekeeper'
+      AND vr.id IN (
+        SELECT latestRequestId FROM (
+          SELECT MAX(id) AS latestRequestId
+          FROM verification_requests
+          GROUP BY userId
+        ) latest_requests
+      )
   `;
   
   const params = [];
@@ -1456,7 +1828,7 @@ app.get('/api/admin/verification/:requestId/documents', (req, res) => {
     
     const userId = requestResults[0].userId;
     
-    // Get documents for this user
+    // Get documents for this request. Fallback to user rows for legacy requests created before requestId existed.
     const documentsSql = `
       SELECT 
         id,
@@ -1466,11 +1838,16 @@ app.get('/api/admin/verification/:requestId/documents', (req, res) => {
         uploadedAt,
         status
       FROM verification_documents 
-      WHERE userId = ? 
+      WHERE requestId = ?
+         OR (
+           requestId IS NULL
+           AND userId = ?
+           AND NOT EXISTS (SELECT 1 FROM verification_documents vd2 WHERE vd2.requestId = ?)
+         )
       ORDER BY uploadedAt DESC
     `;
     
-    db.query(documentsSql, [userId], (docErr, documents) => {
+    db.query(documentsSql, [requestId, userId, requestId], (docErr, documents) => {
       if (docErr) {
         console.error('Error fetching verification documents:', docErr);
         return res.status(500).json({ error: 'Lỗi lấy tài liệu xác minh', message: docErr.message });
@@ -1822,11 +2199,21 @@ app.put('/api/users/:id/profile', (req, res) => {
 
   const updates = [];
   const params = [];
+  const nullableEmptyFields = new Set([
+    'dateOfBirth',
+    'gender',
+    'city',
+    'district',
+    'languages',
+    'emergencyContact',
+    'emergencyContactName',
+  ]);
 
   allowedFields.forEach((field) => {
     if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+      const value = req.body[field];
       updates.push(`${field} = ?`);
-      params.push(req.body[field] === undefined ? null : req.body[field]);
+      params.push(value === undefined || (nullableEmptyFields.has(field) && value === '') ? null : value);
     }
   });
 
@@ -1872,7 +2259,7 @@ app.get('/api/housekeepers/:userId/profile', (req, res) => {
   const userId = req.params.userId;
   
   const sql = `
-    SELECT h.*, u.fullName, u.email, u.phone, u.avatar
+    SELECT h.*, u.fullName, u.email, u.phone, u.avatar, u.isVerified, u.isApproved
     FROM housekeepers h
     JOIN users u ON h.userId = u.id
     WHERE h.userId = ?
@@ -1888,23 +2275,24 @@ app.get('/api/housekeepers/:userId/profile', (req, res) => {
 // API: C?p nh?t profile housekeeper
 app.put('/api/housekeepers/:userId/profile', (req, res) => {
   const userId = req.params.userId;
-  const {
-    description, experience, price, priceType, workingHours, 
-    serviceRadius, services, available
-  } = req.body;
+  const allowedFields = ['description', 'experience', 'price', 'priceType', 'workingHours', 'serviceRadius', 'services', 'available'];
+  const updates = [];
+  const params = [];
 
-  const sql = `
-    UPDATE housekeepers SET 
-      description = ?, experience = ?, price = ?, priceType = ?, 
-      workingHours = ?, serviceRadius = ?, services = ?, available = ?,
-      updatedAt = NOW()
-    WHERE userId = ?
-  `;
+  allowedFields.forEach((field) => {
+    if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+      updates.push(`${field} = ?`);
+      params.push(req.body[field]);
+    }
+  });
 
-  const params = [
-    description, experience, price, priceType, workingHours,
-    serviceRadius, services, available, userId
-  ];
+  if (updates.length === 0) {
+    return res.status(400).json({ error: 'No housekeeper profile fields to update' });
+  }
+
+  updates.push('updatedAt = NOW()');
+  const sql = `UPDATE housekeepers SET ${updates.join(', ')} WHERE userId = ?`;
+  params.push(userId);
 
   db.query(sql, params, (err, result) => {
     if (err) return res.status(500).json({ error: err });
@@ -1912,7 +2300,7 @@ app.put('/api/housekeepers/:userId/profile', (req, res) => {
     
     // Tr? v? th�ng tin housekeeper d� c?p nh?t
     const selectSql = `
-      SELECT h.*, u.fullName, u.email, u.phone, u.avatar
+      SELECT h.*, u.fullName, u.email, u.phone, u.avatar, u.isVerified, u.isApproved
       FROM housekeepers h
       JOIN users u ON h.userId = u.id
       WHERE h.userId = ?

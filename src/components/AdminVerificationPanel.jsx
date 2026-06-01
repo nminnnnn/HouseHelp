@@ -113,6 +113,75 @@ const DocumentViewer = ({ doc, index }) => {
   );
 };
 
+const parseMaybeJson = (value) => {
+  if (!value) return null;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+const AiVerificationSummary = ({ request }) => {
+  const faceMatch = parseMaybeJson(request.aiFaceMatch);
+  const normalized = faceMatch?.normalized || {};
+  const status = request.aiStatus || 'pending';
+  const statusStyles = {
+    passed: { backgroundColor: '#dcfce7', color: '#166534', label: 'AI passed' },
+    failed: { backgroundColor: '#fee2e2', color: '#991b1b', label: 'AI failed' },
+    needs_review: { backgroundColor: '#fef3c7', color: '#92400e', label: 'Needs review' },
+    error: { backgroundColor: '#fee2e2', color: '#991b1b', label: 'AI error' },
+    not_configured: { backgroundColor: '#f3f4f6', color: '#4b5563', label: 'AI not configured' },
+    pending: { backgroundColor: '#e0f2fe', color: '#075985', label: 'AI pending' },
+  };
+  const currentStyle = statusStyles[status] || statusStyles.pending;
+
+  return (
+    <div style={{
+      padding: '16px',
+      backgroundColor: 'white',
+      border: '1px solid #fed7aa',
+      borderRadius: '8px',
+      marginBottom: '20px'
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '12px' }}>
+        <h4 style={{ margin: 0, color: '#1f2937', fontSize: '16px', fontWeight: '600' }}>
+          AI identity check
+        </h4>
+        <span style={{
+          ...currentStyle,
+          borderRadius: '999px',
+          fontSize: '12px',
+          fontWeight: '700',
+          padding: '5px 10px'
+        }}>
+          {currentStyle.label}
+        </span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+        <div><strong>Name:</strong> {request.aiOcrName || 'N/A'}</div>
+        <div><strong>ID number:</strong> {request.aiOcrIdNumber || 'N/A'}</div>
+        <div><strong>DOB:</strong> {request.aiOcrDob || 'N/A'}</div>
+        <div><strong>Face score:</strong> {request.aiScore != null ? `${Number(request.aiScore).toFixed(1)}%` : 'N/A'}</div>
+        <div><strong>Face match:</strong> {normalized.isMatch === true ? 'Matched' : normalized.isMatch === false ? 'Not matched' : 'N/A'}</div>
+        <div><strong>Checked at:</strong> {request.aiCheckedAt ? new Date(request.aiCheckedAt).toLocaleString() : 'N/A'}</div>
+      </div>
+
+      {request.aiOcrAddress ? (
+        <div style={{ marginTop: '10px', color: '#374151' }}>
+          <strong>Address:</strong> {request.aiOcrAddress}
+        </div>
+      ) : null}
+
+      <div style={{ marginTop: '10px', color: '#6b7280', fontSize: '13px' }}>
+        AI only supports the review. Admin still makes the final approval decision.
+      </div>
+    </div>
+  );
+};
+
 const AdminVerificationPanel = () => {
   const { user } = useAuth();
   const [verificationRequests, setVerificationRequests] = useState([]);
@@ -471,6 +540,8 @@ const AdminVerificationPanel = () => {
                   </div>
                 </div>
               )}
+
+              <AiVerificationSummary request={selectedRequest} />
 
               {/* Verification Documents */}
               <div style={{
