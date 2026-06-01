@@ -26,6 +26,7 @@ type RegisterPayload = {
   phone?: string;
   role: 'customer' | 'housekeeper';
   services?: string[];
+  emergencyContact?: string;
 };
 
 type AuthResponse = LoginResponse;
@@ -56,6 +57,7 @@ export const authService = {
   registerHousekeeper: async (payload: Omit<RegisterPayload, 'role'>) => {
     const response = await api.post<AuthResponse>('/register', {
       ...payload,
+      emergencyContact: payload.emergencyContact || payload.phone,
       role: 'housekeeper',
     });
     return persistAuth(response.data);

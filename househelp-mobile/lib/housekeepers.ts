@@ -88,6 +88,11 @@ export const housekeeperService = {
     return normalizeHousekeeper(response.data);
   },
 
+  updateProfile: async (userId: number | string, payload: Partial<Housekeeper>) => {
+    const response = await api.put<Housekeeper>(`/housekeepers/${userId}/profile`, payload);
+    return normalizeHousekeeper(response.data);
+  },
+
   updateAvailability: async (userId: number | string, available: boolean) => {
     const response = await api.put<Housekeeper>(`/housekeepers/${userId}/availability`, { available });
     return normalizeHousekeeper(response.data);

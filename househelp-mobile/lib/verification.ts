@@ -7,6 +7,13 @@ export type VerificationDocumentInput = {
 };
 
 export type VerificationStatus = {
+  aiCheckedAt?: string;
+  aiOcrAddress?: string;
+  aiOcrDob?: string;
+  aiOcrIdNumber?: string;
+  aiOcrName?: string;
+  aiScore?: number | string;
+  aiStatus?: 'not_configured' | 'pending' | 'passed' | 'failed' | 'needs_review' | 'error' | string;
   documents?: Array<{
     documentType?: string;
     filePath?: string;
@@ -18,6 +25,13 @@ export type VerificationStatus = {
   isApproved: boolean;
   isVerified: boolean;
   request?: {
+    aiCheckedAt?: string;
+    aiOcrAddress?: string;
+    aiOcrDob?: string;
+    aiOcrIdNumber?: string;
+    aiOcrName?: string;
+    aiScore?: number | string;
+    aiStatus?: string;
     status?: string;
     submittedAt?: string;
   };
@@ -30,7 +44,7 @@ export const verificationService = {
   },
 
   submit: async (userId: number | string, userNotes: string, documents: VerificationDocumentInput[]) => {
-    const response = await api.post<{ message?: string; requestId?: number; success: boolean }>('/verification/submit', {
+    const response = await api.post<{ aiResult?: unknown; message?: string; requestId?: number; success: boolean }>('/verification/submit', {
       documents,
       userId,
       userNotes,

@@ -140,7 +140,7 @@ export default function ServiceHousekeepersScreen() {
       setError(null);
       const [storedUser, data] = await Promise.all([
         authService.checkAuthStatus(),
-        housekeeperService.getAll(dbService || undefined),
+        housekeeperService.getAll(dbService || undefined, { availableOnly: false }),
       ]);
 
       if (!storedUser) {

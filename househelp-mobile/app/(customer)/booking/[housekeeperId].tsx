@@ -206,7 +206,6 @@ export default function CreateBookingScreen() {
   const availableDates = useMemo(() => dateOptions(), []);
   const selectedDuration = parseDuration(duration);
   const selectedDurationIndex = Math.max(0, durationOptions.findIndex((item) => item === selectedDuration));
-  const durationProgress = `${(selectedDurationIndex / (durationOptions.length - 1)) * 100}%`;
 
   const reverseGeocode = useCallback(async (latitude: number, longitude: number) => {
     try {

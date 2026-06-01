@@ -6,6 +6,7 @@ import {
   Alert,
   FlatList,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -18,10 +19,21 @@ import { bookingService, type Booking } from '../../lib/bookings';
 import { housekeeperService, type Housekeeper, type HousekeeperEarnings } from '../../lib/housekeepers';
 import { useLanguage } from '../../lib/language';
 import type { AppLanguage } from '../../lib/storage';
+import { verificationService } from '../../lib/verification';
 
 type FilterKey = 'all' | 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'rejected';
 
 const filters: FilterKey[] = ['all', 'pending', 'confirmed', 'in_progress', 'completed', 'rejected'];
+
+const serviceOptions = [
+  { en: 'Home cleaning', vi: 'D\u1ecdn d\u1eb9p nh\u00e0 c\u1eeda', value: 'D\u1ecdn d\u1eb9p nh\u00e0 c\u1eeda' },
+  { en: 'Laundry', vi: 'Gi\u1eb7t \u1ee7i qu\u1ea7n \u00e1o', value: 'Gi\u1eb7t \u1ee7i qu\u1ea7n \u00e1o' },
+  { en: 'Cooking', vi: 'N\u1ea5u \u0103n', value: 'N\u1ea5u \u0103n' },
+  { en: 'Child care', vi: 'Ch\u0103m s\u00f3c tr\u1ebb em', value: 'Ch\u0103m s\u00f3c tr\u1ebb em' },
+  { en: 'Elder care', vi: 'Ch\u0103m s\u00f3c ng\u01b0\u1eddi gi\u00e0', value: 'Ch\u0103m s\u00f3c ng\u01b0\u1eddi gi\u00e0' },
+  { en: 'Industrial cleaning', vi: 'V\u1ec7 sinh c\u00f4ng nghi\u1ec7p', value: 'V\u1ec7 sinh c\u00f4ng nghi\u1ec7p' },
+  { en: 'Gardening', vi: 'L\u00e0m v\u01b0\u1eddn', value: 'L\u00e0m v\u01b0\u1eddn' },
+];
 
 const copy = {
   en: {
@@ -86,6 +98,10 @@ const copy = {
     paidOut: 'Paid out',
     address: 'Address',
     noValue: 'Not available',
+    saveServices: 'Save services',
+    servicesSaved: 'Services updated.',
+    servicesTitle: 'Your services',
+    updateServices: 'Update services',
   },
   vi: {
     account: 'Tài khoản',
@@ -186,6 +202,22 @@ function parseBookingStart(booking: Booking) {
   return null;
 }
 
+function bookingRecencyValue(booking: Booking) {
+  const start = parseBookingStart(booking);
+  if (start) {
+    return start.getTime();
+  }
+
+  if (booking.createdAt) {
+    const created = new Date(booking.createdAt);
+    if (!Number.isNaN(created.getTime())) {
+      return created.getTime();
+    }
+  }
+
+  return 0;
+}
+
 function minutesUntil(date: Date) {
   return Math.round((date.getTime() - Date.now()) / 60000);
 }
@@ -194,12 +226,20 @@ function truthy(value: unknown) {
   return value === true || value === 1 || value === '1';
 }
 
+function servicesFromProfile(value?: string) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function JobCard({
   item,
   isUpdating,
   onChat,
   onComplete,
   onConfirm,
+  onOpen,
   onReject,
   text,
   language,
@@ -209,6 +249,7 @@ function JobCard({
   onChat: () => void;
   onComplete: () => void;
   onConfirm: () => void;
+  onOpen: () => void;
   onReject: () => void;
   text: (typeof copy)[AppLanguage];
   language: AppLanguage;
@@ -218,23 +259,25 @@ function JobCard({
 
   return (
     <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <Text numberOfLines={1} style={styles.service}>
-          {item.service || text.service}
-        </Text>
-        <Text style={[styles.status, styles[`status_${item.status}` as keyof typeof styles] || styles.statusDefault]}>
-          {statusLabel(item.status, language)}
-        </Text>
-      </View>
+      <TouchableOpacity activeOpacity={0.86} onPress={onOpen}>
+        <View style={styles.cardHeader}>
+          <Text numberOfLines={1} style={styles.service}>
+            {item.service || text.service}
+          </Text>
+          <Text style={[styles.status, styles[`status_${item.status}` as keyof typeof styles] || styles.statusDefault]}>
+            {statusLabel(item.status, language)}
+          </Text>
+        </View>
 
-      <Text style={styles.meta}>{text.customer}: {item.customerName || `#${item.customerId}`}</Text>
-      <Text style={styles.meta}>{text.date}: {formatDate(item, language)}</Text>
-      <Text style={styles.meta}>
-        {text.time}: {item.time || text.noValue} - {item.duration || 0} {language === 'vi' ? 'giờ' : 'hours'}
-      </Text>
-      <Text style={styles.meta}>{text.address}: {item.location || text.noValue}</Text>
-      {item.notes ? <Text style={styles.notes}>{text.notes}: {item.notes}</Text> : null}
-      <Text style={styles.price}>{formatPrice(item.totalPrice)}</Text>
+        <Text style={styles.meta}>{text.customer}: {item.customerName || `#${item.customerId}`}</Text>
+        <Text style={styles.meta}>{text.date}: {formatDate(item, language)}</Text>
+        <Text style={styles.meta}>
+          {text.time}: {item.time || text.noValue} - {item.duration || 0} {language === 'vi' ? 'gi?' : 'hours'}
+        </Text>
+        <Text style={styles.meta}>{text.address}: {item.location || text.noValue}</Text>
+        {item.notes ? <Text style={styles.notes}>{text.notes}: {item.notes}</Text> : null}
+        <Text style={styles.price}>{formatPrice(item.totalPrice)}</Text>
+      </TouchableOpacity>
 
       <TouchableOpacity onPress={onChat} style={styles.chatButton}>
         <Text style={styles.chatText}>{text.chat}</Text>
@@ -270,8 +313,12 @@ export default function HousekeeperDashboard() {
   const [isTogglingAvailability, setIsTogglingAvailability] = useState(false);
   const [profile, setProfile] = useState<Housekeeper | null>(null);
   const [showEarnings, setShowEarnings] = useState(false);
+  const [showServices, setShowServices] = useState(false);
+  const [selectedServices, setSelectedServices] = useState<string[]>([]);
+  const [isSavingServices, setIsSavingServices] = useState(false);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [verificationStatus, setVerificationStatus] = useState<{ isApproved?: boolean; isVerified?: boolean } | null>(null);
   const { language } = useLanguage();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -295,14 +342,17 @@ export default function HousekeeperDashboard() {
       }
 
       setUser(storedUser);
-      const [data, housekeeperProfile, housekeeperEarnings] = await Promise.all([
+      const [data, housekeeperProfile, housekeeperEarnings, nextVerificationStatus] = await Promise.all([
         bookingService.getForUser(storedUser.id),
         housekeeperService.getProfileByUserId(storedUser.id),
         housekeeperService.getEarnings(storedUser.id).catch(() => null),
+        verificationService.getStatus(storedUser.id).catch(() => null),
       ]);
       setBookings(data);
       setProfile(housekeeperProfile);
+      setSelectedServices(servicesFromProfile(housekeeperProfile.services));
       setEarnings(housekeeperEarnings);
+      setVerificationStatus(nextVerificationStatus);
     } catch (loadError: any) {
       setError(loadError.response?.data?.message || loadError.response?.data?.error || text.bookingLoadError);
     } finally {
@@ -316,11 +366,13 @@ export default function HousekeeperDashboard() {
   }, [loadBookings]);
 
   const filteredBookings = useMemo(() => {
+    const sortedBookings = [...bookings].sort((left, right) => bookingRecencyValue(right) - bookingRecencyValue(left));
+
     if (activeFilter === 'all') {
-      return bookings;
+      return sortedBookings;
     }
 
-    return bookings.filter((booking) => booking.status === activeFilter);
+    return sortedBookings.filter((booking) => booking.status === activeFilter);
   }, [activeFilter, bookings]);
 
   const checkUpcomingBookingReminder = useCallback(() => {
@@ -353,7 +405,11 @@ export default function HousekeeperDashboard() {
   }, [checkUpcomingBookingReminder]);
 
   const pendingCount = useMemo(() => bookings.filter((booking) => booking.status === 'pending').length, [bookings]);
-  const isVerifiedHousekeeper = truthy(profile?.isVerified) && truthy(profile?.isApproved);
+  const isVerifiedHousekeeper = (
+    truthy(profile?.isVerified) && truthy(profile?.isApproved)
+  ) || (
+    truthy(verificationStatus?.isVerified) && truthy(verificationStatus?.isApproved)
+  );
 
   const handleLogout = async () => {
     await authService.logout();
@@ -381,6 +437,35 @@ export default function HousekeeperDashboard() {
       );
     } finally {
       setIsTogglingAvailability(false);
+    }
+  };
+
+  const toggleService = (service: string) => {
+    setSelectedServices((current) => (
+      current.includes(service)
+        ? current.filter((item) => item !== service)
+        : [...current, service]
+    ));
+  };
+
+  const handleSaveServices = async () => {
+    if (!user || selectedServices.length === 0) return;
+
+    try {
+      setIsSavingServices(true);
+      const targetUserId = profile?.userId || user.id;
+      const updatedProfile = await housekeeperService.updateProfile(targetUserId, {
+        services: selectedServices.join(', '),
+      });
+      setProfile((current) => ({ ...(current || updatedProfile), ...updatedProfile }));
+      Alert.alert('Updated', 'Services updated.');
+    } catch (saveError: any) {
+      Alert.alert(
+        text.cannotUpdate,
+        saveError.response?.data?.message || saveError.response?.data?.error || text.retry,
+      );
+    } finally {
+      setIsSavingServices(false);
     }
   };
 
@@ -483,31 +568,86 @@ export default function HousekeeperDashboard() {
                   onPress={handleToggleAvailability}
                   style={[styles.availabilityButton, profile?.available ? styles.availableButton : styles.pausedButton]}
                 >
-                  <Text style={[styles.availabilityText, profile?.available ? styles.availableText : styles.pausedText]}>
+                  <Text numberOfLines={1} style={[styles.availabilityText, profile?.available ? styles.availableText : styles.pausedText]}>
                     {isTogglingAvailability ? text.availabilityUpdating : profile?.available ? text.ready : text.unavailable}
                   </Text>
                 </TouchableOpacity>
+              </View>
+
+              <View style={styles.headerActionGrid}>
                 <TouchableOpacity
                   onPress={() => router.push({ pathname: '/notifications', params: { returnTo: 'housekeeper' } })}
                   style={styles.notificationButton}
                 >
-                  <Text style={styles.notificationText}>{text.notifications}</Text>
+                  <Ionicons color="#ff8128" name="notifications-outline" size={25} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => router.push({ pathname: '/profile', params: { returnTo: 'housekeeper' } })}
                   style={styles.profileHeaderButton}
                 >
-                  <Text style={styles.profileHeaderText}>{text.account}</Text>
+                  <Ionicons color="#ff8128" name="person-outline" size={25} />
                 </TouchableOpacity>
-                {!isVerifiedHousekeeper ? (
-                  <TouchableOpacity onPress={() => router.push('/(housekeeper)/verification')} style={styles.verifyHeaderButton}>
-                    <Text style={styles.verifyHeaderText}>{text.verify}</Text>
-                  </TouchableOpacity>
-                ) : null}
+                <TouchableOpacity
+                  onPress={() => {
+                    if (isVerifiedHousekeeper) {
+                      Alert.alert('Verified', 'Your identity has already been verified.');
+                      return;
+                    }
+                    router.push('/(housekeeper)/verification');
+                  }}
+                  style={[styles.verifyHeaderButton, isVerifiedHousekeeper && styles.verifyHeaderButtonActive]}
+                >
+                  <Ionicons color={isVerifiedHousekeeper ? '#fff' : '#ff8128'} name="shield-checkmark-outline" size={25} />
+                </TouchableOpacity>
                 <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-                  <Text style={styles.logoutText}>{text.logout}</Text>
+                  <Ionicons color="#ff8128" name="log-out-outline" size={25} />
                 </TouchableOpacity>
               </View>
+
+              <TouchableOpacity
+                activeOpacity={0.86}
+                onPress={() => setShowServices((current) => !current)}
+                style={styles.servicesToggle}
+              >
+                <View style={styles.servicesToggleCopy}>
+                  <Text style={styles.servicesToggleTitle}>
+                    {'Update services'}
+                  </Text>
+                  <Text numberOfLines={1} style={styles.servicesToggleSubtitle}>
+                    {selectedServices.length > 0 ? selectedServices.join(', ') : text.noValue}
+                  </Text>
+                </View>
+                <Ionicons color="#ff8128" name={showServices ? 'chevron-up' : 'chevron-down'} size={20} />
+              </TouchableOpacity>
+
+              {showServices ? (
+                <View style={styles.servicesPanel}>
+                  <View style={styles.serviceGrid}>
+                    {serviceOptions.map((service) => {
+                      const isSelected = selectedServices.includes(service.value);
+                      return (
+                        <TouchableOpacity
+                          activeOpacity={0.84}
+                          key={service.value}
+                          onPress={() => toggleService(service.value)}
+                          style={[styles.serviceChip, isSelected && styles.serviceChipActive]}
+                        >
+                          <Text style={[styles.serviceChipText, isSelected && styles.serviceChipTextActive]}>
+                            {language === 'vi' ? service.vi : service.en}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  <TouchableOpacity
+                    disabled={isSavingServices || selectedServices.length === 0}
+                    onPress={handleSaveServices}
+                    style={[styles.saveServicesButton, (isSavingServices || selectedServices.length === 0) && styles.saveServicesButtonDisabled]}
+                  >
+                    {isSavingServices ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveServicesText}>Save services</Text>}
+                  </TouchableOpacity>
+                </View>
+              ) : null}
 
               <View style={styles.summaryRow}>
                 <View style={styles.summaryBox}>
@@ -562,7 +702,11 @@ export default function HousekeeperDashboard() {
               ) : null}
             </View>
 
-            <View style={styles.filterRow}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filterRow}
+            >
               {filters.map((filter) => (
                 <TouchableOpacity
                   key={filter}
@@ -572,7 +716,7 @@ export default function HousekeeperDashboard() {
                   <Text style={[styles.filterText, activeFilter === filter && styles.filterTextActive]}>{text.filters[filter]}</Text>
                 </TouchableOpacity>
               ))}
-            </View>
+            </ScrollView>
 
             {error ? (
               <View style={styles.errorBox}>
@@ -588,6 +732,7 @@ export default function HousekeeperDashboard() {
             onChat={() => router.push(`/chat/${item.id}`)}
             onComplete={() => handleComplete(item)}
             onConfirm={() => handleConfirm(item)}
+            onOpen={() => router.push(`/(housekeeper)/job/${item.id}`)}
             onReject={() => handleReject(item)}
             text={text}
             language={language}
@@ -668,7 +813,7 @@ const styles = StyleSheet.create({
   },
   chatButton: {
     alignItems: 'center',
-    backgroundColor: '#14532d',
+    backgroundColor: '#ff8128',
     borderRadius: 8,
     marginTop: 8,
     padding: 11,
@@ -744,7 +889,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   earningsItem: {
-    backgroundColor: '#f8f8fc',
+    backgroundColor: '#fff7ed',
     borderRadius: 12,
     flexBasis: '48%',
     flexGrow: 1,
@@ -785,7 +930,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   earningsValue: {
-    color: '#15803d',
+    color: '#ff8128',
     fontSize: 15,
     fontWeight: '900',
   },
@@ -803,19 +948,19 @@ const styles = StyleSheet.create({
   },
   filterButton: {
     backgroundColor: '#fff',
-    borderColor: '#d8dde3',
+    borderColor: '#fed7aa',
     borderRadius: 999,
     borderWidth: 1,
+    minWidth: 82,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   filterButtonActive: {
-    backgroundColor: '#15803d',
-    borderColor: '#15803d',
+    backgroundColor: '#ff8128',
+    borderColor: '#ff8128',
   },
   filterRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 8,
     padding: 16,
     paddingBottom: 4,
@@ -844,9 +989,12 @@ const styles = StyleSheet.create({
   },
   headerActions: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
     marginTop: 14,
+  },
+  headerActionGrid: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
   },
   list: {
     gap: 12,
@@ -858,17 +1006,14 @@ const styles = StyleSheet.create({
   },
   logoutButton: {
     alignItems: 'center',
-    borderColor: '#15803d',
+    backgroundColor: '#fff',
+    borderColor: '#ff8128',
     borderRadius: 8,
     borderWidth: 1,
     flex: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-  },
-  logoutText: {
-    color: '#15803d',
-    fontSize: 13,
-    fontWeight: '700',
+    height: 56,
+    justifyContent: 'center',
+    padding: 10,
   },
   meta: {
     color: '#4b5563',
@@ -881,50 +1026,45 @@ const styles = StyleSheet.create({
   },
   notificationButton: {
     alignItems: 'center',
-    backgroundColor: '#15803d',
+    backgroundColor: '#fff',
+    borderColor: '#ff8128',
     borderRadius: 8,
+    borderWidth: 1,
     flex: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-  },
-  notificationText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '700',
+    height: 56,
+    justifyContent: 'center',
+    padding: 10,
   },
   price: {
-    color: '#15803d',
+    color: '#ff8128',
     fontSize: 15,
     fontWeight: '800',
     marginTop: 4,
   },
   profileHeaderButton: {
     alignItems: 'center',
-    backgroundColor: '#f0fdf4',
-    borderColor: '#15803d',
+    backgroundColor: '#fff',
+    borderColor: '#ff8128',
     borderRadius: 8,
     borderWidth: 1,
     flex: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 11,
-  },
-  profileHeaderText: {
-    color: '#15803d',
-    fontSize: 13,
-    fontWeight: '800',
+    height: 56,
+    justifyContent: 'center',
+    padding: 10,
   },
   verifyHeaderButton: {
     alignItems: 'center',
-    backgroundColor: '#ff8128',
+    backgroundColor: '#fff',
+    borderColor: '#ff8128',
     borderRadius: 8,
+    borderWidth: 1,
     flex: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 11,
+    height: 56,
+    justifyContent: 'center',
+    padding: 10,
   },
-  verifyHeaderText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '800',
+  verifyHeaderButtonActive: {
+    backgroundColor: '#ff8128',
   },
   profileWideButton: {
     alignItems: 'center',
@@ -966,11 +1106,89 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     flex: 1,
   },
+  saveServicesButton: {
+    alignItems: 'center',
+    backgroundColor: '#ff8128',
+    borderRadius: 8,
+    marginTop: 12,
+    padding: 12,
+  },
+  saveServicesButtonDisabled: {
+    opacity: 0.55,
+  },
+  saveServicesText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '900',
+  },
   service: {
     color: '#111827',
     flex: 1,
     fontSize: 16,
     fontWeight: '800',
+  },
+  serviceChip: {
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderColor: '#fed7aa',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexBasis: '48%',
+    flexGrow: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 11,
+  },
+  serviceChipActive: {
+    backgroundColor: '#ff8128',
+    borderColor: '#ff8128',
+  },
+  serviceChipText: {
+    color: '#374151',
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  serviceChipTextActive: {
+    color: '#fff',
+  },
+  serviceGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 9,
+  },
+  servicesPanel: {
+    backgroundColor: '#fff',
+    borderColor: '#fed7aa',
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 10,
+    padding: 12,
+  },
+  servicesToggle: {
+    alignItems: 'center',
+    backgroundColor: '#fff7ed',
+    borderColor: '#fed7aa',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
+    marginTop: 10,
+    padding: 12,
+  },
+  servicesToggleCopy: {
+    flex: 1,
+  },
+  servicesToggleSubtitle: {
+    color: '#6b7280',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  servicesToggleTitle: {
+    color: '#172033',
+    fontSize: 14,
+    fontWeight: '900',
   },
   status: {
     borderRadius: 999,
@@ -1006,8 +1224,8 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
   summaryBox: {
-    backgroundColor: '#f0fdf4',
-    borderColor: '#bbf7d0',
+    backgroundColor: '#fff7ed',
+    borderColor: '#fed7aa',
     borderRadius: 8,
     borderWidth: 1,
     flex: 1,
@@ -1024,7 +1242,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   summaryValue: {
-    color: '#15803d',
+    color: '#ff8128',
     fontSize: 22,
     fontWeight: '800',
   },

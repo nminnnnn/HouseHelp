@@ -124,7 +124,7 @@ export default function CustomerHome() {
       setError(null);
       const [storedUser, data] = await Promise.all([
         authService.checkAuthStatus(),
-        housekeeperService.getAll(),
+        housekeeperService.getAll(undefined, { availableOnly: false }),
       ]);
       setUser(storedUser);
 
@@ -171,6 +171,7 @@ export default function CustomerHome() {
     <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
       <View style={styles.screen}>
         <ScrollView
+          bounces={false}
           contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 112, 128) }]}
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadData(true)} tintColor="#ff8128" />}
           showsVerticalScrollIndicator={false}

@@ -329,13 +329,13 @@ export default function ProfileScreen() {
         emergencyContact: form.emergencyContact || '',
         emergencyContactName: form.emergencyContactName || '',
         fullName: form.fullName || '',
-        gender: form.gender || '',
         languages: form.languages || '',
         phone: form.phone || '',
       };
 
       if (form.avatar) payload.avatar = form.avatar;
       if (form.dateOfBirth) payload.dateOfBirth = form.dateOfBirth;
+      if (form.gender) payload.gender = form.gender;
       if (form.idCardBack) payload.idCardBack = form.idCardBack;
       if (form.idCardFront) payload.idCardFront = form.idCardFront;
 
