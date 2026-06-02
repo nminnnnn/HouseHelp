@@ -57,8 +57,13 @@ function dateOptions() {
 const bookingSteps = ['Location', 'Time', 'Notes', 'Payment'] as const;
 const durationOptions = [2, 3, 4, 5, 6, 7, 8, 9];
 const PICK_HOUSEKEEPER_FEE = 15000;
+const paymentOptions = [
+  { key: 'cash', label: 'Cash' },
+  { key: 'momo', label: 'MoMo' },
+] as const;
 
 type BookingStep = (typeof bookingSteps)[number];
+type PaymentMethod = (typeof paymentOptions)[number]['key'];
 
 
 function serviceList(services?: string | string[] | unknown) {
@@ -124,6 +129,7 @@ export default function CreateBookingScreen() {
     longitudeDelta: 0.025,
   });
   const [notes, setNotes] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [selectedLocation, setSelectedLocation] = useState<SelectedLocation | null>(null);
   const [service, setService] = useState('');
   const [time, setTime] = useState('08:00');
@@ -203,10 +209,10 @@ export default function CreateBookingScreen() {
   const availableDates = useMemo(() => dateOptions(), []);
   const selectedDuration = parseDuration(duration);
   const selectedDurationIndex = Math.max(0, durationOptions.findIndex((item) => item === selectedDuration));
-
+// choose address 
   const reverseGeocode = useCallback(async (latitude: number, longitude: number) => {
     try {
-      const results = await Location.reverseGeocodeAsync({ latitude, longitude });
+      const results = await Location.reverseGeocodeAsync({ latitude, longitude }); //lấy địa chỉ từ tọa độ
       const place: any = results[0];
       const parts = [
         place?.name,
@@ -233,7 +239,7 @@ export default function CreateBookingScreen() {
     return current.coords;
   }, []);
 
-  const chooseCoordinate = useCallback(async (latitude: number, longitude: number) => {
+  const chooseCoordinate = useCallback(async (latitude: number, longitude: number) => { // chọn tọa độ trên bản đồ
     setMapRegion((current) => ({
       ...current,
       latitude,
@@ -428,6 +434,7 @@ export default function CreateBookingScreen() {
         location: location.trim(),
         notes: notes.trim() || undefined,
         service: recurring === 'monthly' ? `${service.trim()} monthly` : service.trim(),
+        paymentMethod,
         time: time.trim(),
         totalPrice,
       });
@@ -712,6 +719,32 @@ export default function CreateBookingScreen() {
               <Text numberOfLines={3} style={styles.reviewValue}>{notes.trim()}</Text>
             </View>
           ) : null}
+          <View style={styles.paymentMethodBlock}>
+            <Text style={styles.paymentMethodTitle}>Payment method</Text>
+            <View style={styles.paymentMethodRow}>
+              {paymentOptions.map((option) => {
+                const isActive = paymentMethod === option.key;
+
+                return (
+                  <TouchableOpacity
+                    activeOpacity={0.84}
+                    key={option.key}
+                    onPress={() => setPaymentMethod(option.key)}
+                    style={[styles.paymentMethodButton, isActive && styles.paymentMethodButtonActive]}
+                  >
+                    <Ionicons
+                      color={isActive ? '#fff' : '#ff8128'}
+                      name={option.key === 'cash' ? 'cash-outline' : 'wallet-outline'}
+                      size={18}
+                    />
+                    <Text style={[styles.paymentMethodText, isActive && styles.paymentMethodTextActive]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
         </View>
       ) : null}
 
@@ -1151,6 +1184,47 @@ const styles = StyleSheet.create({
   },
   pickerScroller: {
     marginBottom: 14,
+  },
+  paymentMethodBlock: {
+    borderTopColor: '#f1f5f9',
+    borderTopWidth: 1,
+    marginTop: 12,
+    paddingTop: 14,
+  },
+  paymentMethodButton: {
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderColor: '#fed7aa',
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingHorizontal: 12,
+  },
+  paymentMethodButtonActive: {
+    backgroundColor: '#ff8128',
+    borderColor: '#ff8128',
+  },
+  paymentMethodRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  paymentMethodText: {
+    color: '#111827',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  paymentMethodTextActive: {
+    color: '#fff',
+  },
+  paymentMethodTitle: {
+    color: '#111827',
+    fontSize: 13,
+    fontWeight: '900',
+    marginBottom: 10,
   },
   estimateCard: {
     backgroundColor: '#fff',

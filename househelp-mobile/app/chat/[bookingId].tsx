@@ -360,8 +360,8 @@ export default function ChatScreen() {
     if (!bookingId || !user || !receiverId || !trimmed) {
       return;
     }
-
-    try {
+// send message
+    try { 
       setIsSending(true);
       setInput('');
       const newMessage =
@@ -390,7 +390,7 @@ export default function ChatScreen() {
       setIsSending(false);
     }
   };
-
+// start call
   const startCall = async (type: 'audio' | 'video') => {
     if (!bookingId || !user || !receiverId) {
       Alert.alert(text.cannotCall, text.cannotCallText);

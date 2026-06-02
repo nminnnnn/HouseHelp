@@ -1380,7 +1380,7 @@ app.post('/api/verification/submit', (req, res) => {
     });
   }
 
-  return db.query(
+  db.query(
     'SELECT id, submittedAt, TIMESTAMPDIFF(MINUTE, submittedAt, NOW()) AS minutesSince FROM verification_requests WHERE userId = ? ORDER BY submittedAt DESC LIMIT 1',
     [userId],
     (cooldownErr, cooldownRows) => {
@@ -1471,8 +1471,6 @@ app.post('/api/verification/submit', (req, res) => {
           .then(async () => {
             console.log('All verification documents saved');
             
-            const aiResult = await runVerificationAiCheck(requestId, documents || []);
-
             // Create notification for admins
             const notificationSql = `INSERT INTO notifications 
               (userId, type, title, message, data) 
@@ -1493,15 +1491,30 @@ app.post('/api/verification/submit', (req, res) => {
               if (notifErr) console.error('Error creating admin notification:', notifErr);
             });
 
+            if (res.headersSent) {
+              return;
+            }
+
             res.json({
               success: true,
               message: 'Gửi yêu cầu xác thực thành công! Admin sẽ xem xét trong vòng 24-48 giờ.',
               requestId: requestId,
-              aiResult
+              aiResult: { status: 'pending' }
+            });
+
+            setImmediate(async () => {
+              try {
+                await runVerificationAiCheck(requestId, documents || []);
+              } catch (aiErr) {
+                console.error('Error running verification AI check:', aiErr);
+              }
             });
           })
           .catch(err => {
             console.error('Error saving verification documents:', err);
+            if (res.headersSent) {
+              return;
+            }
             res.status(500).json({ error: 'Lỗi lưu tài liệu xác thực', message: err.message });
           });
       } else {
@@ -2679,7 +2692,7 @@ app.post('/api/quick-booking/create', (req, res) => {
   });
 });
 
-// API: �?t l?ch (Regular booking)
+// API: đặt lịch (Regular booking)
 app.post('/api/bookings', (req, res) => {
   const { 
     customerId, 
@@ -2717,7 +2730,7 @@ app.post('/api/bookings', (req, res) => {
     paymentMethod: normalizedPaymentMethod,
     createdAt: new Date()
   };
-
+// lưu booking
   const sql = `INSERT INTO bookings 
     (customerId, housekeeperId, service, startDate, time, duration, location, notes, status, totalPrice, customerName, customerEmail, customerPhone, housekeeperName, createdAt) 
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
@@ -2735,7 +2748,7 @@ app.post('/api/bookings', (req, res) => {
 
     const bookingId = result.insertId;
     const newBooking = { ...bookingData, id: bookingId };
-    const breakdown = paymentBreakdown(totalPrice);
+    const breakdown = paymentBreakdown(totalPrice); //backend tạo payment pending
     db.query(
       `INSERT INTO payments (bookingId, customerId, method, amount, platformFee, housekeeperAmount, settlementStatus, platformAccount, status, createdAt)` +
         ` VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())`,

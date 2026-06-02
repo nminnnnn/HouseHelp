@@ -264,7 +264,11 @@ export default function HousekeeperVerificationScreen() {
 
       setDocuments({});
       setNotes('');
-      await loadStatus();
+      try {
+        await loadStatus();
+      } catch (statusError) {
+        console.log('Could not refresh verification status after submit:', statusError);
+      }
       Alert.alert(text.submitSuccess, text.submitSuccessText);
     } catch (error: any) {
       Alert.alert(text.submitError, error.response?.data?.message || error.response?.data?.error || text.submitErrorFallback);

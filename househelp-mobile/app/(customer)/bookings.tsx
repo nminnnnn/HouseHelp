@@ -136,7 +136,7 @@ function bookingTimeValue(booking: Booking) {
 }
 
 function sortChronological(items: Booking[]) {
-  return [...items].sort((a, b) => bookingTimeValue(a) - bookingTimeValue(b));
+  return [...items].sort((a, b) => bookingTimeValue(b) - bookingTimeValue(a));
 }
 
 function statusLabel(status: string, language: AppLanguage) {
