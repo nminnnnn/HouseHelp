@@ -155,6 +155,16 @@ function formatCoordinate(value: number) {
   return value.toFixed(6);
 }
 
+function normalizeDateOfBirth(value?: string) {
+  if (!value) return undefined;
+  const dateOnly = value.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (dateOnly) return dateOnly[1];
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return parsed.toISOString().slice(0, 10);
+}
+
 export default function ProfileScreen() {
   const [form, setForm] = useState<Partial<UserProfile>>({});
   const [isEditing, setIsEditing] = useState(false);
@@ -324,8 +334,8 @@ export default function ProfileScreen() {
       const payload: Partial<UserProfile> = {
         address: nextAddress,
         bio: form.bio || '',
-        city: form.city || '',
-        district: form.district || '',
+        city: '',
+        district: '',
         emergencyContact: form.emergencyContact || '',
         emergencyContactName: form.emergencyContactName || '',
         fullName: form.fullName || '',
@@ -334,7 +344,8 @@ export default function ProfileScreen() {
       };
 
       if (form.avatar) payload.avatar = form.avatar;
-      if (form.dateOfBirth) payload.dateOfBirth = form.dateOfBirth;
+      const normalizedDateOfBirth = normalizeDateOfBirth(form.dateOfBirth);
+      if (normalizedDateOfBirth) payload.dateOfBirth = normalizedDateOfBirth;
       if (form.gender) payload.gender = form.gender;
       if (form.idCardBack) payload.idCardBack = form.idCardBack;
       if (form.idCardFront) payload.idCardFront = form.idCardFront;
@@ -862,7 +873,7 @@ const styles = StyleSheet.create({
   },
   memberText: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '900',
   },
   multiline: {
@@ -1015,9 +1026,9 @@ const styles = StyleSheet.create({
   },
   name: {
     color: '#172033',
-    fontSize: 29,
+    fontSize: 24,
     fontWeight: '900',
-    lineHeight: 34,
+    lineHeight: 29,
   },
   panel: {
     backgroundColor: '#fff',
@@ -1150,7 +1161,7 @@ const styles = StyleSheet.create({
   rowLabel: {
     color: '#1d2636',
     flex: 1,
-    fontSize: 20,
+    fontSize: 17,
     fontWeight: '700',
   },
   safeArea: {
@@ -1166,7 +1177,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: '#172033',
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '900',
     marginBottom: 12,
   },
@@ -1177,7 +1188,7 @@ const styles = StyleSheet.create({
   },
   title: {
     color: '#172033',
-    fontSize: 34,
+    fontSize: 28,
     fontWeight: '900',
   },
 });

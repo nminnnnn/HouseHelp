@@ -14,7 +14,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { CustomerBottomNav } from '../../components/customer-bottom-nav';
 import { authService, type AuthUser } from '../../lib/auth';
-import { bookingService } from '../../lib/bookings';
+import { bookingService, type Booking } from '../../lib/bookings';
 import { housekeeperPreferenceService } from '../../lib/housekeeper-preferences';
 import { housekeeperService, parseServices, type Housekeeper } from '../../lib/housekeepers';
 import { useLanguage } from '../../lib/language';
@@ -49,7 +49,7 @@ const copy = {
     errorFallback: 'Could not load the list.',
     greeting: 'Hi',
     heroCopy: 'Book home care services quickly with clear pricing.',
-    housekeepersNearYou: 'Housekeepers near you',
+    housekeepersNearYou: 'Recommended housekeepers',
     noAddress: 'Add an address to book faster',
     previousHousekeepers: 'People who worked for you',
     promoTitle: 'Clean home, lighter chores',
@@ -64,7 +64,7 @@ const copy = {
     errorFallback: 'Kh\u00f4ng th\u1ec3 t\u1ea3i danh s\u00e1ch.',
     greeting: 'Xin ch\u00e0o',
     heroCopy: '\u0110\u1eb7t d\u1ecbch v\u1ee5 ch\u0103m s\u00f3c nh\u00e0 c\u1eeda nhanh v\u00e0 r\u00f5 gi\u00e1.',
-    housekeepersNearYou: 'Ng\u01b0\u1eddi gi\u00fap vi\u1ec7c g\u1ea7n b\u1ea1n',
+    housekeepersNearYou: 'Ng\u01b0\u1eddi gi\u00fap vi\u1ec7c \u0111\u1ec1 xu\u1ea5t',
     noAddress: 'Th\u00eam \u0111\u1ecba ch\u1ec9 \u0111\u1ec3 \u0111\u1eb7t l\u1ecbch nhanh h\u01a1n',
     previousHousekeepers: 'Ng\u01b0\u1eddi t\u1eebng l\u00e0m cho b\u1ea1n',
     promoTitle: 'L\u00e0m s\u1ea1ch nh\u00e0 c\u1eeda, nh\u1eb9 \u0111\u1ea7u vi\u1ec7c nh\u00e0',
@@ -81,6 +81,116 @@ function formatPrice(price: number | string | undefined, contactLabel: string) {
 
 function compactName(name: string | undefined, fallback: string) {
   return name?.split(' ')[0] || fallback;
+}
+
+function toFiniteNumber(value: unknown, fallback = 0) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
+function normalizeForMatching(value: unknown) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function normalizedServices(value: unknown) {
+  return parseServices(value)
+    .map(normalizeForMatching)
+    .filter(Boolean);
+}
+
+function serviceMatchScore(housekeeper: Housekeeper, preferredServices: Set<string>) {
+  if (preferredServices.size === 0) return 0.5;
+  const housekeeperServices = normalizedServices(housekeeper.services);
+  return housekeeperServices.some((service) => (
+    preferredServices.has(service)
+    || Array.from(preferredServices).some((preferredService) => (
+      service.includes(preferredService) || preferredService.includes(service)
+    ))
+  )) ? 1 : 0;
+}
+
+function priceScore(price: unknown, minPrice: number, maxPrice: number) {
+  const value = toFiniteNumber(price, NaN);
+  if (!Number.isFinite(value)) return 0.5;
+  if (maxPrice <= minPrice) return 1;
+  return Math.max(0, Math.min(1, 1 - ((value - minPrice) / (maxPrice - minPrice))));
+}
+
+function recommendationScore({
+  favoriteIds,
+  housekeeper,
+  maxCompletedJobs,
+  maxPrice,
+  minPrice,
+  preferredServices,
+  previousIds,
+}: {
+  favoriteIds: Set<string>;
+  housekeeper: Housekeeper;
+  maxCompletedJobs: number;
+  maxPrice: number;
+  minPrice: number;
+  preferredServices: Set<string>;
+  previousIds: Set<string>;
+}) {
+  const ratingScore = Math.max(0, Math.min(1, toFiniteNumber(housekeeper.avgRating ?? housekeeper.rating) / 5));
+  const completedJobScore = maxCompletedJobs > 0
+    ? Math.max(0, Math.min(1, toFiniteNumber(housekeeper.completedJobs) / maxCompletedJobs))
+    : 0;
+  const id = String(housekeeper.id);
+
+  return (
+    (0.35 * ratingScore) +
+    (0.25 * serviceMatchScore(housekeeper, preferredServices)) +
+    (0.15 * completedJobScore) +
+    (0.10 * (favoriteIds.has(id) ? 1 : 0)) +
+    (0.10 * (previousIds.has(id) ? 1 : 0)) +
+    (0.05 * priceScore(housekeeper.price, minPrice, maxPrice))
+  );
+}
+
+function sortRecommendedHousekeepers(
+  housekeepers: Housekeeper[],
+  bookings: Booking[] = [],
+  favoriteHousekeeperIds: string[] = [],
+) {
+  const favoriteIds = new Set(favoriteHousekeeperIds.map(String));
+  const previousIds = new Set(bookings.map((booking) => String(booking.housekeeperId)).filter(Boolean));
+  const preferredServices = new Set(bookings.flatMap((booking) => normalizedServices(booking.service)));
+  const completedJobs = housekeepers.map((housekeeper) => toFiniteNumber(housekeeper.completedJobs));
+  const prices = housekeepers
+    .map((housekeeper) => toFiniteNumber(housekeeper.price, NaN))
+    .filter(Number.isFinite);
+  const maxCompletedJobs = Math.max(0, ...completedJobs);
+  const minPrice = prices.length ? Math.min(...prices) : 0;
+  const maxPrice = prices.length ? Math.max(...prices) : 0;
+
+  return [...housekeepers].sort((left, right) => {
+    const rightScore = recommendationScore({
+      favoriteIds,
+      housekeeper: right,
+      maxCompletedJobs,
+      maxPrice,
+      minPrice,
+      preferredServices,
+      previousIds,
+    });
+    const leftScore = recommendationScore({
+      favoriteIds,
+      housekeeper: left,
+      maxCompletedJobs,
+      maxPrice,
+      minPrice,
+      preferredServices,
+      previousIds,
+    });
+
+    return rightScore - leftScore;
+  });
 }
 
 function HousekeeperCard({ contactLabel, item, onPress }: { contactLabel: string; item: Housekeeper; onPress: () => void }) {
@@ -129,13 +239,14 @@ export default function CustomerHome() {
       setUser(storedUser);
 
       if (!storedUser) {
-        setHousekeepers(data);
+        setHousekeepers(sortRecommendedHousekeepers(data));
         setPreviousHousekeepers([]);
         return;
       }
 
-      const [blockedIds, bookings] = await Promise.all([
+      const [blockedIds, favoriteIds, bookings] = await Promise.all([
         housekeeperPreferenceService.getBlockedIds(storedUser.id),
+        housekeeperPreferenceService.getFavoriteIds(storedUser.id),
         bookingService.getForUser(storedUser.id).catch(() => []),
       ]);
       const visibleHousekeepers = housekeeperPreferenceService.filterBlocked(data, blockedIds);
@@ -143,7 +254,7 @@ export default function CustomerHome() {
       const previousIds = Array.from(
         new Set(bookings.map((booking) => String(booking.housekeeperId)).filter((housekeeperId) => visibleMap.has(housekeeperId))),
       );
-      setHousekeepers(visibleHousekeepers);
+      setHousekeepers(sortRecommendedHousekeepers(visibleHousekeepers, bookings, favoriteIds));
       setPreviousHousekeepers(previousIds.map((housekeeperId) => visibleMap.get(housekeeperId)!).slice(0, 4));
     } catch (loadError: any) {
       setError(errorMessage(loadError, text.errorFallback));
@@ -542,7 +653,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: '#172033',
-    fontSize: 28,
+    fontSize: 18,
     fontWeight: '900',
   },
   seeAll: {

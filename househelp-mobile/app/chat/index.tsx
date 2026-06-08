@@ -399,7 +399,7 @@ const styles = StyleSheet.create({
   },
   title: {
     color: '#172033',
-    fontSize: 36,
+    fontSize: 30,
     fontWeight: '900',
   },
 });

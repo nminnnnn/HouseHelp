@@ -34,6 +34,9 @@ export type Housekeeper = {
   avgRating?: string | number;
   reviewCount?: number;
   location?: string;
+  address?: string;
+  city?: string;
+  district?: string;
   bio?: string;
   availability?: string;
 };

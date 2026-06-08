@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+﻿import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -799,7 +799,7 @@ const styles = StyleSheet.create({
   },
   title: {
     color: '#172033',
-    fontSize: 34,
+    fontSize: 26,
     fontWeight: '900',
   },
   starRow: {

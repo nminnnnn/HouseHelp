@@ -2221,10 +2221,21 @@ app.put('/api/users/:id/profile', (req, res) => {
     'emergencyContact',
     'emergencyContactName',
   ]);
+  const normalizeDateForMySQL = (value) => {
+    if (value === undefined || value === null || value === '') return null;
+    if (typeof value === 'string') {
+      const dateOnly = value.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (dateOnly) return dateOnly[1];
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString().slice(0, 10);
+  };
 
   allowedFields.forEach((field) => {
     if (Object.prototype.hasOwnProperty.call(req.body, field)) {
-      const value = req.body[field];
+      const value = field === 'dateOfBirth' ? normalizeDateForMySQL(req.body[field]) : req.body[field];
       updates.push(`${field} = ?`);
       params.push(value === undefined || (nullableEmptyFields.has(field) && value === '') ? null : value);
     }
