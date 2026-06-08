@@ -56,6 +56,7 @@ const copy = {
     paymentReview: 'Payment & review',
     rating: 'Review',
     reviewPlaceholder: 'Review this service...',
+    scanQr: 'Scan QR',
     service: 'Service',
     cancelBooking: 'Cancel booking',
     cancelMessage: 'Are you sure you want to cancel this booking?',
@@ -88,6 +89,7 @@ const copy = {
     paymentReview: 'Thanh to\u00e1n & \u0111\u00e1nh gi\u00e1',
     rating: '\u0110\u00e1nh gi\u00e1',
     reviewPlaceholder: 'Nh\u1eadn x\u00e9t v\u1ec1 d\u1ecbch v\u1ee5...',
+    scanQr: 'Qu\u00e9t QR',
     service: 'D\u1ecbch v\u1ee5',
     cancelBooking: 'H\u1ee7y booking',
     cancelMessage: 'B\u1ea1n c\u00f3 ch\u1eafc mu\u1ed1n h\u1ee7y booking n\u00e0y?',
@@ -158,6 +160,7 @@ function BookingCard({
   item,
   onCancel,
   onChat,
+  onScanQr,
   onReviewPayment,
   text,
   language,
@@ -165,6 +168,7 @@ function BookingCard({
   item: Booking;
   onCancel: () => void;
   onChat: () => void;
+  onScanQr: () => void;
   onReviewPayment: () => void;
   text: (typeof copy)[AppLanguage];
   language: AppLanguage;
@@ -172,6 +176,7 @@ function BookingCard({
   const isCompleted = item.status === 'completed';
   const isPaid = item.paymentStatus === 'success';
   const canCancel = item.status === 'pending';
+  const canScanQr = item.status === 'confirmed';
 
   return (
     <View style={styles.card}>
@@ -192,6 +197,12 @@ function BookingCard({
           {canCancel ? (
             <TouchableOpacity onPress={onCancel} style={styles.cancelBookingButton}>
               <Text style={styles.cancelBookingText}>{text.cancel}</Text>
+            </TouchableOpacity>
+          ) : null}
+          {canScanQr ? (
+            <TouchableOpacity onPress={onScanQr} style={styles.scanQrButton}>
+              <Ionicons color="#ff8128" name="qr-code-outline" size={16} />
+              <Text style={styles.scanQrText}>{text.scanQr}</Text>
             </TouchableOpacity>
           ) : null}
           {isCompleted ? (
@@ -379,6 +390,7 @@ export default function CustomerBookingsScreen() {
                   language={language}
                   onCancel={() => handleCancelBooking(item)}
                   onChat={() => router.push(`/chat/${item.id}`)}
+                  onScanQr={() => router.push(`/(customer)/scan-qr/${item.id}`)}
                   onReviewPayment={() => openPaymentReview(item)}
                   text={text}
                 />
@@ -751,6 +763,24 @@ const styles = StyleSheet.create({
     minHeight: 92,
     padding: 12,
     textAlignVertical: 'top',
+  },
+  scanQrButton: {
+    alignItems: 'center',
+    backgroundColor: '#fff7ed',
+    borderColor: '#fed7aa',
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 5,
+    height: 36,
+    justifyContent: 'center',
+    minWidth: 86,
+    paddingHorizontal: 12,
+  },
+  scanQrText: {
+    color: '#ff8128',
+    fontSize: 13,
+    fontWeight: '900',
   },
   safeArea: {
     backgroundColor: '#fff',

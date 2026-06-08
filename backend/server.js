@@ -508,12 +508,14 @@ const ACCESS_POLICIES = [
   { methods: ['POST'], pattern: /^\/api\/bookings$/, roles: ['customer'] },
   { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/cancel$/, roles: ['customer'] },
   { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/confirm-payment$/, roles: ['customer'] },
+  { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/start-from-qr$/, roles: ['customer'] },
   { methods: ['POST'], pattern: /^\/api\/reviews$/, roles: ['customer'] },
   { methods: ['POST'], pattern: /^\/api\/reports$/, roles: ['customer'] },
   { methods: ['POST'], pattern: /^\/api\/coupons\/use$/, roles: ['customer'] },
   { methods: ['POST'], pattern: /^\/api\/coupons\/validate$/, roles: ['customer'] },
 
   { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/confirm$/, roles: ['housekeeper'] },
+  { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/arrival-qr$/, roles: ['housekeeper'] },
   { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/reject$/, roles: ['housekeeper'] },
   { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/complete$/, roles: ['housekeeper'] },
   { methods: ['PUT'], pattern: /^\/api\/housekeepers\/\d+\/availability$/, roles: ['housekeeper', 'admin'] },
@@ -3014,6 +3016,176 @@ app.post('/api/bookings/:id/confirm', (req, res) => {
   });
 });
 
+// API: Housekeeper tao QR check-in khi da den nha khach
+app.post('/api/bookings/:id/arrival-qr', (req, res) => {
+  const bookingId = req.params.id;
+  console.log('QR arrival request:', {
+    bookingId,
+    userId: req.user?.id,
+    role: req.user?.role,
+  });
+
+  db.query(
+    `SELECT b.*, h.id AS hkRowId, h.userId AS hkUserId
+     FROM bookings b
+     JOIN housekeepers h ON b.housekeeperId = h.id
+     WHERE b.id = ?`,
+    [bookingId],
+    (err, rows) => {
+      if (err) {
+        console.error('Error loading booking for arrival QR:', err);
+        return res.status(500).json({ error: 'System error' });
+      }
+
+      if (!rows.length) {
+        console.log('QR arrival failed: booking not found', { bookingId });
+        return res.status(404).json({ error: 'Booking not found' });
+      }
+
+      const booking = rows[0];
+      if (!sameUser(booking.hkUserId, req.user.id)) {
+        console.log('QR arrival failed: unauthorized housekeeper', {
+          bookingId,
+          bookingHousekeeperUserId: booking.hkUserId,
+          requestUserId: req.user.id,
+        });
+        return res.status(403).json({ error: 'You can only create QR for your own booking' });
+      }
+
+      if (!['confirmed', 'in_progress'].includes(booking.status)) {
+        console.log('QR arrival failed: invalid status', {
+          bookingId,
+          status: booking.status,
+        });
+        return res.status(400).json({ error: 'QR is only available after the booking is confirmed' });
+      }
+
+      const qrToken = jwt.sign(
+        {
+          purpose: 'booking_check_in',
+          bookingId: Number(booking.id),
+          housekeeperId: Number(booking.hkRowId),
+          housekeeperUserId: Number(booking.hkUserId),
+        },
+        JWT_SECRET,
+        { expiresIn: '30m' }
+      );
+
+      console.log('QR arrival created successfully:', {
+        bookingId,
+        housekeeperUserId: booking.hkUserId,
+      });
+      res.json({
+        bookingId: Number(booking.id),
+        expiresInMinutes: 30,
+        qrToken,
+      });
+    }
+  );
+});
+
+// API: Customer quet QR cua housekeeper de bat dau ca lam
+app.post('/api/bookings/:id/start-from-qr', (req, res) => {
+  const bookingId = req.params.id;
+  const { qrToken } = req.body;
+
+  if (!qrToken) {
+    return res.status(400).json({ error: 'Missing QR token' });
+  }
+
+  let payload;
+  try {
+    payload = jwt.verify(qrToken, JWT_SECRET);
+  } catch (error) {
+    return res.status(400).json({ error: 'QR code is invalid or expired' });
+  }
+
+  if (payload.purpose !== 'booking_check_in' || Number(payload.bookingId) !== Number(bookingId)) {
+    return res.status(400).json({ error: 'QR code does not match this booking' });
+  }
+
+  db.query(
+    `SELECT b.*, h.id AS hkRowId, h.userId AS hkUserId
+     FROM bookings b
+     JOIN housekeepers h ON b.housekeeperId = h.id
+     WHERE b.id = ?`,
+    [bookingId],
+    (err, rows) => {
+      if (err) {
+        console.error('Error loading booking for QR start:', err);
+        return res.status(500).json({ error: 'System error' });
+      }
+
+      if (!rows.length) {
+        return res.status(404).json({ error: 'Booking not found' });
+      }
+
+      const booking = rows[0];
+      if (!sameUser(booking.customerId, req.user.id)) {
+        return res.status(403).json({ error: 'You can only scan QR for your own booking' });
+      }
+
+      if (Number(payload.housekeeperId) !== Number(booking.hkRowId) || Number(payload.housekeeperUserId) !== Number(booking.hkUserId)) {
+        return res.status(400).json({ error: 'QR code does not match the assigned housekeeper' });
+      }
+
+      if (booking.status === 'in_progress') {
+        return res.json({ message: 'Booking is already in progress', booking });
+      }
+
+      if (booking.status !== 'confirmed') {
+        return res.status(400).json({ error: 'Only confirmed bookings can be started' });
+      }
+
+      db.query(
+        'UPDATE bookings SET status = ?, updatedAt = NOW() WHERE id = ? AND status = ?',
+        ['in_progress', bookingId, 'confirmed'],
+        (updateErr, result) => {
+          if (updateErr) {
+            console.error('Error starting booking from QR:', updateErr);
+            return res.status(500).json({ error: updateErr.message });
+          }
+
+          if (result.affectedRows === 0) {
+            return res.status(409).json({ error: 'Booking status changed. Please refresh and try again.' });
+          }
+
+          db.query('SELECT * FROM bookings WHERE id = ?', [bookingId], (reloadErr, reloadedRows) => {
+            if (reloadErr || !reloadedRows.length) {
+              return res.status(500).json({ error: 'Error fetching updated booking' });
+            }
+
+            const updatedBooking = reloadedRows[0];
+            const title = 'Work shift started';
+            const message = 'Ca lam da bat dau';
+
+            saveAndSendNotification(booking.customerId, {
+              type: 'booking_started',
+              title,
+              message,
+              bookingId,
+              data: updatedBooking,
+            });
+
+            saveAndSendNotification(booking.hkUserId, {
+              type: 'booking_started',
+              title,
+              message,
+              bookingId,
+              data: updatedBooking,
+            });
+
+            res.json({
+              message: 'Booking started successfully',
+              booking: updatedBooking,
+            });
+          });
+        }
+      );
+    }
+  );
+});
+
 // API: Housekeeper t? ch?i booking
 app.post('/api/bookings/:id/reject', (req, res) => {
   const bookingId = req.params.id;
@@ -3530,6 +3702,43 @@ function sendNotificationToUser(userId, notification) {
     console.log(`❌ User ${userId} not found in active users. Available users:`, Array.from(activeUsers.keys()));
     return false;
   }
+}
+
+function saveAndSendNotification(userId, { type, title, message, bookingId = null, data = null }) {
+  const notification = {
+    id: Date.now(),
+    type,
+    title,
+    message,
+    bookingId,
+    data,
+    timestamp: new Date(),
+    read: false,
+  };
+
+  const notifSql = `INSERT INTO notifications (userId, type, title, message, bookingId, data, createdAt, read_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+  db.query(notifSql, [
+    userId,
+    type,
+    title,
+    message,
+    bookingId,
+    data ? JSON.stringify(data) : null,
+    new Date(),
+    0
+  ], (notifErr, notifResult) => {
+    if (notifErr) {
+      console.error('Error saving notification:', notifErr);
+      sendNotificationToUser(userId, notification);
+      return;
+    }
+
+    sendNotificationToUser(userId, {
+      ...notification,
+      id: notifResult?.insertId || notification.id,
+      userId,
+    });
+  });
 }
 
 function notifyUserAboutChatMessage(newMessage) {

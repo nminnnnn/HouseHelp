@@ -1,7 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { authService, type AuthUser } from '../../../lib/auth';
@@ -41,6 +43,9 @@ function formatDateTime(booking?: Booking | null) {
 export default function HousekeeperJobDetailScreen() {
   const [booking, setBooking] = useState<Booking | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isQrLoading, setIsQrLoading] = useState(false);
+  const [qrToken, setQrToken] = useState<string | null>(null);
+  const [qrVisible, setQrVisible] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
@@ -89,7 +94,8 @@ export default function HousekeeperJobDetailScreen() {
     return items.length ? items : ['None'];
   }, [booking?.notes]);
   const isPending = booking?.status === 'pending';
-  const canComplete = booking?.status === 'confirmed' || booking?.status === 'in_progress';
+  const canShowArrivalQr = booking?.status === 'confirmed';
+  const canComplete = booking?.status === 'in_progress';
 
   const openMaps = async () => {
     if (!booking?.location?.trim()) {
@@ -133,6 +139,26 @@ export default function HousekeeperJobDetailScreen() {
     } finally {
       setIsUpdating(false);
     }
+  };
+
+  const showArrivalQr = async () => {
+    if (!booking) return;
+    try {
+      setIsQrLoading(true);
+      const result = await bookingService.getArrivalQr(booking.id);
+      setQrToken(result.qrToken);
+      setQrVisible(true);
+    } catch (error: any) {
+      Alert.alert('Could not create QR', error.response?.data?.message || error.response?.data?.error || 'Please try again.');
+    } finally {
+      setIsQrLoading(false);
+    }
+  };
+
+  const copyQrToken = async () => {
+    if (!qrToken) return;
+    await Clipboard.setStringAsync(qrToken);
+    Alert.alert('Copied', 'QR token đã được copy. Bạn có thể đăng nhập customer và dán token để test trên một iPhone.');
   };
 
   if (isLoading) {
@@ -265,6 +291,15 @@ export default function HousekeeperJobDetailScreen() {
                 </>
               )}
             </TouchableOpacity>
+          ) : canShowArrivalQr ? (
+            <TouchableOpacity disabled={isQrLoading} onPress={showArrivalQr} style={styles.primaryButton}>
+              {isQrLoading ? <ActivityIndicator color="#fff" /> : (
+                <>
+                  <Text style={styles.primaryText}>Tôi đã đến</Text>
+                  <Ionicons color="#fff" name="qr-code-outline" size={18} />
+                </>
+              )}
+            </TouchableOpacity>
           ) : canComplete ? (
             <TouchableOpacity disabled={isUpdating} onPress={completeJob} style={styles.primaryButton}>
               {isUpdating ? <ActivityIndicator color="#fff" /> : (
@@ -280,6 +315,28 @@ export default function HousekeeperJobDetailScreen() {
             </TouchableOpacity>
           )}
         </View>
+
+        <Modal animationType="fade" onRequestClose={() => setQrVisible(false)} transparent visible={qrVisible}>
+          <View style={styles.modalBackdrop}>
+            <View style={styles.qrCard}>
+              <TouchableOpacity onPress={() => setQrVisible(false)} style={styles.qrCloseButton}>
+                <Ionicons color="#64748b" name="close" size={22} />
+              </TouchableOpacity>
+              <Text style={styles.qrTitle}>QR của tôi</Text>
+              <Text style={styles.qrSubtitle}>Khách hàng quét mã này để xác nhận đúng người và bắt đầu ca làm.</Text>
+              <View style={styles.qrBox}>
+                {qrToken ? <QRCode size={210} value={qrToken} /> : <ActivityIndicator color="#ff8128" />}
+              </View>
+              {qrToken ? (
+                <TouchableOpacity onPress={copyQrToken} style={styles.copyTokenButton}>
+                  <Ionicons color="#fff" name="copy-outline" size={18} />
+                  <Text style={styles.copyTokenText}>Copy QR Token</Text>
+                </TouchableOpacity>
+              ) : null}
+              <Text style={styles.qrHint}>Mã QR có hiệu lực trong 30 phút.</Text>
+            </View>
+          </View>
+        </Modal>
       </View>
     </SafeAreaView>
   );
@@ -315,6 +372,22 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 12,
+  },
+  copyTokenButton: {
+    alignItems: 'center',
+    backgroundColor: '#ff8128',
+    borderRadius: 999,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  copyTokenText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '900',
   },
   distanceBadge: {
     alignSelf: 'flex-end',
@@ -494,6 +567,13 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     marginTop: 2,
   },
+  modalBackdrop: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    flex: 1,
+    justifyContent: 'center',
+    padding: 20,
+  },
   noteText: {
     color: '#334155',
     fontSize: 14,
@@ -513,6 +593,52 @@ const styles = StyleSheet.create({
   primaryText: {
     color: '#fff',
     fontSize: 16,
+    fontWeight: '900',
+  },
+  qrBox: {
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderColor: '#fed7aa',
+    borderRadius: 16,
+    borderWidth: 1,
+    justifyContent: 'center',
+    marginTop: 16,
+    padding: 16,
+  },
+  qrCard: {
+    backgroundColor: '#fff',
+    borderRadius: 22,
+    padding: 22,
+    width: '100%',
+  },
+  qrCloseButton: {
+    alignItems: 'center',
+    height: 34,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: 12,
+    top: 12,
+    width: 34,
+    zIndex: 1,
+  },
+  qrHint: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 14,
+    textAlign: 'center',
+  },
+  qrSubtitle: {
+    color: '#64748b',
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+    marginTop: 8,
+    paddingRight: 20,
+  },
+  qrTitle: {
+    color: '#0f172a',
+    fontSize: 24,
     fontWeight: '900',
   },
   requirementRow: {

@@ -87,6 +87,22 @@ export const bookingService = {
     return response.data;
   },
 
+  getArrivalQr: async (bookingId: number) => {
+    const response = await api.post<{
+      bookingId: number;
+      expiresInMinutes: number;
+      qrToken: string;
+    }>(`/bookings/${bookingId}/arrival-qr`);
+    return response.data;
+  },
+
+  startFromQr: async (bookingId: number, qrToken: string) => {
+    const response = await api.post<{ message: string; booking: Booking }>(`/bookings/${bookingId}/start-from-qr`, {
+      qrToken,
+    });
+    return response.data;
+  },
+
   confirmPayment: async (bookingId: number, payload: ConfirmPaymentPayload) => {
     const response = await api.post<{
       booking: Booking;
