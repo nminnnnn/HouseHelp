@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -386,51 +388,64 @@ export default function CustomerBookingsScreen() {
         </ScrollView>
 
         <Modal animationType="slide" onRequestClose={closePaymentReview} transparent visible={!!selectedBooking}>
-          <View style={styles.modalBackdrop}>
-            <View style={[styles.modalCard, { paddingBottom: Math.max(insets.bottom + 18, 28) }]}>
-              <Text style={styles.modalTitle}>{text.paymentReview}</Text>
-              <Text style={styles.modalMeta}>{selectedBooking?.housekeeperName || 'Housekeeper'}</Text>
-              <Text style={styles.modalPrice}>{formatPrice(selectedBooking?.totalPrice)}</Text>
-              <Text style={styles.modalLabel}>{text.paymentMethod}</Text>
-              <View style={styles.methodRow}>
-                {paymentMethods.map((method) => (
-                  <TouchableOpacity
-                    key={method.key}
-                    onPress={() => setPaymentMethod(method.key)}
-                    style={[styles.methodButton, paymentMethod === method.key && styles.methodButtonActive]}
-                  >
-                    <Text style={[styles.methodText, paymentMethod === method.key && styles.methodTextActive]}>{typeof method.label === 'string' ? method.label : method.label[language]}</Text>
-                    {/* <Text style={[styles.methodHint, paymentMethod === method.key && styles.methodHintActive]}>{method.description}</Text> */}
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <Text style={styles.modalLabel}>{text.rating}</Text>
-              <View style={styles.starRow}>
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <TouchableOpacity key={star} onPress={() => setRating(star)}>
-                    <Ionicons color={star <= rating ? '#ff8128' : '#d1d5db'} name="star" size={31} />
-                  </TouchableOpacity>
-                ))}
-              </View>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
+            style={styles.modalKeyboard}
+          >
+            <View style={styles.modalBackdrop}>
+              <View style={[styles.modalCard, { paddingBottom: Math.max(insets.bottom + 12, 22) }]}>
+                <ScrollView
+                  contentContainerStyle={styles.modalScrollContent}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                >
+                  <Text style={styles.modalTitle}>{text.paymentReview}</Text>
+                  <Text style={styles.modalMeta}>{selectedBooking?.housekeeperName || 'Housekeeper'}</Text>
+                  <Text style={styles.modalPrice}>{formatPrice(selectedBooking?.totalPrice)}</Text>
+                  <Text style={styles.modalLabel}>{text.paymentMethod}</Text>
+                  <View style={styles.methodRow}>
+                    {paymentMethods.map((method) => (
+                      <TouchableOpacity
+                        key={method.key}
+                        onPress={() => setPaymentMethod(method.key)}
+                        style={[styles.methodButton, paymentMethod === method.key && styles.methodButtonActive]}
+                      >
+                        <Text style={[styles.methodText, paymentMethod === method.key && styles.methodTextActive]}>{typeof method.label === 'string' ? method.label : method.label[language]}</Text>
+                        {/* <Text style={[styles.methodHint, paymentMethod === method.key && styles.methodHintActive]}>{method.description}</Text> */}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <Text style={styles.modalLabel}>{text.rating}</Text>
+                  <View style={styles.starRow}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <TouchableOpacity key={star} onPress={() => setRating(star)}>
+                        <Ionicons color={star <= rating ? '#ff8128' : '#d1d5db'} name="star" size={31} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
 
-              <TextInput
-                multiline
-                onChangeText={setReview}
-                placeholder={text.reviewPlaceholder}
-                style={styles.reviewInput}
-                value={review}
-              />
+                  <TextInput
+                    multiline
+                    onChangeText={setReview}
+                    placeholder={text.reviewPlaceholder}
+                    scrollEnabled
+                    style={styles.reviewInput}
+                    value={review}
+                  />
 
-              <View style={styles.modalActions}>
-                <TouchableOpacity disabled={isSubmittingPayment} onPress={closePaymentReview} style={styles.cancelButton}>
-                  <Text style={styles.cancelText}>{text.later}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity disabled={isSubmittingPayment} onPress={submitPaymentReview} style={styles.confirmButton}>
-                  {isSubmittingPayment ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmText}>{text.confirm}</Text>}
-                </TouchableOpacity>
+                  <View style={styles.modalActions}>
+                    <TouchableOpacity disabled={isSubmittingPayment} onPress={closePaymentReview} style={styles.cancelButton}>
+                      <Text style={styles.cancelText}>{text.later}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity disabled={isSubmittingPayment} onPress={submitPaymentReview} style={styles.confirmButton}>
+                      {isSubmittingPayment ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmText}>{text.confirm}</Text>}
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
               </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
         <CustomerBottomNav />
       </View>
@@ -489,8 +504,10 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     flexDirection: 'row',
     gap: 5,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    height: 36,
+    justifyContent: 'center',
+    minWidth: 82,
+    paddingHorizontal: 13,
   },
   chatText: {
     color: '#fff',
@@ -661,8 +678,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
+    maxHeight: '88%',
     padding: 18,
     paddingBottom: 28,
+  },
+  modalKeyboard: {
+    flex: 1,
   },
   modalLabel: {
     color: '#172033',
@@ -682,6 +703,9 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '900',
     marginTop: 10,
+  },
+  modalScrollContent: {
+    paddingBottom: 4,
   },
   modalTitle: {
     color: '#172033',
@@ -708,8 +732,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#fff1e8',
     borderRadius: 999,
+    height: 36,
+    justifyContent: 'center',
+    minWidth: 82,
     paddingHorizontal: 13,
-    paddingVertical: 8,
   },
   payText: {
     color: '#ff8128',

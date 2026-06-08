@@ -130,7 +130,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   button: {
     alignItems: 'center',
-    backgroundColor: '#0f766e',
+    backgroundColor: '#ff8128',
     borderRadius: 8,
     marginTop: 10,
     padding: 15,
@@ -160,7 +160,7 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   linkText: {
-    color: '#0f766e',
+    color: '#ff8128',
     fontSize: 15,
     fontWeight: '600',
   },
