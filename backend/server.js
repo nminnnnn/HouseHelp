@@ -122,12 +122,18 @@ const db = mysql.createConnection({
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD !== undefined ? process.env.DB_PASSWORD : '',
   database: process.env.DB_NAME || 'househelp',
-  port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306
+  port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306,
+  timezone: '+07:00'
 });
 
 db.connect(err => {
   if (err) throw err;
   console.log('MySQL Connected!');
+  db.query("SET time_zone = '+07:00'", (tzErr) => {
+    if (tzErr) {
+      console.error('Failed to set MySQL timezone:', tzErr);
+    }
+  });
   ensurePaymentSettlementColumns();
   ensureVerificationAiColumns();
   ensureVerificationDocumentColumns();

@@ -18,6 +18,7 @@ function formatTime(value?: string) {
     hour: '2-digit',
     minute: '2-digit',
     month: '2-digit',
+    timeZone: 'Asia/Ho_Chi_Minh',
   });
 }
 
