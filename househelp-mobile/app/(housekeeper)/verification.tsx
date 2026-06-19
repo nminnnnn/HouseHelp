@@ -289,7 +289,7 @@ export default function HousekeeperVerificationScreen() {
 
   return (
     <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
-      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 24, 44) }]}>
+        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 24, 44) }]} keyboardShouldPersistTaps="handled">
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons color="#ff8128" name="chevron-back" size={22} />
           <Text style={styles.backText}>{text.back}</Text>

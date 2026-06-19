@@ -18,6 +18,8 @@ import { bookingService, type Booking } from '../../lib/bookings';
 import { housekeeperPreferenceService } from '../../lib/housekeeper-preferences';
 import { housekeeperService, parseServices, type Housekeeper } from '../../lib/housekeepers';
 import { useLanguage } from '../../lib/language';
+import { serviceLabel } from '../../lib/service-labels';
+import type { AppLanguage } from '../../lib/storage';
 
 function errorMessage(error: any, fallback: string) {
   const value = error?.response?.data?.message || error?.response?.data?.error || error?.message;
@@ -193,7 +195,7 @@ function sortRecommendedHousekeepers(
   });
 }
 
-function HousekeeperCard({ contactLabel, item, onPress }: { contactLabel: string; item: Housekeeper; onPress: () => void }) {
+function HousekeeperCard({ contactLabel, item, language, onPress }: { contactLabel: string; item: Housekeeper; language: AppLanguage; onPress: () => void }) {
   return (
     <TouchableOpacity activeOpacity={0.86} onPress={onPress} style={styles.housekeeperCard}>
       <View style={styles.housekeeperAvatar}>
@@ -201,7 +203,7 @@ function HousekeeperCard({ contactLabel, item, onPress }: { contactLabel: string
       </View>
       <View style={styles.housekeeperInfo}>
         <Text numberOfLines={1} style={styles.housekeeperName}>{item.fullName}</Text>
-        <Text numberOfLines={1} style={styles.housekeeperMeta}>{parseServices(item.services).join(', ') || 'House cleaning'}</Text>
+        <Text numberOfLines={1} style={styles.housekeeperMeta}>{parseServices(item.services).map((service) => serviceLabel(service, language)).join(', ') || 'House cleaning'}</Text>
         <View style={styles.housekeeperFooter}>
           <Text style={styles.rating}>★ {item.rating ?? item.avgRating ?? '0.0'}</Text>
           <Text style={styles.price}>{formatPrice(item.price, contactLabel)}</Text>
@@ -396,6 +398,7 @@ export default function CustomerHome() {
                     key={`previous-${String(item.id)}`}
                     contactLabel={text.contact}
                     item={item}
+                    language={language}
                     onPress={() => router.push(`/(customer)/housekeeper/${item.id}`)}
                   />
                 ))}
@@ -418,7 +421,7 @@ export default function CustomerHome() {
 
           <View style={styles.housekeeperList}>
             {housekeepers.slice(0, 6).map((item) => (
-              <HousekeeperCard contactLabel={text.contact} key={String(item.id)} item={item} onPress={() => router.push(`/(customer)/housekeeper/${item.id}`)} />
+              <HousekeeperCard contactLabel={text.contact} key={String(item.id)} item={item} language={language} onPress={() => router.push(`/(customer)/housekeeper/${item.id}`)} />
             ))}
           </View>
         </ScrollView>

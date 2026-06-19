@@ -24,7 +24,9 @@ import { bookingService } from '../../../lib/bookings';
 import { formatVietnamDate } from '../../../lib/date';
 import { housekeeperPreferenceService } from '../../../lib/housekeeper-preferences';
 import { housekeeperService, parseServices, type Housekeeper } from '../../../lib/housekeepers';
+import { useLanguage } from '../../../lib/language';
 import { profileService } from '../../../lib/profile';
+import { serviceLabel } from '../../../lib/service-labels';
 
 function todayDate() {
   const now = new Date();
@@ -41,15 +43,15 @@ function toDateValue(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function dateOptions() {
+function dateOptions(language: 'en' | 'vi') {
   return Array.from({ length: 14 }, (_, index) => {
     const date = new Date();
     date.setDate(date.getDate() + index);
 
     return {
       label: index === 0
-        ? 'Hom nay'
-        : date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', weekday: 'short' }),
+        ? (language === 'vi' ? 'Hôm nay' : 'Today')
+        : date.toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US', { day: '2-digit', month: '2-digit', weekday: 'short' }),
       value: toDateValue(date),
     };
   });
@@ -107,8 +109,16 @@ function formatCoordinate(value: number) {
   return value.toFixed(6);
 }
 
-function locationLabel(location: SelectedLocation) {
-  return `${location.address} (${formatCoordinate(location.latitude)}, ${formatCoordinate(location.longitude)})`;
+function uniqueAddressParts(parts: unknown[]) {
+  const seen = new Set<string>();
+  return parts.filter((part): part is string => {
+    const value = String(part || '').trim();
+    if (!value) return false;
+    const key = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export default function CreateBookingScreen() {
@@ -141,6 +151,7 @@ export default function CreateBookingScreen() {
     service?: string;
   }>();
   const router = useRouter();
+  const { language } = useLanguage();
 
   const loadSelectedAddress = useCallback(async (storedUser: AuthUser | null) => {
     if (!storedUser) return;
@@ -184,11 +195,11 @@ export default function CreateBookingScreen() {
         setDuration('3');
       }
     } catch (error: any) {
-      Alert.alert('Không tải được dữ liệu', error.response?.data?.message || error.response?.data?.error || 'Thử lại sau.');
+      Alert.alert(language === 'vi' ? 'Không tải được dữ liệu' : 'Could not load data', error.response?.data?.message || error.response?.data?.error || (language === 'vi' ? 'Thử lại sau.' : 'Please try again.'));
     } finally {
       setIsLoading(false);
     }
-  }, [housekeeperId, loadSelectedAddress, recurring, selectedService]);
+  }, [housekeeperId, language, loadSelectedAddress, recurring, selectedService]);
 
   useEffect(() => {
     loadData();
@@ -209,7 +220,7 @@ export default function CreateBookingScreen() {
   const totalPrice = basePrice + PICK_HOUSEKEEPER_FEE;
   const unitPrice = useMemo(() => parsePrice(housekeeper?.price), [housekeeper?.price]);
   const serviceOptions = useMemo(() => serviceList(housekeeper?.services), [housekeeper?.services]);
-  const availableDates = useMemo(() => dateOptions(), []);
+  const availableDates = useMemo(() => dateOptions(language), [language]);
   const selectedDuration = parseDuration(duration);
   const selectedDurationIndex = Math.max(0, durationOptions.findIndex((item) => item === selectedDuration));
   const toggleService = (item: string) => {
@@ -224,19 +235,22 @@ export default function CreateBookingScreen() {
     try {
       const results = await Location.reverseGeocodeAsync({ latitude, longitude }); //lấy địa chỉ từ tọa độ
       const place: any = results[0];
-      const parts = [
-        place?.name,
-        place?.street,
+      const streetAddress = place?.streetNumber && place?.street
+        ? `${place.streetNumber} ${place.street}`
+        : place?.name || place?.street;
+      const parts = uniqueAddressParts([
+        streetAddress,
         place?.district,
+        place?.subregion,
         place?.city,
         place?.region,
-      ].filter(Boolean);
+      ]);
 
-      return parts.length > 0 ? parts.join(', ') : `Vị trí đã chọn ${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}`;
+      return parts.length > 0 ? parts.join(', ') : `${language === 'vi' ? 'Vị trí đã chọn' : 'Selected location'} ${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}`;
     } catch {
-      return `Vị trí đã chọn ${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}`;
+      return `${language === 'vi' ? 'Vị trí đã chọn' : 'Selected location'} ${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}`;
     }
-  }, []);
+  }, [language]);
 
   const getDeviceLocation = useCallback(async () => {
     const permission = await Location.requestForegroundPermissionsAsync();
@@ -259,7 +273,7 @@ export default function CreateBookingScreen() {
     const address = await reverseGeocode(latitude, longitude);
     const nextLocation = { address, latitude, longitude };
     setSelectedLocation(nextLocation);
-    setLocation(locationLabel(nextLocation));
+    setLocation(address);
   }, [reverseGeocode]);
 
   const centerOnDeviceLocation = useCallback(async () => {
@@ -268,7 +282,7 @@ export default function CreateBookingScreen() {
       const coords = await getDeviceLocation();
       await chooseCoordinate(coords.latitude, coords.longitude);
     } catch {
-      Alert.alert('Không thể truy cập vị trí', 'Hãy kiểm tra quyền vị trí và thử lại.');
+      Alert.alert(language === 'vi' ? 'Không thể truy cập vị trí' : 'Could not access location', language === 'vi' ? 'Hãy kiểm tra quyền vị trí và thử lại.' : 'Check location permission and try again.');
     } finally {
       setIsMapLoading(false);
     }
@@ -291,7 +305,7 @@ export default function CreateBookingScreen() {
       const coords = await getDeviceLocation();
       await chooseCoordinate(coords.latitude, coords.longitude);
     } catch {
-      Alert.alert('Không lấy được vị trí', 'Bạn có thể chạm trực tiếp trên bản đồ để chọn địa chỉ.');
+      Alert.alert(language === 'vi' ? 'Không lấy được vị trí' : 'Could not get location', language === 'vi' ? 'Bạn có thể chạm trực tiếp trên bản đồ để chọn địa chỉ.' : 'You can tap the map to choose an address.');
     } finally {
       setIsMapLoading(false);
     }
@@ -306,7 +320,7 @@ export default function CreateBookingScreen() {
     const query = mapQuery.trim();
 
     if (!query) {
-      Alert.alert('Nhập địa chỉ', 'Vui lòng nhập địa chỉ cần tìm.');
+      Alert.alert(language === 'vi' ? 'Nhập địa chỉ' : 'Enter an address', language === 'vi' ? 'Vui lòng nhập địa chỉ cần tìm.' : 'Enter the address you want to find.');
       return;
     }
 
@@ -315,7 +329,7 @@ export default function CreateBookingScreen() {
       const results = await Location.geocodeAsync(query);
 
       if (!results.length) {
-        Alert.alert('Không tìm thấy', 'Vui lòng nhập địa chỉ cụ thể hơn.');
+        Alert.alert(language === 'vi' ? 'Không tìm thấy' : 'Address not found', language === 'vi' ? 'Vui lòng nhập địa chỉ cụ thể hơn.' : 'Enter a more specific address.');
         return;
       }
 
@@ -331,9 +345,9 @@ export default function CreateBookingScreen() {
         longitude: result.longitude,
       }));
       setSelectedLocation(nextLocation);
-      setLocation(locationLabel(nextLocation));
+      setLocation(query);
     } catch {
-      Alert.alert('Không tìm được địa chỉ', 'Vui lòng thử lại hoặc chạm trực tiếp trên bản đồ.');
+      Alert.alert(language === 'vi' ? 'Không tìm được địa chỉ' : 'Could not find address', language === 'vi' ? 'Vui lòng thử lại hoặc chạm trực tiếp trên bản đồ.' : 'Try again or tap the map directly.');
     } finally {
       setIsMapLoading(false);
     }
@@ -346,33 +360,33 @@ export default function CreateBookingScreen() {
 
   const validateCurrentStep = () => {
     if (currentStep === 'Location' && selectedServices.length === 0) {
-      Alert.alert('Chưa chọn dịch vụ', 'Vui lòng chọn dịch vụ cần đặt.');
+      Alert.alert(language === 'vi' ? 'Chưa chọn dịch vụ' : 'No service selected', language === 'vi' ? 'Vui lòng chọn dịch vụ cần đặt.' : 'Select at least one service.');
       return false;
     }
 
     if (currentStep === 'Location' && !location.trim()) {
-      Alert.alert('Chưa chọn địa chỉ', 'Vui lòng chọn địa chỉ làm việc.');
+      Alert.alert(language === 'vi' ? 'Chưa chọn địa chỉ' : 'No address selected', language === 'vi' ? 'Vui lòng chọn địa chỉ làm việc.' : 'Select the work address.');
       return false;
     }
 
     if (currentStep === 'Time') {
       if (!date.trim() || !time.trim()) {
-        Alert.alert('Thiếu ngày giờ', 'Vui lòng chọn ngày và khung giờ.');
+        Alert.alert(language === 'vi' ? 'Thiếu ngày giờ' : 'Missing schedule', language === 'vi' ? 'Vui lòng chọn ngày và khung giờ.' : 'Select a date and time.');
         return false;
       }
 
       if (!isValidTimeFrame(time)) {
-        Alert.alert('Khung giờ chưa hợp lệ', 'Vui lòng nhập khung giờ muốn thuê, ví dụ: 08:00-11:00 hoặc 8h đến 11h.');
+        Alert.alert(language === 'vi' ? 'Khung giờ chưa hợp lệ' : 'Invalid time', language === 'vi' ? 'Vui lòng nhập khung giờ muốn thuê, ví dụ: 08:00-11:00 hoặc 8h đến 11h.' : 'Enter a valid time, for example 08:00-11:00.');
         return false;
       }
 
       if (date < todayDate()) {
-        Alert.alert('Ngày không hợp lệ', 'Vui lòng chọn ngày hôm nay hoặc một ngày trong tương lai.');
+        Alert.alert(language === 'vi' ? 'Ngày không hợp lệ' : 'Invalid date', language === 'vi' ? 'Vui lòng chọn ngày hôm nay hoặc một ngày trong tương lai.' : 'Choose today or a future date.');
         return false;
       }
 
       if (parseDuration(duration) <= 0) {
-        Alert.alert('Thời lượng chưa hợp lệ', 'Vui lòng nhập số giờ muốn thuê.');
+        Alert.alert(language === 'vi' ? 'Thời lượng chưa hợp lệ' : 'Invalid duration', language === 'vi' ? 'Vui lòng nhập số giờ muốn thuê.' : 'Enter the number of service hours.');
         return false;
       }
     }
@@ -399,34 +413,34 @@ export default function CreateBookingScreen() {
 
   const createBooking = async () => {
     if (!user || !housekeeper) {
-      Alert.alert('Cần đăng nhập', 'Vui lòng đăng nhập lại để đặt lịch.');
+      Alert.alert(language === 'vi' ? 'Cần đăng nhập' : 'Login required', language === 'vi' ? 'Vui lòng đăng nhập lại để đặt lịch.' : 'Log in again to create a booking.');
       router.replace('/(auth)/login');
       return;
     }
 
     if (!housekeeper.available) {
-      Alert.alert('Housekeeper đang tạm nghỉ', 'Vui lòng chọn housekeeper khác đang nhận việc.');
+      Alert.alert(language === 'vi' ? 'Housekeeper đang tạm nghỉ' : 'Housekeeper unavailable', language === 'vi' ? 'Vui lòng chọn housekeeper khác đang nhận việc.' : 'Choose another housekeeper who is currently available.');
       return;
     }
 
     if (selectedServices.length === 0 || !date.trim() || !time.trim() || !location.trim()) {
-      Alert.alert('Thiếu thông tin', 'Vui lòng chọn dịch vụ, ngày, khung giờ và địa chỉ.');
+      Alert.alert(language === 'vi' ? 'Thiếu thông tin' : 'Missing information', language === 'vi' ? 'Vui lòng chọn dịch vụ, ngày, khung giờ và địa chỉ.' : 'Select services, date, time, and address.');
       return;
     }
 
     const blockedHousekeeper = await housekeeperPreferenceService.isBlocked(user.id, housekeeper.id);
     if (blockedHousekeeper) {
-      Alert.alert('Housekeeper đã bị chặn', 'Vui lòng bỏ chặn housekeeper này nếu bạn muốn đặt lịch lại.');
+      Alert.alert(language === 'vi' ? 'Housekeeper đã bị chặn' : 'Housekeeper blocked', language === 'vi' ? 'Vui lòng bỏ chặn housekeeper này nếu bạn muốn đặt lịch lại.' : 'Unblock this housekeeper before booking again.');
       return;
     }
 
     if (!isValidTimeFrame(time)) {
-      Alert.alert('Khung giờ chưa hợp lệ', 'Vui lòng nhập khung giờ muốn thuê, ví dụ: 08:00-11:00 hoặc 8h đến 11h.');
+      Alert.alert(language === 'vi' ? 'Khung giờ chưa hợp lệ' : 'Invalid time', language === 'vi' ? 'Vui lòng nhập khung giờ muốn thuê, ví dụ: 08:00-11:00 hoặc 8h đến 11h.' : 'Enter a valid time, for example 08:00-11:00.');
       return;
     }
 
     if (date < todayDate()) {
-      Alert.alert('Ngày không hợp lệ', 'Vui lòng chọn ngày hôm nay hoặc một ngày trong tương lai.');
+      Alert.alert(language === 'vi' ? 'Ngày không hợp lệ' : 'Invalid date', language === 'vi' ? 'Vui lòng chọn ngày hôm nay hoặc một ngày trong tương lai.' : 'Choose today or a future date.');
       return;
     }
 
@@ -442,6 +456,8 @@ export default function CreateBookingScreen() {
         housekeeperId: housekeeper.id,
         housekeeperName: housekeeper.fullName,
         location: location.trim(),
+        latitude: selectedLocation?.latitude,
+        longitude: selectedLocation?.longitude,
         notes: notes.trim() || undefined,
         service: selectedServices
           .map((item) => (recurring === 'monthly' ? `${item} monthly` : item))
@@ -451,11 +467,11 @@ export default function CreateBookingScreen() {
         totalPrice,
       });
 
-      Alert.alert('Đặt lịch thành công', 'Yêu cầu của bạn đã được gửi đến người giúp việc.', [
+      Alert.alert(language === 'vi' ? 'Đặt lịch thành công' : 'Booking created', language === 'vi' ? 'Yêu cầu của bạn đã được gửi đến người giúp việc.' : 'Your request was sent to the housekeeper.', [
         { text: 'Xem booking', onPress: () => router.replace('/(customer)/bookings') },
       ]);
     } catch (error: any) {
-      Alert.alert('Đặt lịch thất bại', error.response?.data?.message || error.response?.data?.error || 'Không thể tạo booking.');
+      Alert.alert(language === 'vi' ? 'Đặt lịch thất bại' : 'Booking failed', error.response?.data?.message || error.response?.data?.error || (language === 'vi' ? 'Không thể tạo booking.' : 'Could not create the booking.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -528,7 +544,7 @@ export default function CreateBookingScreen() {
                       name={isSelected ? 'checkmark-circle' : 'add-circle-outline'}
                       size={16}
                     />
-                    <Text style={[styles.serviceOptionText, isSelected && styles.serviceOptionTextActive]}>{item}</Text>
+                    <Text style={[styles.serviceOptionText, isSelected && styles.serviceOptionTextActive]}>{serviceLabel(item, language)}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -544,9 +560,14 @@ export default function CreateBookingScreen() {
               <Ionicons color="#ff8128" name="location-outline" size={18} />
             </View>
             <View style={styles.locationBody}>
-              <Text style={styles.locationTitle}>{location ? 'Địa chỉ đã chọn' : 'Chưa chọn địa chỉ'}</Text>
+              <Text style={styles.locationTitle}>{location
+                ? (language === 'vi' ? 'Địa chỉ đã chọn' : 'Selected address')
+                : (language === 'vi' ? 'Chưa chọn địa chỉ' : 'No address selected')}
+              </Text>
               <Text numberOfLines={3} style={styles.locationText}>
-                {location || 'Vui lòng chọn địa chỉ từ sổ địa chỉ hoặc trên bản đồ.'}
+                {location || (language === 'vi'
+                  ? 'Vui lòng chọn địa chỉ từ sổ địa chỉ hoặc trên bản đồ.'
+                  : 'Choose an address from your saved addresses or the map.')}
               </Text>
             </View>
             <TouchableOpacity onPress={() => router.push('/addresses')} style={styles.changeButton}>
@@ -573,7 +594,7 @@ export default function CreateBookingScreen() {
                 <View style={styles.largePin}>
                   <Ionicons color="#fff" name="location" size={30} />
                 </View>
-                <Text style={styles.mapPreviewText}>Chọn vị trí trên bản đồ</Text>
+                <Text style={styles.mapPreviewText}>{language === 'vi' ? 'Chọn vị trí trên bản đồ' : 'Choose a location on the map'}</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -600,7 +621,7 @@ export default function CreateBookingScreen() {
                   style={[styles.dateOption, isSelected && styles.dateOptionActive]}
                 >
                   <Text style={[styles.dateOptionLabel, isSelected && styles.dateOptionLabelActive]}>
-                    {index === 0 ? 'Hôm nay' : item.label.split(',')[0]}
+                    {index === 0 ? (language === 'vi' ? 'Hôm nay' : 'Today') : item.label.split(',')[0]}
                   </Text>
                   <Text style={[styles.dateOptionValue, isSelected && styles.dateOptionValueActive]}>{item.value.slice(5)}</Text>
                 </TouchableOpacity>
@@ -711,7 +732,7 @@ export default function CreateBookingScreen() {
           <Text style={styles.reviewTitle}>Review & Payment</Text>
           <View style={styles.reviewRow}>
             <Text style={styles.reviewLabel}>Service</Text>
-            <Text numberOfLines={4} style={styles.reviewValue}>{selectedServices.join(', ') || 'Not selected'}</Text>
+            <Text numberOfLines={4} style={styles.reviewValue}>{selectedServices.map((item) => serviceLabel(item, language)).join(', ') || 'Not selected'}</Text>
           </View>
           <View style={styles.reviewRow}>
             <Text style={styles.reviewLabel}>Date & time</Text>
@@ -815,11 +836,11 @@ export default function CreateBookingScreen() {
         <View style={[styles.mapScreen, { paddingTop: Math.max(insets.top, 12) }]}>
           <View style={styles.mapHeader}>
             <TouchableOpacity onPress={() => setIsMapVisible(false)} style={styles.mapHeaderButton}>
-              <Text style={styles.mapHeaderButtonText}>Đóng</Text>
+              <Text style={styles.mapHeaderButtonText}>{language === 'vi' ? 'Đóng' : 'Close'}</Text>
             </TouchableOpacity>
             <View style={styles.mapHeaderTextWrap}>
-              <Text style={styles.mapTitle}>Chọn địa chỉ</Text>
-              <Text style={styles.mapSubtitle}>Chạm trên bản đồ để đặt ghim vị trí làm việc.</Text>
+              <Text style={styles.mapTitle}>{language === 'vi' ? 'Chọn địa chỉ' : 'Choose an address'}</Text>
+              <Text style={styles.mapSubtitle}>{language === 'vi' ? 'Chạm trên bản đồ để đặt ghim vị trí làm việc.' : 'Tap the map to place the work-location pin.'}</Text>
             </View>
           </View>
 
@@ -827,17 +848,17 @@ export default function CreateBookingScreen() {
             <TextInput
               onChangeText={setMapQuery}
               onSubmitEditing={searchAddressOnMap}
-              placeholder="Nhập địa chỉ để tìm..."
+              placeholder={language === 'vi' ? 'Nhập địa chỉ để tìm...' : 'Search for an address...'}
               returnKeyType="search"
               style={styles.mapSearchInput}
               value={mapQuery}
             />
             <TouchableOpacity activeOpacity={0.84} onPress={searchAddressOnMap} style={styles.mapSearchButton}>
-              <Text style={styles.mapSearchButtonText}>Tìm</Text>
+              <Text style={styles.mapSearchButtonText}>{language === 'vi' ? 'Tìm' : 'Search'}</Text>
             </TouchableOpacity>
           </View>
           <TouchableOpacity activeOpacity={0.84} onPress={centerOnDeviceLocation} style={styles.mapLocationButton}>
-            <Text style={styles.mapLocationButtonText}>Chuyển đến vị trí hiện tại</Text>
+            <Text style={styles.mapLocationButtonText}>{language === 'vi' ? 'Chuyển đến vị trí hiện tại' : 'Use my current location'}</Text>
           </TouchableOpacity>
 
           <MapView
@@ -858,7 +879,7 @@ export default function CreateBookingScreen() {
                   const { latitude, longitude } = event.nativeEvent.coordinate;
                   chooseCoordinate(latitude, longitude);
                 }}
-                title="Vị trí làm việc"
+                title={language === 'vi' ? 'Vị trí làm việc' : 'Work location'}
               />
             ) : null}
           </MapView>
@@ -869,20 +890,20 @@ export default function CreateBookingScreen() {
               <TextInput
                 multiline
                 onChangeText={updateLocationAddress}
-                placeholder="Bổ sung số nhà, tầng, tòa nhà..."
+                placeholder={language === 'vi' ? 'Bổ sung số nhà, tầng, tòa nhà...' : 'Add house number, floor, or building...'}
                 style={styles.mapAddressInput}
                 value={location}
               />
             ) : null}
             <Text numberOfLines={2} style={styles.mapAddress}>
-              {selectedLocation ? selectedLocation.address : 'Hãy chạm vào vị trí làm việc trên bản đồ.'}
+              {selectedLocation ? selectedLocation.address : (language === 'vi' ? 'Hãy chạm vào vị trí làm việc trên bản đồ.' : 'Tap the work location on the map.')}
             </Text>
             <TouchableOpacity
               disabled={!selectedLocation}
               onPress={() => setIsMapVisible(false)}
               style={[styles.confirmMapButton, !selectedLocation && styles.confirmMapButtonDisabled]}
             >
-              <Text style={styles.confirmMapText}>Dùng vị trí này</Text>
+              <Text style={styles.confirmMapText}>{language === 'vi' ? 'Dùng vị trí này' : 'Use this location'}</Text>
             </TouchableOpacity>
           </View>
         </View>

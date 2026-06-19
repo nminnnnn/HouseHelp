@@ -6,6 +6,28 @@ import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, StyleSheet, T
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { bookingService } from '../../../lib/bookings';
+import { useLanguage } from '../../../lib/language';
+
+const copy = {
+  en: {
+    allowCamera: 'Allow camera access', back: 'Back',
+    cameraBody: 'Allow HouseHelp to use the camera to scan the housekeeper check-in QR code.',
+    cameraTitle: 'Camera access required', confirmToken: 'Confirm token', errorFallback: 'Please try again.',
+    errorTitle: 'Could not scan QR code', hint: 'Place the housekeeper QR code inside the frame to start the job.',
+    manualHint: 'Paste the token copied from the housekeeper QR screen for a one-device demo.',
+    manualPlaceholder: 'Paste QR token...', manualTitle: 'Test with QR token', scanning: 'Confirming...',
+    successBody: 'The housekeeper has been verified for this booking.', successTitle: 'The job has started', title: 'Scan QR code',
+  },
+  vi: {
+    allowCamera: 'Cho ph\u00e9p camera', back: 'Quay l\u1ea1i',
+    cameraBody: 'Cho ph\u00e9p HouseHelp d\u00f9ng camera \u0111\u1ec3 qu\u00e9t m\u00e3 QR check-in c\u1ee7a housekeeper.',
+    cameraTitle: 'C\u1ea7n quy\u1ec1n camera', confirmToken: 'X\u00e1c nh\u1eadn b\u1eb1ng token', errorFallback: 'Vui l\u00f2ng th\u1eed l\u1ea1i.',
+    errorTitle: 'Kh\u00f4ng qu\u00e9t \u0111\u01b0\u1ee3c QR', hint: '\u0110\u01b0a QR c\u1ee7a housekeeper v\u00e0o khung \u0111\u1ec3 b\u1eaft \u0111\u1ea7u ca l\u00e0m.',
+    manualHint: 'D\u00e1n token \u0111\u00e3 sao ch\u00e9p t\u1eeb m\u00e0n QR c\u1ee7a housekeeper \u0111\u1ec3 demo tr\u00ean m\u1ed9t iPhone.',
+    manualPlaceholder: 'D\u00e1n QR token...', manualTitle: 'Ki\u1ec3m th\u1eed b\u1eb1ng QR token', scanning: '\u0110ang x\u00e1c nh\u1eadn...',
+    successBody: 'Housekeeper \u0111\u00e3 \u0111\u01b0\u1ee3c x\u00e1c nh\u1eadn \u0111\u00fang booking.', successTitle: 'Ca l\u00e0m \u0111\u00e3 b\u1eaft \u0111\u1ea7u', title: 'Qu\u00e9t QR',
+  },
+} as const;
 
 export default function ScanBookingQrScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -15,6 +37,8 @@ export default function ScanBookingQrScreen() {
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { language } = useLanguage();
+  const text = copy[language];
 
   const submitQr = async (qrToken: string) => {
     const token = qrToken.trim();
@@ -24,7 +48,7 @@ export default function ScanBookingQrScreen() {
       hasScannedRef.current = true;
       setIsSubmitting(true);
       await bookingService.startFromQr(Number(bookingId), token);
-      Alert.alert('Ca làm đã bắt đầu', 'Housekeeper đã được xác nhận đúng booking.', [
+      Alert.alert(text.successTitle, text.successBody, [
         {
           text: 'OK',
           onPress: () => router.replace({
@@ -36,7 +60,7 @@ export default function ScanBookingQrScreen() {
     } catch (error: any) {
       hasScannedRef.current = false;
       setIsSubmitting(false);
-      Alert.alert('Không quét được QR', error.response?.data?.message || error.response?.data?.error || 'Vui lòng thử lại.');
+      Alert.alert(text.errorTitle, error.response?.data?.message || error.response?.data?.error || text.errorFallback);
     }
   };
 
@@ -55,19 +79,20 @@ export default function ScanBookingQrScreen() {
       <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
         <View style={styles.permissionScreen}>
           <Ionicons color="#ff8128" name="camera-outline" size={54} />
-          <Text style={styles.permissionTitle}>Cần quyền camera</Text>
-          <Text style={styles.permissionText}>Cho phép HouseHelp dùng camera để quét QR check-in của housekeeper.</Text>
+          <Text style={styles.permissionTitle}>{text.cameraTitle}</Text>
+          <Text style={styles.permissionText}>{text.cameraBody}</Text>
           <TouchableOpacity onPress={requestPermission} style={styles.primaryButton}>
-            <Text style={styles.primaryText}>Cho phép camera</Text>
+            <Text style={styles.primaryText}>{text.allowCamera}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => router.back()} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>Quay lại</Text>
+            <Text style={styles.secondaryText}>{text.back}</Text>
           </TouchableOpacity>
           <ManualTokenBox
             isSubmitting={isSubmitting}
             manualToken={manualToken}
             onChangeToken={setManualToken}
             onSubmit={() => submitQr(manualToken)}
+            text={text}
           />
         </View>
       </SafeAreaView>
@@ -86,7 +111,7 @@ export default function ScanBookingQrScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <Ionicons color="#fff" name="chevron-back" size={24} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Quét QR</Text>
+          <Text style={styles.headerTitle}>{text.title}</Text>
           <View style={styles.backButton} />
         </View>
 
@@ -97,11 +122,11 @@ export default function ScanBookingQrScreen() {
             <View style={[styles.corner, styles.cornerBottomLeft]} />
             <View style={[styles.corner, styles.cornerBottomRight]} />
           </View>
-          <Text style={styles.hint}>Đưa QR của housekeeper vào khung để bắt đầu ca làm.</Text>
+          <Text style={styles.hint}>{text.hint}</Text>
           {isSubmitting ? (
             <View style={styles.loadingPill}>
               <ActivityIndicator color="#ff8128" />
-              <Text style={styles.loadingText}>Đang xác nhận...</Text>
+              <Text style={styles.loadingText}>{text.scanning}</Text>
             </View>
           ) : null}
           <ManualTokenBox
@@ -109,6 +134,7 @@ export default function ScanBookingQrScreen() {
             manualToken={manualToken}
             onChangeToken={setManualToken}
             onSubmit={() => submitQr(manualToken)}
+            text={text}
           />
         </KeyboardAvoidingView>
       </View>
@@ -121,22 +147,24 @@ function ManualTokenBox({
   manualToken,
   onChangeToken,
   onSubmit,
+  text,
 }: {
   isSubmitting: boolean;
   manualToken: string;
   onChangeToken: (value: string) => void;
   onSubmit: () => void;
+  text: (typeof copy)[keyof typeof copy];
 }) {
   return (
     <View style={styles.manualCard}>
-      <Text style={styles.manualTitle}>Test bằng QR Token</Text>
-      <Text style={styles.manualHint}>Dán token đã copy từ màn QR của housekeeper để demo trên một iPhone.</Text>
+      <Text style={styles.manualTitle}>{text.manualTitle}</Text>
+      <Text style={styles.manualHint}>{text.manualHint}</Text>
       <TextInput
         autoCapitalize="none"
         autoCorrect={false}
         multiline
         onChangeText={onChangeToken}
-        placeholder="Dán QR token..."
+        placeholder={text.manualPlaceholder}
         placeholderTextColor="#94a3b8"
         style={styles.manualInput}
         value={manualToken}
@@ -146,7 +174,7 @@ function ManualTokenBox({
         onPress={onSubmit}
         style={[styles.manualButton, (!manualToken.trim() || isSubmitting) && styles.manualButtonDisabled]}
       >
-        {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.manualButtonText}>Xác nhận bằng token</Text>}
+        {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.manualButtonText}>{text.confirmToken}</Text>}
       </TouchableOpacity>
     </View>
   );

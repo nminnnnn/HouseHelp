@@ -10,20 +10,71 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { authService, type AuthUser } from '../../../lib/auth';
 import { bookingService, type Booking } from '../../../lib/bookings';
 import { formatVietnamDate } from '../../../lib/date';
+import { useLanguage } from '../../../lib/language';
 
-function formatPrice(value?: number | string) {
-  const price = Number(value || 0);
-  return `${price.toLocaleString('vi-VN')} VND`;
+const jobCopy = {
+  en: {
+    customerNote: 'Customer notes',
+    customerPays: 'Customer pays',
+    hours: 'hours',
+    location: 'Work location',
+    noData: 'None',
+    requirements: 'Job requirements',
+    expectedEarnings: 'Expected earnings',
+    youReceive: 'You receive',
+    footerReceive: 'You will receive',
+    arrived: 'I have arrived',
+    qrTitle: 'My QR code',
+    qrSubtitle: 'The customer scans this code to verify your identity and start the job.',
+    qrHint: 'This QR code is valid for 30 minutes.',
+  },
+  vi: {
+    customerNote: 'Ghi ch\u00fa kh\u00e1ch h\u00e0ng',
+    customerPays: 'Kh\u00e1ch h\u00e0ng thanh to\u00e1n',
+    hours: 'gi\u1edd',
+    location: '\u0110\u1ecba \u0111i\u1ec3m l\u00e0m vi\u1ec7c',
+    noData: 'Kh\u00f4ng c\u00f3',
+    requirements: 'Y\u00eau c\u1ea7u c\u00f4ng vi\u1ec7c',
+    expectedEarnings: 'Thu nh\u1eadp d\u1ef1 ki\u1ebfn',
+    youReceive: 'B\u1ea1n nh\u1eadn \u0111\u01b0\u1ee3c',
+    footerReceive: 'B\u1ea1n s\u1ebd nh\u1eadn \u0111\u01b0\u1ee3c',
+    arrived: 'T\u00f4i \u0111\u00e3 \u0111\u1ebfn',
+    qrTitle: 'M\u00e3 QR c\u1ee7a t\u00f4i',
+    qrSubtitle: 'Kh\u00e1ch h\u00e0ng qu\u00e9t m\u00e3 n\u00e0y \u0111\u1ec3 x\u00e1c nh\u1eadn \u0111\u00fang ng\u01b0\u1eddi v\u00e0 b\u1eaft \u0111\u1ea7u ca l\u00e0m.',
+    qrHint: 'M\u00e3 QR c\u00f3 hi\u1ec7u l\u1ef1c trong 30 ph\u00fat.',
+  },
+} as const;
+
+const serviceLabels: Record<string, string> = {
+  'Ch\u0103m s\u00f3c ng\u01b0\u1eddi gi\u00e0': 'Elder care',
+  'Ch\u0103m s\u00f3c tr\u1ebb em': 'Child care',
+  'D\u1ecdn d\u1eb9p': 'Cleaning',
+  'D\u1ecdn d\u1eb9p nh\u00e0 c\u1eeda': 'Home cleaning',
+  'Gi\u1eb7t \u1ee7i': 'Laundry',
+  'Gi\u1eb7t \u1ee7i qu\u1ea7n \u00e1o': 'Laundry',
+  'L\u00e0m v\u01b0\u1eddn': 'Gardening',
+  'N\u1ea5u \u0103n': 'Cooking',
+  'V\u1ec7 sinh c\u00f4ng nghi\u1ec7p': 'Industrial cleaning',
+  'V\u1ec7 sinh nh\u00e0 c\u1eeda': 'Home cleaning',
+};
+
+function displayService(value: string | undefined, language: string) {
+  if (!value) return 'House cleaning';
+  if (language !== 'en') return value;
+
+  return value.split(',').map((item) => {
+    const service = item.trim();
+    const monthly = /\s+monthly$/i.test(service);
+    const base = service.replace(/\s+monthly$/i, '');
+    return `${serviceLabels[base] || base}${monthly ? ' monthly' : ''}`;
+  }).join(', ');
 }
 
-function formatCompactPrice(value?: number | string) {
+function formatPrice(value: number | string | undefined, language: string) {
   const price = Number(value || 0);
-  return `${Math.round(price / 1000).toLocaleString('vi-VN')}K`;
-}
-
-function formatDuration(booking?: Booking | null) {
-  const duration = Number(booking?.duration || 0);
-  return duration > 0 ? `${duration} Hours Estimated` : 'Duration not set';
+  return language === 'en'
+    ? `${price.toLocaleString('en-US')} VND`
+    : `${price.toLocaleString('vi-VN')}\u0111`;
 }
 
 function formatDateTime(booking?: Booking | null) {
@@ -36,6 +87,34 @@ function formatDateTime(booking?: Booking | null) {
   const date = formatVietnamDate(rawDate, 'No date');
 
   return `${date}${booking.time ? ` • ${booking.time}` : ''}`;
+}
+
+function parseCoordinate(value: unknown, minimum: number, maximum: number) {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+
+  const parsed = Number(String(value).trim().replace(',', '.'));
+  return Number.isFinite(parsed) && parsed >= minimum && parsed <= maximum ? parsed : null;
+}
+
+function getBookingDestination(booking?: Booking | null) {
+  const rawAddress = String(booking?.location || '').trim();
+  let latitude = parseCoordinate(booking?.latitude, -90, 90);
+  let longitude = parseCoordinate(booking?.longitude, -180, 180);
+
+  const legacyCoordinates = rawAddress.match(
+    /\(\s*(-?\d{1,2}(?:[.,]\d+)?)\s*,\s*(-?\d{1,3}(?:[.,]\d+)?)\s*\)\s*$/,
+  );
+
+  if (legacyCoordinates) {
+    latitude ??= parseCoordinate(legacyCoordinates[1], -90, 90);
+    longitude ??= parseCoordinate(legacyCoordinates[2], -180, 180);
+  }
+
+  const address = rawAddress
+    .replace(/\s*\(\s*-?\d{1,2}(?:[.,]\d+)?\s*,\s*-?\d{1,3}(?:[.,]\d+)?\s*\)\s*$/, '')
+    .trim();
+
+  return { address, latitude, longitude };
 }
 
 export default function HousekeeperJobDetailScreen() {
@@ -51,6 +130,8 @@ export default function HousekeeperJobDetailScreen() {
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { language } = useLanguage();
+  const text = jobCopy[language];
 
   const loadBooking = useCallback(async () => {
     try {
@@ -97,19 +178,22 @@ export default function HousekeeperJobDetailScreen() {
   const canShowArrivalQr = booking?.status === 'confirmed';
   const canComplete = booking?.status === 'in_progress' && !booking.completionRequestedAt;
   const awaitingCustomerConfirmation = booking?.status === 'in_progress' && !!booking.completionRequestedAt;
-
   const openMaps = async () => {
-    if (!booking?.location?.trim()) {
+    const destination = getBookingDestination(booking);
+
+    if (destination.latitude === null && destination.longitude === null && !destination.address) {
       Alert.alert('No address', 'This job does not have a customer address.');
       return;
     }
 
-    const query = encodeURIComponent(booking.location.trim());
-    const url = `https://www.google.com/maps/search/?api=1&query=${query}`;
+    const hasCoordinates = destination.latitude !== null && destination.longitude !== null;
+    const url = hasCoordinates
+      ? `https://www.google.com/maps/search/?api=1&query=${destination.latitude}%2C${destination.longitude}`
+      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destination.address)}`;
     const canOpen = await Linking.canOpenURL(url);
 
     if (!canOpen) {
-      Alert.alert('Could not open Maps', booking.location);
+      Alert.alert('Could not open Maps', destination.address || 'Invalid coordinates');
       return;
     }
 
@@ -204,6 +288,35 @@ export default function HousekeeperJobDetailScreen() {
     );
   }
 
+  const destination = getBookingDestination(booking);
+  const addressParts = destination.address.split(',').map((part) => part.trim()).filter(Boolean);
+  const primaryAddress = addressParts[0] || 'Address not provided';
+  const secondaryAddress = addressParts.slice(1).join(', ');
+  const coordinates = destination.latitude !== null && destination.longitude !== null
+    ? `${destination.latitude.toFixed(6)}, ${destination.longitude.toFixed(6)}`
+    : '';
+  const bookingDate = formatVietnamDate(booking.startDate || booking.date, 'No date');
+  const statusLabel = booking.status === 'pending'
+    ? 'Pending'
+    : booking.status === 'confirmed'
+      ? 'Confirmed'
+      : booking.status === 'in_progress'
+        ? 'In progress'
+        : booking.status === 'completed'
+          ? 'Completed'
+          : booking.status === 'cancelled'
+            ? 'Cancelled'
+            : 'Rejected';
+  const statusDescription = booking.status === 'pending'
+    ? 'Job request is waiting for your response.'
+    : booking.status === 'confirmed'
+      ? 'The job has been accepted and is ready to begin.'
+      : booking.status === 'in_progress'
+        ? 'The service is currently in progress.'
+        : booking.status === 'completed'
+          ? 'The service has been completed.'
+          : 'This job is no longer active.';
+
   return (
     <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 8) }]}>
       <View style={styles.screen}>
@@ -217,96 +330,104 @@ export default function HousekeeperJobDetailScreen() {
           </TouchableOpacity>
         </View>
 
-        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 96, 120) }]} showsVerticalScrollIndicator={false}>
-        <View style={styles.jobHero}>
-  {/* <View style={styles.jobTopRow}>
-    <View style={styles.jobIcon}>
-      <Ionicons
-        color="#ff8128"
-        name="briefcase-outline"
-        size={20}
-      />
-    </View>
+        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 126, 148) }]} showsVerticalScrollIndicator={false}>
+          <View style={styles.card}>
+            <View style={styles.heroRow}>
+              <View style={styles.serviceIcon}>
+                <Ionicons color="#fff" name="sparkles" size={30} />
+              </View>
+              <View style={styles.heroCopy}>
+                <Text numberOfLines={2} style={styles.jobTitle}>{displayService(booking.service, language)}</Text>
+                <View style={styles.metaRow}>
+                  <View style={styles.metaItem}>
+                    <Text style={styles.metaText}>{bookingDate}</Text>
+                  </View>
+                  <View style={styles.metaDivider} />
+                  <View style={styles.metaItem}>
+                    <Text style={styles.metaText}>{booking.time || '--:--'}</Text>
+                  </View>
+                  <View style={styles.metaDivider} />
+                  <View style={styles.metaItem}>
+                    <Text style={styles.metaText}>{Number(booking.duration || 0) || '-'} {text.hours}</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+            <View style={styles.statusRow}>
+              <View style={styles.statusBadge}>
+                <Text style={styles.statusText}>{statusLabel}</Text>
+              </View>
+              <Text style={styles.statusDescription}>{statusDescription}</Text>
+            </View>
+          </View>
 
-    <Text style={styles.distanceBadge}>
-      2.4 miles away
-    </Text>
-  </View> */}
-
-  <Text style={styles.jobTitle}>
-    {booking.service || 'House cleaning'}
-  </Text>
-
-  <Text style={styles.jobMeta}>
-    {formatDateTime(booking)}
-  </Text>
-
-  <Text style={styles.jobMeta}>
-    {formatDuration(booking)}
-  </Text>
-</View>
-
-          <View style={styles.mapCard}>
+          <View style={styles.card}>
+            <View style={styles.cardTitleRow}>
+              <Text style={styles.cardTitle}>{text.location}</Text>
+            </View>
+            <View style={styles.locationCopy}>
+              <Text style={styles.primaryAddress}>{primaryAddress}</Text>
+              {secondaryAddress ? <Text style={styles.secondaryAddress}>{secondaryAddress}</Text> : null}
+              {coordinates ? <Text style={styles.coordinateText}>{coordinates}</Text> : null}
+            </View>
             <View style={styles.mapCanvas}>
               <View style={[styles.mapBlock, styles.mapGreenOne]} />
               <View style={[styles.mapBlock, styles.mapGreenTwo]} />
               <View style={[styles.mapBlock, styles.mapRoadOne]} />
               <View style={[styles.mapBlock, styles.mapRoadTwo]} />
-              <View style={styles.mapPin}>
-                <Ionicons color="#fff" name="location" size={26} />
-              </View>
+              <View style={styles.mapPin}><Ionicons color="#fff" name="location" size={28} /></View>
             </View>
-            <View style={styles.addressRow}>
-              <View style={styles.addressCopy}>
-                <Text style={styles.kicker}>SERVICE ADDRESS</Text>
-                <Text style={styles.address}>{booking.location || 'Address not provided'}</Text>
+            <TouchableOpacity onPress={openMaps} style={styles.mapsButton}>
+              <Ionicons color="#ff8128" name="navigate-outline" size={19} />
+              <Text style={styles.mapsText}>Open in Google Maps</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.earningsCard}>
+            <View style={styles.cardTitleRow}>
+              <Text style={styles.cardTitle}>{text.expectedEarnings}</Text>
+            </View>
+            <View style={styles.earningsColumns}>
+              <View style={styles.earningsColumn}>
+                <Text style={styles.earningsAmount}>{formatPrice(earnings, language)}</Text>
+                <Text style={styles.earningsCaption}>{text.youReceive}</Text>
               </View>
-              <TouchableOpacity onPress={openMaps} style={styles.mapsButton}>
-                <Ionicons color="#ff8128" name="navigate-outline" size={18} />
-                <Text style={styles.mapsText}>MAPS</Text>
-              </TouchableOpacity>
+              <View style={styles.earningsDivider} />
+              <View style={styles.earningsColumn}>
+                <Text style={styles.customerAmount}>{formatPrice(customerTotal, language)}</Text>
+                <Text style={styles.earningsCaption}>{text.customerPays}</Text>
+              </View>
             </View>
           </View>
 
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionTitleRow}>
-              <Ionicons color="#ff8128" name="clipboard-outline" size={18} />
-              <Text style={styles.sectionTitle}>Job Requirements</Text>
+          <View style={styles.card}>
+            <View style={styles.cardTitleRow}>
+              <Text style={styles.cardTitle}>{text.requirements}</Text>
             </View>
-            {customerRequirements.map((item) => (
-              <View key={item} style={styles.requirementRow}>
-                <Ionicons color={item === 'None' ? '#94a3b8' : '#16a34a'} name={item === 'None' ? 'remove-circle-outline' : 'checkmark-circle-outline'} size={16} />
-                <Text style={styles.requirementText}>{item}</Text>
-              </View>
-            ))}
+            <View style={styles.sectionBody}>
+              {customerRequirements.map((item) => <Text key={item} style={styles.bodyText}>{item === 'None' ? text.noData : item}</Text>)}
+            </View>
           </View>
 
-          <View style={styles.sectionCard}>
-            <Text style={styles.kicker}>CUSTOMER NOTE</Text>
-            <Text style={styles.noteText}>
-              {booking.notes || 'None'}
-            </Text>
-          </View>
-
-          <View style={styles.sectionCard}>
-            <Text style={styles.earningsKicker}>YOUR ESTIMATED EARNINGS</Text>
-            <View style={styles.earningRow}>
-              <Text style={styles.earningLabel}>Customer total</Text>
-              <Text style={styles.earningValue}>{formatPrice(customerTotal)}</Text>
+          <View style={styles.card}>
+            <View style={styles.cardTitleRow}>
+              <Text style={styles.cardTitle}>{text.customerNote}</Text>
             </View>
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Your estimated earnings</Text>
-              <Text style={styles.totalValue}>{formatCompactPrice(earnings)}</Text>
-            </View>
+            <Text style={[styles.bodyText, styles.sectionBody]}>{booking.notes || text.noData}</Text>
           </View>
         </ScrollView>
 
         <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom + 10, 18) }]}>
+          <View style={styles.footerEarnings}>
+            <Text style={styles.footerLabel}>{text.footerReceive}</Text>
+            <Text style={styles.footerAmount}>{formatPrice(earnings, language)}</Text>
+          </View>
+          <View style={styles.footerAction}>
           {isPending ? (
             <TouchableOpacity disabled={isUpdating} onPress={acceptJob} style={styles.primaryButton}>
               {isUpdating ? <ActivityIndicator color="#fff" /> : (
                 <>
-                  <Text style={styles.primaryText}>Accept Job Request</Text>
+                  <Text style={styles.primaryText}>Accept</Text>
                   <Ionicons color="#fff" name="arrow-forward" size={18} />
                 </>
               )}
@@ -315,7 +436,7 @@ export default function HousekeeperJobDetailScreen() {
             <TouchableOpacity disabled={isQrLoading} onPress={showArrivalQr} style={styles.primaryButton}>
               {isQrLoading ? <ActivityIndicator color="#fff" /> : (
                 <>
-                  <Text style={styles.primaryText}>Tôi đã đến</Text>
+                  <Text style={styles.primaryText}>{text.arrived}</Text>
                   <Ionicons color="#fff" name="qr-code-outline" size={18} />
                 </>
               )}
@@ -339,6 +460,7 @@ export default function HousekeeperJobDetailScreen() {
               <Text style={styles.primaryText}>Message Customer</Text>
             </TouchableOpacity>
           )}
+          </View>
         </View>
 
         <Modal animationType="fade" onRequestClose={() => setQrVisible(false)} transparent visible={qrVisible}>
@@ -347,8 +469,8 @@ export default function HousekeeperJobDetailScreen() {
               <TouchableOpacity onPress={() => setQrVisible(false)} style={styles.qrCloseButton}>
                 <Ionicons color="#64748b" name="close" size={22} />
               </TouchableOpacity>
-              <Text style={styles.qrTitle}>QR của tôi</Text>
-              <Text style={styles.qrSubtitle}>Khách hàng quét mã này để xác nhận đúng người và bắt đầu ca làm.</Text>
+              <Text style={styles.qrTitle}>{text.qrTitle}</Text>
+              <Text style={styles.qrSubtitle}>{text.qrSubtitle}</Text>
               <View style={styles.qrBox}>
                 {qrToken ? <QRCode size={210} value={qrToken} /> : <ActivityIndicator color="#ff8128" />}
               </View>
@@ -358,7 +480,7 @@ export default function HousekeeperJobDetailScreen() {
                   <Text style={styles.copyTokenText}>Copy QR Token</Text>
                 </TouchableOpacity>
               ) : null}
-              <Text style={styles.qrHint}>Mã QR có hiệu lực trong 30 phút.</Text>
+              <Text style={styles.qrHint}>{text.qrHint}</Text>
             </View>
           </View>
         </Modal>
@@ -396,7 +518,7 @@ export default function HousekeeperJobDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const legacyStyles = StyleSheet.create({
   cancelCompletionButton: {
     alignItems: 'center',
     borderColor: '#d8dde3',
@@ -863,3 +985,332 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
 });
+
+const styles = {
+  ...legacyStyles,
+  ...StyleSheet.create({
+    safeArea: {
+      backgroundColor: '#F7F7F8',
+      flex: 1,
+    },
+    screen: {
+      backgroundColor: '#F7F7F8',
+      flex: 1,
+    },
+    header: {
+      alignItems: 'center',
+      backgroundColor: '#FFFFFF',
+      borderBottomColor: '#ECEFF3',
+      borderBottomWidth: 1,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      minHeight: 58,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+    },
+    headerButton: {
+      alignItems: 'center',
+      height: 40,
+      justifyContent: 'center',
+      width: 40,
+    },
+    headerTitle: {
+      color: '#0F172A',
+      fontSize: 20,
+      fontWeight: '800',
+    },
+    content: {
+      gap: 14,
+      paddingHorizontal: 14,
+      paddingTop: 16,
+    },
+    card: {
+      backgroundColor: '#FFFFFF',
+      borderRadius: 20,
+      elevation: 2,
+      padding: 18,
+      shadowColor: '#0F172A',
+      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: 0.06,
+      shadowRadius: 10,
+    },
+    heroRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 14,
+    },
+    serviceIcon: {
+      alignItems: 'center',
+      backgroundColor: '#ff8128',
+      borderRadius: 30,
+      height: 60,
+      justifyContent: 'center',
+      shadowColor: '#ff8128',
+      shadowOffset: { width: 0, height: 5 },
+      shadowOpacity: 0.22,
+      shadowRadius: 8,
+      width: 60,
+    },
+    heroCopy: {
+      flex: 1,
+      minWidth: 0,
+    },
+    jobTitle: {
+      color: '#0F172A',
+      fontSize: 18,
+      fontWeight: '900',
+      lineHeight: 23,
+    },
+    metaRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginTop: 12,
+    },
+    metaItem: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 5,
+    },
+    metaText: {
+      color: '#0F172A',
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    metaDivider: {
+      backgroundColor: '#D8DEE7',
+      height: 18,
+      width: 1,
+    },
+    statusRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 12,
+      marginTop: 20,
+    },
+    statusBadge: {
+      alignItems: 'center',
+      backgroundColor: '#FFF3E8',
+      borderRadius: 999,
+      flexDirection: 'row',
+      gap: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+    },
+    statusText: {
+      color: '#ff8128',
+      fontSize: 13,
+      fontWeight: '800',
+    },
+    statusDescription: {
+      color: '#64748B',
+      flex: 1,
+      fontSize: 13,
+      lineHeight: 18,
+    },
+    cardTitleRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 10,
+    },
+    cardTitle: {
+      color: '#0F172A',
+      flex: 1,
+      fontSize: 15,
+      fontWeight: '900',
+    },
+    softIcon: {
+      alignItems: 'center',
+      backgroundColor: '#FFF3E8',
+      borderRadius: 20,
+      height: 40,
+      justifyContent: 'center',
+      width: 40,
+    },
+    locationCopy: {
+      marginTop: 12,
+    },
+    primaryAddress: {
+      color: '#0F172A',
+      fontSize: 15,
+      fontWeight: '900',
+      lineHeight: 22,
+    },
+    secondaryAddress: {
+      color: '#64748B',
+      fontSize: 14,
+      lineHeight: 20,
+      marginTop: 3,
+    },
+    coordinateText: {
+      color: '#64748B',
+      fontSize: 13,
+      lineHeight: 19,
+      marginTop: 3,
+    },
+    mapCanvas: {
+      backgroundColor: '#DBEAFE',
+      borderRadius: 14,
+      height: 150,
+      marginTop: 16,
+      overflow: 'hidden',
+    },
+    mapPin: {
+      alignItems: 'center',
+      backgroundColor: '#ff8128',
+      borderRadius: 25,
+      height: 50,
+      justifyContent: 'center',
+      left: '43%',
+      position: 'absolute',
+      top: 48,
+      width: 50,
+    },
+    mapsButton: {
+      alignItems: 'center',
+      borderColor: '#ff8128',
+      borderRadius: 13,
+      borderWidth: 1.5,
+      flexDirection: 'row',
+      gap: 8,
+      justifyContent: 'center',
+      marginTop: 12,
+      minHeight: 50,
+      paddingHorizontal: 14,
+    },
+    mapsText: {
+      color: '#ff8128',
+      fontSize: 15,
+      fontWeight: '800',
+    },
+    earningsCard: {
+      backgroundColor: '#FFF3E8',
+      borderRadius: 20,
+      elevation: 1,
+      padding: 18,
+      shadowColor: '#ff8128',
+      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: 0.08,
+      shadowRadius: 9,
+    },
+    earningsColumns: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      marginTop: 18,
+    },
+    earningsColumn: {
+      alignItems: 'center',
+      flex: 1,
+      minWidth: 0,
+    },
+    earningsDivider: {
+      backgroundColor: '#FDBA74',
+      height: 54,
+      marginHorizontal: 10,
+      width: 1,
+    },
+    earningsAmount: {
+      color: '#ff8128',
+      fontSize: 21,
+      fontWeight: '900',
+      textAlign: 'center',
+    },
+    customerAmount: {
+      color: '#0F172A',
+      fontSize: 18,
+      fontWeight: '900',
+      textAlign: 'center',
+    },
+    earningsCaption: {
+      color: '#64748B',
+      fontSize: 12,
+      fontWeight: '600',
+      marginTop: 5,
+      textAlign: 'center',
+    },
+    sectionBody: {
+      marginTop: 10,
+    },
+    bodyText: {
+      color: '#64748B',
+      fontSize: 14,
+      lineHeight: 21,
+    },
+    footer: {
+      alignItems: 'center',
+      backgroundColor: '#FFFFFF',
+      borderTopColor: '#E7EAF0',
+      borderTopWidth: 1,
+      bottom: 0,
+      elevation: 10,
+      flexDirection: 'row',
+      gap: 12,
+      left: 0,
+      paddingHorizontal: 14,
+      paddingTop: 12,
+      position: 'absolute',
+      right: 0,
+      shadowColor: '#0F172A',
+      shadowOffset: { width: 0, height: -3 },
+      shadowOpacity: 0.08,
+      shadowRadius: 10,
+    },
+    footerEarnings: {
+      flexShrink: 0,
+      width: 122,
+    },
+    footerLabel: {
+      color: '#64748B',
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    footerAmount: {
+      color: '#ff8128',
+      fontSize: 17,
+      fontWeight: '900',
+      marginTop: 3,
+    },
+    footerAction: {
+      alignItems: 'flex-end',
+      flex: 1,
+      minWidth: 0,
+    },
+    primaryButton: {
+      alignItems: 'center',
+      backgroundColor: '#ff8128',
+      borderRadius: 18,
+      flexDirection: 'row',
+      gap: 8,
+      justifyContent: 'center',
+      maxWidth: 300,
+      minHeight: 56,
+      paddingHorizontal: 18,
+    },
+    primaryText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '900',
+      textAlign: 'center',
+    },
+    waitingButton: {
+      alignItems: 'center',
+      backgroundColor: '#FFFBEB',
+      borderColor: '#FDE68A',
+      borderRadius: 18,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: 6,
+      justifyContent: 'center',
+      minHeight: 56,
+      paddingHorizontal: 8,
+    },
+    waitingText: {
+      color: '#B45309',
+      flexShrink: 1,
+      fontSize: 12,
+      fontWeight: '800',
+      textAlign: 'center',
+    },
+  }),
+};

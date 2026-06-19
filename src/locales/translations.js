@@ -184,7 +184,6 @@ const translations = {
     backToHome: "Về trang chủ",
     
     // Notifications
-    notifications: "Thông báo",
     markAllRead: "Đánh dấu tất cả đã đọc",
     noNotifications: "Không có thông báo nào",
     viewAllNotifications: "Xem tất cả thông báo",

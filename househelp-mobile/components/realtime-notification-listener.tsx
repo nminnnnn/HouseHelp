@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { Alert } from 'react-native';
 
 import { authService, type AuthUser } from '../lib/auth';
+import { useLanguage } from '../lib/language';
 import { notificationService } from '../lib/notifications';
 import { disconnectSocket, getSocket } from '../lib/socket';
 
@@ -23,6 +24,7 @@ type RealtimeNotification = {
 
 export function RealtimeNotificationListener() {
   const router = useRouter();
+  const { language } = useLanguage();
   const currentUserRef = useRef<AuthUser | null>(null);
   const displayedNotificationIdsRef = useRef(new Set<string>());
 
@@ -91,12 +93,14 @@ export function RealtimeNotificationListener() {
       const bookingId = notification.bookingId || notification.booking?.id;
 
       if (isNewBooking) {
-        const customerName = notification.booking?.customerName || 'Khách hàng';
-        const service = notification.booking?.service || 'dịch vụ gia đình';
-        Alert.alert('Đơn hàng mới', `${customerName} vừa đặt ${service}.`, [
-          { text: 'Để sau', style: 'cancel' },
+        const customerName = notification.booking?.customerName || (language === 'vi' ? 'Khách hàng' : 'A customer');
+        const service = notification.booking?.service || (language === 'vi' ? 'dịch vụ gia đình' : 'a home service');
+        const title = language === 'vi' ? 'Đơn hàng mới' : 'New booking';
+        const message = language === 'vi' ? `${customerName} vừa đặt ${service}.` : `${customerName} just booked ${service}.`;
+        Alert.alert(title, message, [
+          { text: language === 'vi' ? 'Để sau' : 'Later', style: 'cancel' },
           {
-            text: 'Xem đơn',
+            text: language === 'vi' ? 'Xem đơn' : 'View booking',
             onPress: () => {
               if (bookingId) router.push(`/(housekeeper)/job/${bookingId}`);
             },
@@ -106,10 +110,13 @@ export function RealtimeNotificationListener() {
       }
 
       const housekeeperName = notification.booking?.housekeeperName || 'Housekeeper';
-      Alert.alert('Housekeeper đã nhận đơn', `${housekeeperName} đã xác nhận booking của bạn.`, [
-        { text: 'Đóng', style: 'cancel' },
+      Alert.alert(
+        language === 'vi' ? 'Housekeeper đã nhận đơn' : 'Booking accepted',
+        language === 'vi' ? `${housekeeperName} đã xác nhận booking của bạn.` : `${housekeeperName} accepted your booking.`,
+        [
+        { text: language === 'vi' ? 'Đóng' : 'Close', style: 'cancel' },
         {
-          text: 'Xem booking',
+          text: language === 'vi' ? 'Xem booking' : 'View booking',
           onPress: () => router.push(`/(customer)/bookings?refresh=${Date.now()}`),
         },
       ]);
@@ -126,7 +133,7 @@ export function RealtimeNotificationListener() {
       socket.off('connect', joinCurrentUser);
       socket.off('notification', handleNotification);
     };
-  }, [router]);
+  }, [language, router]);
 
   return null;
 }

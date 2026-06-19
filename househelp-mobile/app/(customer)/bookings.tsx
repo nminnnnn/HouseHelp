@@ -23,6 +23,7 @@ import { authService } from '../../lib/auth';
 import { bookingService, type Booking } from '../../lib/bookings';
 import { formatVietnamDate } from '../../lib/date';
 import { useLanguage } from '../../lib/language';
+import { serviceListLabel } from '../../lib/service-labels';
 import type { AppLanguage } from '../../lib/storage';
 
 function errorMessage(error: any, fallback: string) {
@@ -130,18 +131,18 @@ function formatDate(booking: Booking, language: AppLanguage) {
 }
 
 function bookingTimeValue(booking: Booking) {
-  const rawDate = booking.startDate || booking.date || booking.createdAt;
-  const rawTime = booking.time || '00:00';
-  const dateTime = rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
-    ? new Date(`${rawDate}T${rawTime}:00+07:00`)
-    : new Date(rawDate || 0);
+  if (booking.createdAt) {
+    const createdAt = new Date(booking.createdAt).getTime();
+    if (Number.isFinite(createdAt)) return createdAt;
+  }
 
-  const time = dateTime.getTime();
-  return Number.isFinite(time) ? time : 0;
+  return Number(booking.id || 0);
 }
 
 function sortChronological(items: Booking[]) {
-  return [...items].sort((a, b) => bookingTimeValue(b) - bookingTimeValue(a));
+  return [...items].sort((a, b) => (
+    bookingTimeValue(b) - bookingTimeValue(a) || Number(b.id || 0) - Number(a.id || 0)
+  ));
 }
 
 function statusLabel(status: string, language: AppLanguage) {
@@ -187,7 +188,7 @@ function BookingCard({
   return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
-        <Text numberOfLines={1} style={styles.service}>{item.service || text.service}</Text>
+        <Text numberOfLines={1} style={styles.service}>{serviceListLabel(item.service, language, text.service)}</Text>
         <Text style={styles.status}>{statusLabel(item.status, language)}</Text>
       </View>
       <Text style={styles.meta}>{text.housekeeper}: {item.housekeeperName || `#${item.housekeeperId}`}</Text>

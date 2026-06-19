@@ -8,6 +8,7 @@ import { authService, type AuthUser } from '../../../lib/auth';
 import { housekeeperPreferenceService } from '../../../lib/housekeeper-preferences';
 import { housekeeperService, parseServices, type Housekeeper } from '../../../lib/housekeepers';
 import { useLanguage } from '../../../lib/language';
+import { serviceLabel } from '../../../lib/service-labels';
 import type { AppLanguage } from '../../../lib/storage';
 
 function formatPrice(price?: number | string, language: AppLanguage = 'vi') {
@@ -19,7 +20,7 @@ function formatPrice(price?: number | string, language: AppLanguage = 'vi') {
   return `${value.toLocaleString('vi-VN')} VND`;
 }
 
-function formatServices(services?: string | string[] | unknown, language: AppLanguage) {
+function formatServices(services: string | string[] | unknown | undefined, language: AppLanguage) {
   const items = parseServices(services);
   if (items.length > 0) return items;
   return [language === 'vi' ? 'Chưa cập nhật dịch vụ' : 'No services updated'];
@@ -46,7 +47,7 @@ function truthy(value?: number | boolean) {
   return value === true || value === 1;
 }
 
-function formatExperience(value?: number | string, language: AppLanguage) {
+function formatExperience(value: number | string | undefined, language: AppLanguage) {
   const years = Number(value);
   if (Number.isFinite(years) && years > 0) {
     return language === 'vi' ? `${years} năm` : `${years} yr`;
@@ -443,7 +444,7 @@ export default function HousekeeperDetailScreen() {
           <View style={styles.chips}>
             {services.map((service) => (
               <Text key={service} style={styles.chip}>
-                {service}
+                {serviceLabel(service, language)}
               </Text>
             ))}
           </View>

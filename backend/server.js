@@ -143,6 +143,7 @@ db.connect(err => {
   ensureVerificationAiColumns();
   ensureVerificationDocumentColumns();
   ensureBookingCompletionColumns();
+  ensureBookingLocationColumns();
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'househelp_dev_secret_change_me';
@@ -258,6 +259,21 @@ function ensureBookingCompletionColumns() {
     db.query(sql, (err) => {
       if (err && err.code !== 'ER_DUP_FIELDNAME') {
         console.error('Booking completion migration warning:', err.message);
+      }
+    });
+  });
+}
+
+function ensureBookingLocationColumns() {
+  const statements = [
+    "ALTER TABLE bookings ADD COLUMN latitude DECIMAL(10,7)",
+    "ALTER TABLE bookings ADD COLUMN longitude DECIMAL(10,7)"
+  ];
+
+  statements.forEach((sql) => {
+    db.query(sql, (err) => {
+      if (err && err.code !== 'ER_DUP_FIELDNAME') {
+        console.error('Booking location migration warning:', err.message);
       }
     });
   });
@@ -2489,8 +2505,10 @@ app.post('/api/quick-booking/find-matches', (req, res) => {
     service, 
     date, 
     time, 
-    duration, 
-    location, 
+    duration,
+    location,
+    latitude,
+    longitude,
     maxPrice, 
     urgency,
     customerId 
@@ -2594,6 +2612,8 @@ app.post('/api/quick-booking/create', (req, res) => {
     time,
     duration,
     location,
+    latitude,
+    longitude,
     notes,
     totalPrice,
     customerName,
@@ -2746,6 +2766,8 @@ app.post('/api/bookings', (req, res) => {
     time,
     duration,
     location,
+    latitude,
+    longitude,
     notes,
     totalPrice,
     customerName,
@@ -2755,6 +2777,14 @@ app.post('/api/bookings', (req, res) => {
     paymentMethod
   } = req.body;
   const normalizedPaymentMethod = normalizePaymentMethod(paymentMethod);
+  const normalizedLatitude = latitude !== null && latitude !== undefined && String(latitude).trim() !== ''
+    && Number.isFinite(Number(latitude)) && Number(latitude) >= -90 && Number(latitude) <= 90
+    ? Number(latitude)
+    : null;
+  const normalizedLongitude = longitude !== null && longitude !== undefined && String(longitude).trim() !== ''
+    && Number.isFinite(Number(longitude)) && Number(longitude) >= -180 && Number(longitude) <= 180
+    ? Number(longitude)
+    : null;
   
   const bookingData = {
     customerId,
@@ -2764,6 +2794,8 @@ app.post('/api/bookings', (req, res) => {
     time,
     duration,
     location,
+    latitude: normalizedLatitude,
+    longitude: normalizedLongitude,
     notes,
     status: 'pending',
     totalPrice,
@@ -2776,11 +2808,11 @@ app.post('/api/bookings', (req, res) => {
   };
 // lưu booking
   const sql = `INSERT INTO bookings 
-    (customerId, housekeeperId, service, startDate, time, duration, location, notes, status, totalPrice, customerName, customerEmail, customerPhone, housekeeperName, createdAt) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    (customerId, housekeeperId, service, startDate, time, duration, location, latitude, longitude, notes, status, totalPrice, customerName, customerEmail, customerPhone, housekeeperName, createdAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
     
   const values = [
-    customerId, housekeeperId, service, date, time, duration, location, notes, 
+    customerId, housekeeperId, service, date, time, duration, location, normalizedLatitude, normalizedLongitude, notes,
     'pending', totalPrice, customerName, customerEmail, customerPhone, housekeeperName, new Date()
   ];
 
@@ -3325,6 +3357,7 @@ app.get('/api/bookings/user/:id', (req, res) => {
     FROM bookings b
     WHERE b.customerId = ?
     OR b.housekeeperId IN (SELECT h.id FROM housekeepers h WHERE h.userId = ?)
+    ORDER BY b.createdAt DESC, b.id DESC
   `;
 
   db.query(sql, [userId, userId], (err, results) => {

@@ -5,7 +5,9 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,6 +19,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { addressService, addressText, type SavedAddress } from '../lib/addresses';
 import { authService, type AuthUser } from '../lib/auth';
+import { useLanguage } from '../lib/language';
 import { profileService, type UserProfile } from '../lib/profile';
 
 function AddressCard({
@@ -24,11 +27,13 @@ function AddressCard({
   isSelected,
   onDelete,
   onSelect,
+  language,
 }: {
   address: SavedAddress;
   isSelected: boolean;
   onDelete: () => void;
   onSelect: () => void;
+  language: 'en' | 'vi';
 }) {
   return (
     <TouchableOpacity activeOpacity={0.86} onPress={onSelect} style={[styles.card, isSelected && styles.selectedCard]}>
@@ -38,7 +43,7 @@ function AddressCard({
       <View style={styles.cardBody}>
         <View style={styles.cardTitleRow}>
           <Text numberOfLines={1} style={styles.cardTitle}>{address.label}</Text>
-          {isSelected ? <Text style={styles.selectedPill}>Dang dung</Text> : null}
+          {isSelected ? <Text style={styles.selectedPill}>{language === 'vi' ? 'Đang dùng' : 'Selected'}</Text> : null}
         </View>
         <Text style={styles.cardAddress}>{addressText(address)}</Text>
         {address.note ? <Text style={styles.cardNote}>{address.note}</Text> : null}
@@ -64,6 +69,7 @@ export default function AddressesScreen() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { language } = useLanguage();
 
   const loadAddresses = useCallback(async () => {
     try {
@@ -91,11 +97,11 @@ export default function AddressesScreen() {
       setAddresses(nextAddresses);
       setSelectedId(fallbackSelected);
     } catch (error: any) {
-      Alert.alert('Khong tai duoc dia chi', error.response?.data?.message || error.response?.data?.error || 'Thu lai sau.');
+      Alert.alert(language === 'vi' ? 'Không tải được địa chỉ' : 'Could not load addresses', error.response?.data?.message || error.response?.data?.error || (language === 'vi' ? 'Thử lại sau.' : 'Please try again.'));
     } finally {
       setIsLoading(false);
     }
-  }, [router]);
+  }, [language, router]);
 
   useEffect(() => {
     loadAddresses();
@@ -105,21 +111,21 @@ export default function AddressesScreen() {
     if (!user) return;
     await addressService.select(user.id, address.id);
     setSelectedId(address.id);
-    Alert.alert('Da chon dia chi', addressText(address));
+    Alert.alert(language === 'vi' ? 'Đã chọn địa chỉ' : 'Address selected', addressText(address));
   };
 
   const deleteAddress = async (address: SavedAddress) => {
     if (!user || address.isDefault) return;
 
-    Alert.alert('Xoa dia chi', `Ban muon xoa "${address.label}"?`, [
-      { style: 'cancel', text: 'Huy' },
+    Alert.alert(language === 'vi' ? 'Xóa địa chỉ' : 'Delete address', language === 'vi' ? `Bạn muốn xóa "${address.label}"?` : `Delete "${address.label}"?`, [
+      { style: 'cancel', text: language === 'vi' ? 'Hủy' : 'Cancel' },
       {
         onPress: async () => {
           await addressService.remove(user.id, address.id);
           await loadAddresses();
         },
         style: 'destructive',
-        text: 'Xoa',
+        text: language === 'vi' ? 'Xóa' : 'Delete',
       },
     ]);
   };
@@ -127,7 +133,7 @@ export default function AddressesScreen() {
   const saveAddress = async () => {
     if (!user) return;
     if (!form.label.trim() || !form.address.trim()) {
-      Alert.alert('Thieu thong tin', 'Vui long nhap ten dia chi va dia chi chi tiet.');
+      Alert.alert(language === 'vi' ? 'Thiếu thông tin' : 'Missing information', language === 'vi' ? 'Vui lòng nhập tên địa chỉ và địa chỉ chi tiết.' : 'Enter an address name and full address.');
       return;
     }
 
@@ -165,7 +171,7 @@ export default function AddressesScreen() {
       const permission = await Location.requestForegroundPermissionsAsync();
 
       if (permission.status !== 'granted') {
-        Alert.alert('Can quyen vi tri', 'Cho phep HouseHelp truy cap vi tri de tu dong nhap dia chi hien tai.');
+        Alert.alert(language === 'vi' ? 'Cần quyền vị trí' : 'Location access required', language === 'vi' ? 'Cho phép HouseHelp truy cập vị trí để tự động nhập địa chỉ hiện tại.' : 'Allow HouseHelp to access your location and fill the current address.');
         return;
       }
 
@@ -191,11 +197,11 @@ export default function AddressesScreen() {
       }));
       setIsFormOpen(true);
     } catch {
-      Alert.alert('Khong the tim vi tri', 'Vui long kiem tra quyen vi tri va thu lai hoac nhap dia chi bang tay.');
+      Alert.alert(language === 'vi' ? 'Không thể tìm vị trí' : 'Could not find location', language === 'vi' ? 'Vui lòng kiểm tra quyền vị trí và thử lại hoặc nhập địa chỉ bằng tay.' : 'Check location permission and try again, or enter the address manually.');
     } finally {
       setIsLocationLoading(false);
     }
-  }, []);
+  }, [language]);
 
   if (isLoading) {
     return (
@@ -214,20 +220,20 @@ export default function AddressesScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <Ionicons color="#ff8128" name="chevron-back" size={24} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Saved Addresses</Text>
+          <Text style={styles.headerTitle}>{language === 'vi' ? 'Địa chỉ đã lưu' : 'Saved Addresses'}</Text>
           <TouchableOpacity onPress={() => setIsFormOpen(true)} style={styles.addIconButton}>
             <Ionicons color="#fff" name="add" size={24} />
           </TouchableOpacity>
         </View>
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <Text style={styles.helperText}>Chon dia chi mac dinh khi dat dich vu, giong cach chon dia chi tren Shopee/bTaskee.</Text>
+          <Text style={styles.helperText}>{language === 'vi' ? 'Chọn địa chỉ mặc định khi đặt dịch vụ.' : 'Choose the default address used for bookings.'}</Text>
 
           {addresses.length === 0 ? (
             <View style={styles.emptyBox}>
               <Ionicons color="#cbd5e1" name="location-outline" size={46} />
-              <Text style={styles.emptyTitle}>Chua co dia chi</Text>
-              <Text style={styles.emptyText}>Them dia chi nha rieng, cong ty hoac dia chi thuong dung.</Text>
+              <Text style={styles.emptyTitle}>{language === 'vi' ? 'Chưa có địa chỉ' : 'No saved addresses'}</Text>
+              <Text style={styles.emptyText}>{language === 'vi' ? 'Thêm địa chỉ nhà riêng, công ty hoặc địa chỉ thường dùng.' : 'Add your home, workplace, or another frequently used address.'}</Text>
             </View>
           ) : (
             <View style={styles.list}>
@@ -236,6 +242,7 @@ export default function AddressesScreen() {
                   address={address}
                   isSelected={selectedId === address.id}
                   key={address.id}
+                  language={language}
                   onDelete={() => deleteAddress(address)}
                   onSelect={() => selectAddress(address)}
                 />
@@ -245,7 +252,7 @@ export default function AddressesScreen() {
 
           <TouchableOpacity onPress={useProfileAddress} style={styles.secondaryButton}>
             <Ionicons color="#ff8128" name="person-circle-outline" size={20} />
-            <Text style={styles.secondaryText}>Dung dia chi trong profile</Text>
+            <Text style={styles.secondaryText}>{language === 'vi' ? 'Dùng địa chỉ trong hồ sơ' : 'Use profile address'}</Text>
           </TouchableOpacity>
           <TouchableOpacity disabled={isLocationLoading} onPress={useCurrentLocationAddress} style={styles.secondaryButton}>
             {isLocationLoading ? (
@@ -253,53 +260,54 @@ export default function AddressesScreen() {
             ) : (
               <>
                 <Ionicons color="#ff8128" name="locate-outline" size={20} />
-                <Text style={styles.secondaryText}>Dung dia chi hien tai</Text>
+                <Text style={styles.secondaryText}>{language === 'vi' ? 'Dùng địa chỉ hiện tại' : 'Use current location'}</Text>
               </>
             )}
           </TouchableOpacity>
 
           <TouchableOpacity onPress={() => setIsFormOpen(true)} style={styles.primaryButton}>
             <Ionicons color="#fff" name="add-circle-outline" size={21} />
-            <Text style={styles.primaryText}>Them dia chi moi</Text>
+            <Text style={styles.primaryText}>{language === 'vi' ? 'Thêm địa chỉ mới' : 'Add new address'}</Text>
           </TouchableOpacity>
         </ScrollView>
 
         <Modal animationType="slide" onRequestClose={() => setIsFormOpen(false)} transparent visible={isFormOpen}>
-          <View style={styles.modalBackdrop}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalBackdrop}>
             <TouchableOpacity activeOpacity={1} onPress={() => setIsFormOpen(false)} style={styles.modalScrim} />
             <View style={styles.formPanel}>
               <View style={styles.formHeader}>
-                <Text style={styles.formTitle}>Them dia chi</Text>
+                <Text style={styles.formTitle}>{language === 'vi' ? 'Thêm địa chỉ' : 'Add address'}</Text>
                 <TouchableOpacity onPress={() => setIsFormOpen(false)} style={styles.closeButton}>
                   <Ionicons color="#172033" name="close" size={22} />
                 </TouchableOpacity>
               </View>
+              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                <Text style={styles.label}>{language === 'vi' ? 'Tên địa chỉ' : 'Address name'}</Text>
+                <TextInput onChangeText={(value) => setForm((current) => ({ ...current, label: value }))} placeholder={language === 'vi' ? 'Nhà riêng, Công ty...' : 'Home, Workplace...'} style={styles.input} value={form.label} />
 
-              <Text style={styles.label}>Ten dia chi</Text>
-              <TextInput onChangeText={(value) => setForm((current) => ({ ...current, label: value }))} placeholder="Nha rieng, Cong ty..." style={styles.input} value={form.label} />
+                <Text style={styles.label}>{language === 'vi' ? 'Địa chỉ chi tiết' : 'Full address'}</Text>
+                <TextInput multiline onChangeText={(value) => setForm((current) => ({ ...current, address: value }))} placeholder={language === 'vi' ? 'Số nhà, tên đường, tòa nhà...' : 'House number, street, building...'} style={[styles.input, styles.multiline]} value={form.address} />
 
-              <Text style={styles.label}>Dia chi chi tiet</Text>
-              <TextInput multiline onChangeText={(value) => setForm((current) => ({ ...current, address: value }))} placeholder="So nha, ten duong, toa nha..." style={[styles.input, styles.multiline]} value={form.address} />
-
-              <View style={styles.formRow}>
-                <View style={styles.formColumn}>
-                  <Text style={styles.label}>Quan/Huyen</Text>
-                  <TextInput onChangeText={(value) => setForm((current) => ({ ...current, district: value }))} style={styles.input} value={form.district} />
+                <View style={styles.formRow}>
+                  <View style={styles.formColumn}>
+                    <Text style={styles.label}>{language === 'vi' ? 'Quận/Huyện' : 'District'}</Text>
+                    <TextInput onChangeText={(value) => setForm((current) => ({ ...current, district: value }))} style={styles.input} value={form.district} />
+                  </View>
+                  <View style={styles.formColumn}>
+                    <Text style={styles.label}>{language === 'vi' ? 'Thành phố' : 'City'}</Text>
+                    <TextInput onChangeText={(value) => setForm((current) => ({ ...current, city: value }))} style={styles.input} value={form.city} />
+                  </View>
                 </View>
-                <View style={styles.formColumn}>
-                  <Text style={styles.label}>Thanh pho</Text>
-                  <TextInput onChangeText={(value) => setForm((current) => ({ ...current, city: value }))} style={styles.input} value={form.city} />
-                </View>
-              </View>
 
-              <Text style={styles.label}>Ghi chu</Text>
-              <TextInput onChangeText={(value) => setForm((current) => ({ ...current, note: value }))} placeholder="Vi du: goi truoc khi den" style={styles.input} value={form.note} />
+                <Text style={styles.label}>{language === 'vi' ? 'Ghi chú' : 'Notes'}</Text>
+                <TextInput onChangeText={(value) => setForm((current) => ({ ...current, note: value }))} placeholder={language === 'vi' ? 'Ví dụ: gọi trước khi đến' : 'Example: call before arrival'} style={styles.input} value={form.note} />
 
-              <TouchableOpacity disabled={isSaving} onPress={saveAddress} style={styles.saveButton}>
-                {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Luu va chon dia chi</Text>}
-              </TouchableOpacity>
+                <TouchableOpacity disabled={isSaving} onPress={saveAddress} style={styles.saveButton}>
+                  {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>{language === 'vi' ? 'Lưu và chọn địa chỉ' : 'Save and select address'}</Text>}
+                </TouchableOpacity>
+              </ScrollView>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
       </View>
     </SafeAreaView>
@@ -425,6 +433,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
+    maxHeight: '90%',
     padding: 18,
   },
   formRow: {

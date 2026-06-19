@@ -141,6 +141,8 @@ CREATE TABLE bookings (
   time VARCHAR(10),
   duration INT DEFAULT 2,
   location TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  latitude DECIMAL(10,7),
+  longitude DECIMAL(10,7),
   customerName VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   customerEmail VARCHAR(255),
   customerPhone VARCHAR(20),

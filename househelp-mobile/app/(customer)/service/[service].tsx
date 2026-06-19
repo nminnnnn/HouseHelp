@@ -18,6 +18,7 @@ import { authService } from '../../../lib/auth';
 import { housekeeperPreferenceService } from '../../../lib/housekeeper-preferences';
 import { housekeeperService, parseServices, type Housekeeper } from '../../../lib/housekeepers';
 import { useLanguage } from '../../../lib/language';
+import { serviceLabel } from '../../../lib/service-labels';
 import type { AppLanguage } from '../../../lib/storage';
 
 const copy = {
@@ -97,12 +98,14 @@ function searchableLocation(housekeeper: Housekeeper) {
 
 function HousekeeperCard({
   item,
+  language,
   onBook,
   onMessage,
   onOpen,
   text,
 }: {
   item: Housekeeper;
+  language: AppLanguage;
   onBook: () => void;
   onMessage: () => void;
   onOpen: () => void;
@@ -122,7 +125,7 @@ function HousekeeperCard({
           </Text>
         </View>
 
-        <Text numberOfLines={2} style={styles.services}>{parseServices(item.services).join(', ') || 'House cleaning'}</Text>
+        <Text numberOfLines={2} style={styles.services}>{parseServices(item.services).map((service) => serviceLabel(service, language)).join(', ') || 'House cleaning'}</Text>
 
         <View style={styles.metaRow}>
           <Text style={styles.rating}>★ {item.rating ?? item.avgRating ?? '0.0'}</Text>
@@ -262,6 +265,7 @@ export default function ServiceHousekeepersScreen() {
       <View style={styles.screen}>
         <ScrollView
           contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + 112, 128) }]}
+          keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadHousekeepers(true)} tintColor="#ff8128" />}
           showsVerticalScrollIndicator={false}
         >
@@ -374,6 +378,7 @@ export default function ServiceHousekeepersScreen() {
                 <HousekeeperCard
                   item={housekeeper}
                   key={String(housekeeper.id)}
+                  language={language}
                   onBook={() => openBooking(housekeeper)}
                   onMessage={() => openChat(housekeeper)}
                   onOpen={() => router.push(`/(customer)/housekeeper/${housekeeper.id}`)}

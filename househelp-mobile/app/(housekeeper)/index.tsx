@@ -25,6 +25,7 @@ import {
   type HousekeeperEarnings,
 } from '../../lib/housekeepers';
 import { useLanguage } from '../../lib/language';
+import { serviceLabel, serviceListLabel } from '../../lib/service-labels';
 import type { AppLanguage } from '../../lib/storage';
 import { verificationService } from '../../lib/verification';
 
@@ -254,11 +255,6 @@ function parseBookingStart(booking: Booking) {
 }
 
 function bookingRecencyValue(booking: Booking) {
-  const start = parseBookingStart(booking);
-  if (start) {
-    return start.getTime();
-  }
-
   if (booking.createdAt) {
     const created = new Date(booking.createdAt);
     if (!Number.isNaN(created.getTime())) {
@@ -266,7 +262,7 @@ function bookingRecencyValue(booking: Booking) {
     }
   }
 
-  return 0;
+  return Number(booking.id || 0);
 }
 
 function minutesUntil(date: Date) {
@@ -313,7 +309,7 @@ function JobCard({
       <TouchableOpacity activeOpacity={0.86} onPress={onOpen}>
         <View style={styles.cardHeader}>
           <Text numberOfLines={1} style={styles.service}>
-            {item.service || text.service}
+            {serviceListLabel(item.service, language, text.service)}
           </Text>
           <Text style={[styles.status, styles[`status_${item.status}` as keyof typeof styles] || styles.statusDefault]}>
             {statusLabel(item.status, language)}
@@ -450,7 +446,9 @@ export default function HousekeeperDashboard() {
   }, [earningsPaymentMethod, earningsPeriod, earningsRefreshKey, statisticsText.earningsLoadError, user?.id]);
 
   const filteredBookings = useMemo(() => {
-    const sortedBookings = [...bookings].sort((left, right) => bookingRecencyValue(right) - bookingRecencyValue(left));
+    const sortedBookings = [...bookings].sort((left, right) => (
+      bookingRecencyValue(right) - bookingRecencyValue(left) || Number(right.id || 0) - Number(left.id || 0)
+    ));
 
     if (activeFilter === 'all') {
       return sortedBookings;
@@ -679,7 +677,7 @@ export default function HousekeeperDashboard() {
                     {'Update services'}
                   </Text>
                   <Text numberOfLines={1} style={styles.servicesToggleSubtitle}>
-                    {selectedServices.length > 0 ? selectedServices.join(', ') : text.noValue}
+                    {selectedServices.length > 0 ? selectedServices.map((service) => serviceLabel(service, language)).join(', ') : text.noValue}
                   </Text>
                 </View>
                 <Ionicons color="#ff8128" name={showServices ? 'chevron-up' : 'chevron-down'} size={20} />
@@ -1316,7 +1314,7 @@ const styles = StyleSheet.create({
   },
   serviceChipText: {
     color: '#374151',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '800',
     textAlign: 'center',
   },
@@ -1353,18 +1351,18 @@ const styles = StyleSheet.create({
   },
   servicesToggleSubtitle: {
     color: '#6b7280',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '700',
     marginTop: 3,
   },
   servicesToggleTitle: {
     color: '#172033',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '900',
   },
   status: {
     borderRadius: 999,
-    fontSize: 12,
+    fontSize: 16,
     fontWeight: '800',
     overflow: 'hidden',
     paddingHorizontal: 10,

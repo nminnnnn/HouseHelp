@@ -8,6 +8,7 @@ import { authService, type AuthUser } from '../lib/auth';
 import { housekeeperPreferenceService } from '../lib/housekeeper-preferences';
 import { housekeeperService, parseServices, type Housekeeper } from '../lib/housekeepers';
 import { useLanguage } from '../lib/language';
+import { serviceLabel } from '../lib/service-labels';
 
 const copy = {
   en: {
@@ -117,7 +118,7 @@ export default function BlockedHousekeepersScreen() {
                 </View>
                 <View style={styles.cardBody}>
                   <Text numberOfLines={1} style={styles.name}>{housekeeper.fullName}</Text>
-                  <Text numberOfLines={1} style={styles.meta}>{parseServices(housekeeper.services).join(', ') || 'House cleaning'}</Text>
+                  <Text numberOfLines={1} style={styles.meta}>{parseServices(housekeeper.services).map((service) => serviceLabel(service, language)).join(', ') || 'House cleaning'}</Text>
                 </View>
                 <TouchableOpacity onPress={() => unblock(housekeeper.id)} style={styles.unblockButton}>
                   <Text style={styles.unblockText}>{text.unblock}</Text>

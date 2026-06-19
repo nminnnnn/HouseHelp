@@ -5,6 +5,18 @@ import { authHeaders } from '../api/userApi';
 import './AdminDashboard.css';
 
 const authGet = () => ({ headers: authHeaders() });
+const asArray = (value) => (Array.isArray(value) ? value : []);
+const asObject = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
+
+const readJson = async (response, fallback) => {
+  if (!response.ok) return fallback;
+
+  try {
+    return await response.json();
+  } catch {
+    return fallback;
+  }
+};
 
 const AdminDashboard = () => {
   const [overview, setOverview] = useState({});
@@ -69,15 +81,37 @@ const AdminDashboard = () => {
         fetch('http://localhost:5000/api/admin/dashboard/housekeeper-details', authGet())
       ]);
 
-      setOverview(await overviewRes.json());
-      setBookingStats(await bookingStatsRes.json());
-      setTopHousekeepers(await topHousekeepersRes.json());
-      setTimeStats(await timeStatsRes.json());
-      setServiceStats(await serviceStatsRes.json());
-      setHousekeeperStatus(await housekeeperStatusRes.json());
-      setUserGrowth(await userGrowthRes.json());
-      setReviews(await reviewsRes.json());
-      setHousekeeperDetails(await housekeeperDetailsRes.json());
+      const [
+        overviewData,
+        bookingStatsData,
+        topHousekeepersData,
+        timeStatsData,
+        serviceStatsData,
+        housekeeperStatusData,
+        userGrowthData,
+        reviewsData,
+        housekeeperDetailsData,
+      ] = await Promise.all([
+        readJson(overviewRes, {}),
+        readJson(bookingStatsRes, []),
+        readJson(topHousekeepersRes, []),
+        readJson(timeStatsRes, []),
+        readJson(serviceStatsRes, []),
+        readJson(housekeeperStatusRes, []),
+        readJson(userGrowthRes, []),
+        readJson(reviewsRes, []),
+        readJson(housekeeperDetailsRes, {}),
+      ]);
+
+      setOverview(asObject(overviewData));
+      setBookingStats(asArray(bookingStatsData));
+      setTopHousekeepers(asArray(topHousekeepersData));
+      setTimeStats(asArray(timeStatsData));
+      setServiceStats(asArray(serviceStatsData));
+      setHousekeeperStatus(asArray(housekeeperStatusData));
+      setUserGrowth(asArray(userGrowthData));
+      setReviews(asArray(reviewsData));
+      setHousekeeperDetails(asObject(housekeeperDetailsData));
     } catch (error) {
       console.error('Error fetching admin data:', error);
     } finally {
@@ -95,7 +129,7 @@ const AdminDashboard = () => {
 
       if (response.ok) {
         const statusRes = await fetch('http://localhost:5000/api/admin/housekeepers/status', authGet());
-        setHousekeeperStatus(await statusRes.json());
+        setHousekeeperStatus(asArray(await readJson(statusRes, [])));
       }
     } catch (error) {
       console.error('Error updating housekeeper status:', error);
@@ -289,7 +323,7 @@ const AdminDashboard = () => {
         throw new Error(errorData.error || 'Lỗi gửi cảnh cáo');
       }
 
-      const result = await response.json();
+      await response.json();
       
       alert('Cảnh cáo đã được gửi thành công đến người giúp việc!');
       

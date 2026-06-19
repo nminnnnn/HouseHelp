@@ -12,6 +12,8 @@ export type Booking = {
   time?: string;
   duration?: number;
   location?: string;
+  latitude?: number | string;
+  longitude?: number | string;
   notes?: string;
   status: BookingStatus;
   totalPrice?: number | string;
@@ -39,6 +41,8 @@ export type CreateBookingPayload = {
   time: string;
   duration: number;
   location: string;
+  latitude?: number;
+  longitude?: number;
   notes?: string;
   totalPrice: number;
   customerName?: string;
@@ -55,6 +59,17 @@ export type ConfirmPaymentPayload = {
   review?: string;
 };
 
+function newestBookingFirst(left: Booking, right: Booking) {
+  const leftCreatedAt = left.createdAt ? new Date(left.createdAt).getTime() : Number.NaN;
+  const rightCreatedAt = right.createdAt ? new Date(right.createdAt).getTime() : Number.NaN;
+
+  if (Number.isFinite(leftCreatedAt) && Number.isFinite(rightCreatedAt) && leftCreatedAt !== rightCreatedAt) {
+    return rightCreatedAt - leftCreatedAt;
+  }
+
+  return Number(right.id || 0) - Number(left.id || 0);
+}
+
 export const bookingService = {
   create: async (payload: CreateBookingPayload) => {
     const response = await api.post<Booking>('/bookings', payload);
@@ -64,7 +79,7 @@ export const bookingService = {
 
   getForUser: async (userId: number) => {
     const response = await api.get<Booking[]>(`/bookings/user/${userId}`);
-    return response.data;
+    return [...response.data].sort(newestBookingFirst);
   },
 
   confirm: async (bookingId: number, housekeeperId: number) => {

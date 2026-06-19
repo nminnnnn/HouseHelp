@@ -85,7 +85,7 @@ export default function MobileChatbotScreen() {
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const { language } = useLanguage();
   const text = copy[language];
-  const [suggestions, setSuggestions] = useState<string[]>(text.suggestions);
+  const [suggestions, setSuggestions] = useState<string[]>([...text.suggestions]);
   const [user, setUser] = useState<AuthUser | null>(null);
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList<UiMessage>>(null);
@@ -158,7 +158,7 @@ export default function MobileChatbotScreen() {
           type: 'assistant',
         },
       ]);
-      setSuggestions(response.suggestions?.length ? response.suggestions : copy[language].suggestions);
+      setSuggestions(response.suggestions?.length ? response.suggestions : [...copy[language].suggestions]);
     } catch (error: any) {
       const serverMessage =
         error.response?.data?.message ||
@@ -173,7 +173,7 @@ export default function MobileChatbotScreen() {
           type: 'assistant',
         },
       ]);
-      setSuggestions(copy[language].suggestions);
+      setSuggestions([...copy[language].suggestions]);
     } finally {
       setIsSending(false);
     }
@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
   },
   title: {
     color: '#172033',
-    fontSize: 34,
+    fontSize: 30,
     fontWeight: '900',
   },
   userBubble: {
