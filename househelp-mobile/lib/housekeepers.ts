@@ -78,10 +78,21 @@ export type HousekeeperEarnings = {
   cashCollected?: number | string;
   cashPlatformFeeDue?: number | string;
   grossPaid?: number | string;
+  netEarnings?: number | string;
   paidBookings?: number;
   paidOut?: number | string;
   pendingPayout?: number | string;
   platformFees?: number | string;
+  period?: EarningsPeriod;
+  paymentMethod?: EarningsPaymentMethod;
+};
+
+export type EarningsPeriod = 'day' | 'month' | 'year';
+export type EarningsPaymentMethod = 'all' | 'bank_transfer' | 'cash' | 'credit_card' | 'e_wallet' | 'momo';
+
+export type EarningsFilters = {
+  paymentMethod?: EarningsPaymentMethod;
+  period?: EarningsPeriod;
 };
 
 function normalizeHousekeeper(housekeeper: Housekeeper): Housekeeper {
@@ -131,8 +142,13 @@ export const housekeeperService = {
     return normalizeHousekeeper(response.data);
   },
 
-  getEarnings: async (userId: number | string) => {
-    const response = await api.get<HousekeeperEarnings>(`/housekeepers/${userId}/earnings`);
+  getEarnings: async (userId: number | string, filters: EarningsFilters = {}) => {
+    const response = await api.get<HousekeeperEarnings>(`/housekeepers/${userId}/earnings`, {
+      params: {
+        paymentMethod: filters.paymentMethod || 'all',
+        period: filters.period || 'month',
+      },
+    });
     return response.data;
   },
 };

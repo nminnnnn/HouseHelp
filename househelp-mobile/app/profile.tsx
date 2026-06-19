@@ -18,6 +18,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { CustomerBottomNav } from '../components/customer-bottom-nav';
 import { authService, type AuthUser } from '../lib/auth';
+import { toVietnamDateInput } from '../lib/date';
 import { useLanguage } from '../lib/language';
 import { profileService, type UserProfile } from '../lib/profile';
 import { storage, type AppLanguage } from '../lib/storage';
@@ -156,13 +157,7 @@ function formatCoordinate(value: number) {
 }
 
 function normalizeDateOfBirth(value?: string) {
-  if (!value) return undefined;
-  const dateOnly = value.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (dateOnly) return dateOnly[1];
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return undefined;
-  return parsed.toISOString().slice(0, 10);
+  return toVietnamDateInput(value);
 }
 
 export default function ProfileScreen() {

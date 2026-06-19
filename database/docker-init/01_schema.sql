@@ -146,6 +146,10 @@ CREATE TABLE bookings (
   customerPhone VARCHAR(20),
   housekeeperName VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   service VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  completionProofUrl VARCHAR(500),
+  completionNotes TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  completionRequestedAt DATETIME,
+  customerConfirmedAt DATETIME,
   -- Quick Booking columns
   urgency ENUM('normal', 'urgent', 'asap') DEFAULT 'normal',
   isQuickBooking BOOLEAN DEFAULT FALSE,

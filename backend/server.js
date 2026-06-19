@@ -61,6 +61,10 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const { fileType } = req.body;
     let subDir = 'general';
+
+    if (file.fieldname === 'completionProof') {
+      subDir = 'completion_proofs';
+    } else {
     
     switch (fileType) {
       case 'avatar':
@@ -75,6 +79,7 @@ const storage = multer.diskStorage({
         break;
       default:
         subDir = 'general';
+    }
     }
     
     const fullPath = path.join(uploadsDir, subDir);
@@ -137,6 +142,7 @@ db.connect(err => {
   ensurePaymentSettlementColumns();
   ensureVerificationAiColumns();
   ensureVerificationDocumentColumns();
+  ensureBookingCompletionColumns();
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'househelp_dev_secret_change_me';
@@ -235,6 +241,23 @@ function ensureVerificationDocumentColumns() {
     db.query(sql, (err) => {
       if (err && err.code !== 'ER_DUP_FIELDNAME' && err.code !== 'ER_DUP_KEYNAME') {
         console.error('Verification document migration warning:', err.message);
+      }
+    });
+  });
+}
+
+function ensureBookingCompletionColumns() {
+  const statements = [
+    "ALTER TABLE bookings ADD COLUMN completionProofUrl VARCHAR(500)",
+    "ALTER TABLE bookings ADD COLUMN completionNotes TEXT",
+    "ALTER TABLE bookings ADD COLUMN completionRequestedAt DATETIME",
+    "ALTER TABLE bookings ADD COLUMN customerConfirmedAt DATETIME"
+  ];
+
+  statements.forEach((sql) => {
+    db.query(sql, (err) => {
+      if (err && err.code !== 'ER_DUP_FIELDNAME') {
+        console.error('Booking completion migration warning:', err.message);
       }
     });
   });
@@ -514,6 +537,7 @@ const ACCESS_POLICIES = [
   { methods: ['POST'], pattern: /^\/api\/bookings$/, roles: ['customer'] },
   { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/cancel$/, roles: ['customer'] },
   { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/confirm-payment$/, roles: ['customer'] },
+  { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/confirm-completion$/, roles: ['customer'] },
   { methods: ['POST'], pattern: /^\/api\/bookings\/\d+\/start-from-qr$/, roles: ['customer'] },
   { methods: ['POST'], pattern: /^\/api\/reviews$/, roles: ['customer'] },
   { methods: ['POST'], pattern: /^\/api\/reports$/, roles: ['customer'] },
@@ -2350,7 +2374,8 @@ app.get('/api/bookings', (req, res) => {
   const { status, housekeeper, customer, date, month, year, page = 1, limit = 50 } = req.query;
   
   let sql = `
-    SELECT b.*, 
+    SELECT b.*,
+      DATE_FORMAT(b.startDate, '%Y-%m-%d') as startDate,
            u1.fullName as customerName, u1.email as customerEmail,
            u2.fullName as housekeeperName, u2.email as housekeeperEmail,
            s.name as serviceName
@@ -2788,8 +2813,8 @@ app.post('/api/bookings', (req, res) => {
     const notificationToHousekeeper = {
       id: Date.now(),
       type: 'new_booking',
-      title: 'Don dat lich moi',
-      message: `${customerName} da dat lich dich vu ${service}`,
+      title: '\u0110\u01a1n h\u00e0ng m\u1edbi',
+      message: `${customerName} \u0111\u00e3 \u0111\u1eb7t d\u1ecbch v\u1ee5 ${service}`,
       bookingId: bookingId,
       booking: newBooking,
       timestamp: new Date(),
@@ -2988,6 +3013,8 @@ app.post('/api/bookings/:id/confirm', (req, res) => {
         timestamp: new Date(),
         read: false
       };
+      notificationToCustomer.title = '\u0110\u1eb7t l\u1ecbch \u0111\u00e3 \u0111\u01b0\u1ee3c x\u00e1c nh\u1eadn';
+      notificationToCustomer.message = `${booking.housekeeperName || 'Housekeeper'} \u0111\u00e3 nh\u1eadn \u0111\u01a1n \u0111\u1eb7t l\u1ecbch c\u1ee7a b\u1ea1n`;
 
       console.log('?? Sending confirmation notification to customer:', booking.customerId);
       console.log('Notification data:', notificationToCustomer);
@@ -3290,6 +3317,7 @@ app.get('/api/bookings/user/:id', (req, res) => {
   // T�m housekeepers.id tuong ?ng v?i users.id (d? h? tr? c? 2 tru?ng h?p)
   const sql = `
     SELECT b.*,
+      DATE_FORMAT(b.startDate, '%Y-%m-%d') as startDate,
       (SELECT p.method FROM payments p WHERE p.bookingId = b.id ORDER BY p.createdAt DESC LIMIT 1) as paymentMethod,
       (SELECT p.settlementStatus FROM payments p WHERE p.bookingId = b.id ORDER BY p.createdAt DESC LIMIT 1) as settlementStatus,
       (SELECT p.platformFee FROM payments p WHERE p.bookingId = b.id ORDER BY p.createdAt DESC LIMIT 1) as platformFee,
@@ -4970,9 +4998,14 @@ app.put('/api/admin/housekeepers/:userId/status', (req, res) => {
 // ========================
 
 // API: Housekeeper đánh dấu công việc hoàn thành
-app.post('/api/bookings/:id/complete', (req, res) => {
+app.post('/api/bookings/:id/complete', upload.single('completionProof'), (req, res) => {
   const bookingId = req.params.id;
-  const { housekeeperId, completionNotes } = req.body;
+  const { completionNotes } = req.body;
+  const housekeeperId = req.user?.id;
+
+  if (!req.file) {
+    return res.status(400).json({ error: 'A completion photo is required' });
+  }
 
   console.log(`🏁 Complete booking ${bookingId}`, { housekeeperId });
 
@@ -4994,14 +5027,14 @@ app.post('/api/bookings/:id/complete', (req, res) => {
       const row = bkRows[0];
       const hkRowId = row.hkRowId;
       const hkUserId = row.hkUserId;
-      const bodyHk = housekeeperId != null && housekeeperId !== '' ? Number(housekeeperId) : null;
       const jwtUid = req.user ? Number(req.user.id) : NaN;
       const matchesJwt = req.user && req.user.role === 'housekeeper' && jwtUid === Number(hkUserId);
-      const matchesBody =
-        bodyHk != null && !Number.isNaN(bodyHk) &&
-        (bodyHk === Number(hkRowId) || bodyHk === Number(hkUserId));
-      if (!matchesJwt && !matchesBody) {
+      if (!matchesJwt) {
         return res.status(403).json({ error: 'Bạn không có quyền hoàn thành booking này' });
+      }
+
+      if (row.status !== 'in_progress') {
+        return res.status(409).json({ error: 'Booking must be in progress before submitting completion proof' });
       }
 
       db.query('SELECT isVerified, isApproved FROM users WHERE id = ?', [hkUserId], (verifyErr, verifyResults) => {
@@ -5023,9 +5056,12 @@ app.post('/api/bookings/:id/complete', (req, res) => {
           });
         }
 
+        const completionProofUrl = publicFileUrl(`/uploads/completion_proofs/${req.file.filename}`);
         db.query(
-          'UPDATE bookings SET status = ?, updatedAt = NOW() WHERE id = ? AND housekeeperId = ?',
-          ['completed', bookingId, hkRowId],
+          `UPDATE bookings SET completionProofUrl = ?, completionNotes = ?,
+             completionRequestedAt = NOW(), customerConfirmedAt = NULL, updatedAt = NOW()
+           WHERE id = ? AND housekeeperId = ? AND status = 'in_progress'`,
+          [completionProofUrl, completionNotes || null, bookingId, hkRowId],
           (err, result) => {
             if (err) {
               console.error('Error completing booking:', err);
@@ -5036,28 +5072,14 @@ app.post('/api/bookings/:id/complete', (req, res) => {
               return res.status(404).json({ error: 'Booking not found or unauthorized' });
             }
 
-            const booking = { ...row };
+            const booking = {
+              ...row,
+              completionProofUrl,
+              completionNotes: completionNotes || null,
+              completionRequestedAt: new Date().toISOString(),
+            };
             delete booking.hkRowId;
             delete booking.hkUserId;
-
-            db.query(
-              'UPDATE housekeepers SET completedJobs = completedJobs + 1 WHERE id = ?',
-              [hkRowId],
-              (cjErr) => {
-                if (cjErr) console.error('Error updating completed jobs:', cjErr);
-              }
-            );
-
-            const paymentSql = `INSERT INTO payments (bookingId, customerId, method, amount, status, createdAt)` +
-              ` SELECT ?, ?, ?, ?, ?, NOW() WHERE NOT EXISTS (` +
-              `SELECT 1 FROM payments WHERE bookingId = ? AND customerId = ? LIMIT 1)`;
-            db.query(
-              paymentSql,
-              [bookingId, booking.customerId, 'cash', booking.totalPrice, 'pending', bookingId, booking.customerId],
-              (payErr) => {
-                if (payErr) console.error('Error creating payment record:', payErr);
-              }
-            );
 
             const notificationToCustomer = {
               id: Date.now(),
@@ -5069,6 +5091,9 @@ app.post('/api/bookings/:id/complete', (req, res) => {
               timestamp: new Date(),
               read: false
             };
+            notificationToCustomer.type = 'completion_confirmation_required';
+            notificationToCustomer.title = 'Xac nhan hoan thanh cong viec';
+            notificationToCustomer.message = `${booking.housekeeperName || 'Housekeeper'} da gui anh hien truong. Vui long kiem tra va xac nhan.`;
 
             console.log('✅ Sending completion notification to customer:', booking.customerId);
             sendNotificationToUser(booking.customerId, notificationToCustomer);
@@ -5083,7 +5108,7 @@ app.post('/api/bookings/:id/complete', (req, res) => {
                 notificationToCustomer.title,
                 notificationToCustomer.message,
                 bookingId,
-                JSON.stringify({ ...booking, completionNotes }),
+                JSON.stringify(booking),
                 new Date(),
                 0
               ],
@@ -5093,19 +5118,77 @@ app.post('/api/bookings/:id/complete', (req, res) => {
             );
 
             res.json({
-              message: 'Booking completed successfully',
+              message: 'Completion proof submitted; waiting for customer confirmation',
               booking: booking,
-              paymentRequired: true
+              awaitingCustomerConfirmation: true
             });
           });
       });
     });
 });
 
+// Customer confirms the proof before payment and review are enabled.
+app.post('/api/bookings/:id/confirm-completion', (req, res) => {
+  const bookingId = Number(req.params.id);
+  const customerId = Number(req.user.id);
+
+  db.query(
+    `SELECT b.*, h.userId AS hkUserId
+     FROM bookings b
+     JOIN housekeepers h ON h.id = b.housekeeperId
+     WHERE b.id = ? AND b.customerId = ?`,
+    [bookingId, customerId],
+    (loadErr, rows) => {
+      if (loadErr) return res.status(500).json({ error: loadErr.message });
+      if (!rows.length) return res.status(404).json({ error: 'Booking not found or unauthorized' });
+
+      const booking = rows[0];
+      if (booking.status !== 'in_progress' || !booking.completionProofUrl || !booking.completionRequestedAt) {
+        return res.status(409).json({ error: 'The housekeeper has not submitted valid completion proof' });
+      }
+
+      db.query(
+        `UPDATE bookings SET status = 'completed', customerConfirmedAt = NOW(), updatedAt = NOW()
+         WHERE id = ? AND customerId = ? AND status = 'in_progress'`,
+        [bookingId, customerId],
+        (updateErr, result) => {
+          if (updateErr) return res.status(500).json({ error: updateErr.message });
+          if (!result.affectedRows) return res.status(409).json({ error: 'Booking status has changed' });
+
+          db.query('UPDATE housekeepers SET completedJobs = completedJobs + 1 WHERE id = ?', [booking.housekeeperId]);
+          const paymentSql = `INSERT INTO payments (bookingId, customerId, method, amount, status, createdAt)` +
+            ` SELECT ?, ?, ?, ?, 'pending', NOW() WHERE NOT EXISTS (` +
+            `SELECT 1 FROM payments WHERE bookingId = ? AND customerId = ? LIMIT 1)`;
+          db.query(paymentSql, [bookingId, customerId, 'cash', booking.totalPrice, bookingId, customerId]);
+
+          saveAndSendNotification(booking.hkUserId, {
+            type: 'booking_completed',
+            title: 'Cong viec da duoc xac nhan',
+            message: 'Khach hang da xac nhan anh hoan thanh. Booking da san sang de thanh toan va danh gia.',
+            bookingId,
+            data: { completionProofUrl: booking.completionProofUrl },
+          });
+
+          return res.json({
+            message: 'Booking completion confirmed',
+            booking: {
+              ...booking,
+              status: 'completed',
+              customerConfirmedAt: new Date().toISOString(),
+            },
+            paymentRequired: true,
+          });
+        }
+      );
+    }
+  );
+});
+
 // API: Customer xac nhan va thanh toan
 app.post('/api/bookings/:id/confirm-payment', (req, res) => {
   const bookingId = req.params.id;
-  const { customerId, paymentMethod, rating, review } = req.body;
+  const { paymentMethod, rating, review } = req.body;
+  const customerId = Number(req.user.id);
   const normalizedMethod = normalizePaymentMethod(paymentMethod);
 
   console.log(`Customer ${customerId} confirming ${normalizedMethod} payment for booking ${bookingId}`);
@@ -5121,6 +5204,9 @@ app.post('/api/bookings/:id/confirm-payment', (req, res) => {
     }
 
     const booking = bookingResults[0];
+    if (booking.status !== 'completed' || !booking.customerConfirmedAt) {
+      return res.status(409).json({ error: 'Customer must confirm the completion proof before payment and review' });
+    }
     const breakdown = paymentBreakdown(booking.totalPrice);
     const transactionCode = normalizedMethod === 'momo'
       ? `MOMO_PLATFORM_${Date.now()}_${bookingId}`
@@ -5314,14 +5400,41 @@ app.get('/api/bookings/:id/payment', (req, res) => {
 // API: Housekeeper earnings held by platform / cash reconciliation
 app.get('/api/housekeepers/:userId/earnings', (req, res) => {
   const { userId } = req.params;
+  const period = String(req.query.period || 'month').toLowerCase();
+  const paymentMethod = String(req.query.paymentMethod || 'all').toLowerCase();
+  const allowedPeriods = new Set(['day', 'month', 'year']);
+  const allowedPaymentMethods = new Set(['all', 'cash', 'momo', 'credit_card', 'bank_transfer', 'e_wallet']);
 
   if (req.user && req.user.role !== 'admin' && Number(req.user.id) !== Number(userId)) {
     return res.status(403).json({ error: 'Ban chi co the xem thu nhap cua chinh minh' });
   }
 
+  if (!allowedPeriods.has(period) || !allowedPaymentMethods.has(paymentMethod)) {
+    return res.status(400).json({ error: 'Bo loc thong ke khong hop le' });
+  }
+
+  const paymentDate = 'COALESCE(p.paidAt, p.createdAt)';
+  const periodConditions = {
+    day: `DATE(${paymentDate}) = CURDATE()`,
+    month: `YEAR(${paymentDate}) = YEAR(CURDATE()) AND MONTH(${paymentDate}) = MONTH(CURDATE())`,
+    year: `YEAR(${paymentDate}) = YEAR(CURDATE())`,
+  };
+  const whereConditions = ['h.userId = ?', periodConditions[period]];
+  const queryParams = [userId];
+
+  if (paymentMethod !== 'all') {
+    whereConditions.push('p.method = ?');
+    queryParams.push(paymentMethod);
+  }
+
   const sql = `
     SELECT
       COALESCE(SUM(CASE WHEN p.status = 'success' THEN p.amount ELSE 0 END), 0) as grossPaid,
+      COALESCE(SUM(CASE
+        WHEN p.status = 'success' AND p.housekeeperAmount > 0 THEN p.housekeeperAmount
+        WHEN p.status = 'success' THEN GREATEST(p.amount - COALESCE(p.platformFee, 0), 0)
+        ELSE 0
+      END), 0) as netEarnings,
       COALESCE(SUM(CASE WHEN p.status = 'success' THEN p.platformFee ELSE 0 END), 0) as platformFees,
       COALESCE(SUM(CASE WHEN p.status = 'success' AND p.method = 'momo' AND p.settlementStatus IN ('holding','ready') THEN p.housekeeperAmount ELSE 0 END), 0) as pendingPayout,
       COALESCE(SUM(CASE WHEN p.status = 'success' AND p.method = 'momo' AND p.settlementStatus = 'paid' THEN p.housekeeperAmount ELSE 0 END), 0) as paidOut,
@@ -5331,23 +5444,28 @@ app.get('/api/housekeepers/:userId/earnings', (req, res) => {
     FROM payments p
     JOIN bookings b ON p.bookingId = b.id
     JOIN housekeepers h ON b.housekeeperId = h.id
-    WHERE h.userId = ?
+    WHERE ${whereConditions.join(' AND ')}
   `;
 
-  db.query(sql, [userId], (err, rows) => {
+  db.query(sql, queryParams, (err, rows) => {
     if (err) {
       console.error('Error fetching housekeeper earnings:', err);
       return res.status(500).json({ error: err.message });
     }
 
-    res.json(rows[0] || {
+    res.json({
+      ...(rows[0] || {
       grossPaid: 0,
+      netEarnings: 0,
       platformFees: 0,
       pendingPayout: 0,
       paidOut: 0,
       cashCollected: 0,
       cashPlatformFeeDue: 0,
       paidBookings: 0,
+      }),
+      period,
+      paymentMethod,
     });
   });
 });

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -20,6 +21,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { CustomerBottomNav } from '../../components/customer-bottom-nav';
 import { authService } from '../../lib/auth';
 import { bookingService, type Booking } from '../../lib/bookings';
+import { formatVietnamDate } from '../../lib/date';
 import { useLanguage } from '../../lib/language';
 import type { AppLanguage } from '../../lib/storage';
 
@@ -66,6 +68,13 @@ const copy = {
     tabs: { history: 'History', upcoming: 'Upcoming' },
     unpaid: 'Pay',
     paid: 'Paid',
+    completionProof: 'Completion photo',
+    confirmCompletion: 'Confirm completed work',
+    confirmCompletionTitle: 'Confirm completion?',
+    confirmCompletionMessage: 'Please check the photo carefully. Payment and review will be enabled after confirmation.',
+    completionConfirmedTitle: 'Work confirmed',
+    completionConfirmedMessage: 'You can now pay and review this service.',
+    waitingForProof: 'Waiting for customer confirmation',
   },
   vi: {
     activity: 'Ho\u1ea1t \u0111\u1ed9ng',
@@ -99,6 +108,13 @@ const copy = {
     tabs: { history: 'L\u1ecbch s\u1eed', upcoming: 'S\u1eafp t\u1edbi' },
     unpaid: 'Thanh to\u00e1n',
     paid: '\u0110\u00e3 thanh to\u00e1n',
+    completionProof: '\u1ea2nh ho\u00e0n th\u00e0nh',
+    confirmCompletion: 'X\u00e1c nh\u1eadn c\u00f4ng vi\u1ec7c ho\u00e0n th\u00e0nh',
+    confirmCompletionTitle: 'X\u00e1c nh\u1eadn ho\u00e0n th\u00e0nh?',
+    confirmCompletionMessage: 'Vui l\u00f2ng ki\u1ec3m tra k\u1ef9 \u1ea3nh. Sau khi x\u00e1c nh\u1eadn, b\u1ea1n c\u00f3 th\u1ec3 thanh to\u00e1n v\u00e0 \u0111\u00e1nh gi\u00e1.',
+    completionConfirmedTitle: '\u0110\u00e3 x\u00e1c nh\u1eadn c\u00f4ng vi\u1ec7c',
+    completionConfirmedMessage: 'B\u1ea1n c\u00f3 th\u1ec3 thanh to\u00e1n v\u00e0 \u0111\u00e1nh gi\u00e1 d\u1ecbch v\u1ee5 ngay b\u00e2y gi\u1edd.',
+    waitingForProof: '\u0110ang ch\u1edd b\u1ea1n x\u00e1c nh\u1eadn',
   },
 } as const;
 function formatPrice(value?: number | string) {
@@ -107,25 +123,10 @@ function formatPrice(value?: number | string) {
 }
 
 function formatDate(booking: Booking, language: AppLanguage) {
-  const rawDate = booking.startDate || booking.date;
-
-  if (!rawDate) return language === 'vi' ? 'Chưa có ngày' : 'No date';
-
-  const dateOnly = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  const hcmDate = dateOnly
-    ? new Date(Date.UTC(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3])))
-    : new Date(new Date(rawDate).getTime() + 7 * 60 * 60 * 1000);
-
-  if (Number.isNaN(hcmDate.getTime())) return rawDate;
-
-  const weekday = language === 'vi'
-    ? ['CN', 'Th 2', 'Th 3', 'Th 4', 'Th 5', 'Th 6', 'Th 7'][hcmDate.getUTCDay()]
-    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][hcmDate.getUTCDay()];
-  const day = String(hcmDate.getUTCDate()).padStart(2, '0');
-  const month = String(hcmDate.getUTCMonth() + 1).padStart(2, '0');
-  const year = hcmDate.getUTCFullYear();
-
-  return language === 'vi' ? `${weekday}, ${day}/${month}/${year}` : `${weekday}, ${month}/${day}/${year}`;
+  return formatVietnamDate(
+    booking.startDate || booking.date,
+    language === 'vi' ? 'Chưa có ngày' : 'No date',
+  );
 }
 
 function bookingTimeValue(booking: Booking) {
@@ -162,6 +163,8 @@ function BookingCard({
   onChat,
   onScanQr,
   onReviewPayment,
+  onConfirmCompletion,
+  isConfirmingCompletion,
   text,
   language,
 }: {
@@ -170,6 +173,8 @@ function BookingCard({
   onChat: () => void;
   onScanQr: () => void;
   onReviewPayment: () => void;
+  onConfirmCompletion: () => void;
+  isConfirmingCompletion: boolean;
   text: (typeof copy)[AppLanguage];
   language: AppLanguage;
 }) {
@@ -177,6 +182,7 @@ function BookingCard({
   const isPaid = item.paymentStatus === 'success';
   const canCancel = item.status === 'pending';
   const canScanQr = item.status === 'confirmed';
+  const needsCompletionConfirmation = item.status === 'in_progress' && !!item.completionRequestedAt && !!item.completionProofUrl;
 
   return (
     <View style={styles.card}>
@@ -187,6 +193,24 @@ function BookingCard({
       <Text style={styles.meta}>{text.housekeeper}: {item.housekeeperName || `#${item.housekeeperId}`}</Text>
       <Text style={styles.meta}>{text.date}: {formatDate(item, language)} - {item.time || text.noValue}</Text>
       <Text style={styles.meta}>{text.location}: {item.location || text.noValue}</Text>
+      {needsCompletionConfirmation ? (
+        <View style={styles.completionProofSection}>
+          <View style={styles.completionProofHeader}>
+            <Ionicons color="#b45309" name="camera-outline" size={17} />
+            <Text style={styles.completionProofTitle}>{text.completionProof}</Text>
+            <Text style={styles.completionPendingBadge}>{text.waitingForProof}</Text>
+          </View>
+          <Image source={{ uri: item.completionProofUrl }} style={styles.completionProofImage} />
+          <TouchableOpacity disabled={isConfirmingCompletion} onPress={onConfirmCompletion} style={styles.confirmCompletionButton}>
+            {isConfirmingCompletion ? <ActivityIndicator color="#fff" /> : (
+              <>
+                <Ionicons color="#fff" name="checkmark-circle-outline" size={18} />
+                <Text style={styles.confirmCompletionText}>{text.confirmCompletion}</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      ) : null}
       <View style={styles.cardFooter}>
         <Text style={styles.price}>{formatPrice(item.totalPrice)}</Text>
         <View style={styles.actions}>
@@ -227,6 +251,7 @@ export default function CustomerBookingsScreen() {
   const [rating, setRating] = useState(5);
   const [review, setReview] = useState('');
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+  const [confirmingCompletionId, setConfirmingCompletionId] = useState<number | null>(null);
   const { refresh } = useLocalSearchParams<{ refresh?: string }>();
   const { language } = useLanguage();
   const router = useRouter();
@@ -328,6 +353,27 @@ export default function CustomerBookingsScreen() {
     ]);
   };
 
+  const handleConfirmCompletion = (booking: Booking) => {
+    Alert.alert(text.confirmCompletionTitle, text.confirmCompletionMessage, [
+      { text: text.later, style: 'cancel' },
+      {
+        text: text.confirmCompletion,
+        onPress: async () => {
+          try {
+            setConfirmingCompletionId(booking.id);
+            await bookingService.confirmCompletion(booking.id);
+            Alert.alert(text.completionConfirmedTitle, text.completionConfirmedMessage);
+            await loadBookings(true);
+          } catch (confirmError: any) {
+            Alert.alert(text.errorFallback, errorMessage(confirmError, text.errorFallback));
+          } finally {
+            setConfirmingCompletionId(null);
+          }
+        },
+      },
+    ]);
+  };
+
   if (isLoading) {
     return (
       <SafeAreaView edges={[]} style={[styles.safeArea, { paddingTop: Math.max(insets.top, 16) }]}>
@@ -392,6 +438,8 @@ export default function CustomerBookingsScreen() {
                   onChat={() => router.push(`/chat/${item.id}`)}
                   onScanQr={() => router.push(`/(customer)/scan-qr/${item.id}`)}
                   onReviewPayment={() => openPaymentReview(item)}
+                  onConfirmCompletion={() => handleConfirmCompletion(item)}
+                  isConfirmingCompletion={confirmingCompletionId === item.id}
                   text={text}
                 />
               ))}
@@ -474,6 +522,55 @@ const styles = StyleSheet.create({
     left: 0,
     position: 'absolute',
     right: 0,
+  },
+  completionPendingBadge: {
+    color: '#b45309',
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '800',
+    textAlign: 'right',
+  },
+  completionProofHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 10,
+  },
+  completionProofImage: {
+    borderRadius: 8,
+    height: 190,
+    width: '100%',
+  },
+  completionProofSection: {
+    backgroundColor: '#fffbeb',
+    borderColor: '#fde68a',
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 12,
+    padding: 10,
+  },
+  completionProofTitle: {
+    color: '#92400e',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  confirmCompletionButton: {
+    alignItems: 'center',
+    backgroundColor: '#ff8128',
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 7,
+    justifyContent: 'center',
+    marginTop: 10,
+    minHeight: 44,
+    paddingHorizontal: 12,
+  },
+  confirmCompletionText: {
+    color: '#fff',
+    flexShrink: 1,
+    fontSize: 13,
+    fontWeight: '900',
+    textAlign: 'center',
   },
   activeTabText: {
     color: '#ff8128',

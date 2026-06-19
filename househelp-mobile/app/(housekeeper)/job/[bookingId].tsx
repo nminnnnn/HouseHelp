@@ -1,13 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
+import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Linking, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { authService, type AuthUser } from '../../../lib/auth';
 import { bookingService, type Booking } from '../../../lib/bookings';
+import { formatVietnamDate } from '../../../lib/date';
 
 function formatPrice(value?: number | string) {
   const price = Number(value || 0);
@@ -31,11 +33,7 @@ function formatDateTime(booking?: Booking | null) {
 
   if (!rawDate) return booking.time || 'No date';
 
-  const date = new Date(rawDate).toLocaleDateString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
+  const date = formatVietnamDate(rawDate, 'No date');
 
   return `${date}${booking.time ? ` • ${booking.time}` : ''}`;
 }
@@ -47,6 +45,8 @@ export default function HousekeeperJobDetailScreen() {
   const [qrToken, setQrToken] = useState<string | null>(null);
   const [qrVisible, setQrVisible] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [completionModalVisible, setCompletionModalVisible] = useState(false);
+  const [completionPhotoUri, setCompletionPhotoUri] = useState<string | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
   const router = useRouter();
@@ -95,7 +95,8 @@ export default function HousekeeperJobDetailScreen() {
   }, [booking?.notes]);
   const isPending = booking?.status === 'pending';
   const canShowArrivalQr = booking?.status === 'confirmed';
-  const canComplete = booking?.status === 'in_progress';
+  const canComplete = booking?.status === 'in_progress' && !booking.completionRequestedAt;
+  const awaitingCustomerConfirmation = booking?.status === 'in_progress' && !!booking.completionRequestedAt;
 
   const openMaps = async () => {
     if (!booking?.location?.trim()) {
@@ -129,15 +130,34 @@ export default function HousekeeperJobDetailScreen() {
   };
 
   const completeJob = async () => {
-    if (!booking || !user) return;
+    if (!booking || !user || !completionPhotoUri) return;
     try {
       setIsUpdating(true);
-      await bookingService.complete(booking.id, booking.housekeeperId);
+      await bookingService.complete(booking.id, completionPhotoUri);
+      setCompletionModalVisible(false);
+      setCompletionPhotoUri(null);
+      Alert.alert('Photo submitted', 'Waiting for the customer to confirm the completed work.');
       await loadBooking();
     } catch (error: any) {
       Alert.alert('Could not complete job', error.response?.data?.message || error.response?.data?.error || 'Please try again.');
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const takeCompletionPhoto = async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (permission.status !== 'granted') {
+      Alert.alert('Camera permission required', 'Please allow camera access to photograph the completed work.');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: false,
+      quality: 0.82,
+    });
+    if (!result.canceled && result.assets[0]?.uri) {
+      setCompletionPhotoUri(result.assets[0].uri);
     }
   };
 
@@ -301,14 +321,19 @@ export default function HousekeeperJobDetailScreen() {
               )}
             </TouchableOpacity>
           ) : canComplete ? (
-            <TouchableOpacity disabled={isUpdating} onPress={completeJob} style={styles.primaryButton}>
+            <TouchableOpacity disabled={isUpdating} onPress={() => setCompletionModalVisible(true)} style={styles.primaryButton}>
               {isUpdating ? <ActivityIndicator color="#fff" /> : (
                 <>
-                  <Text style={styles.primaryText}>Complete Job</Text>
-                  <Ionicons color="#fff" name="checkmark-circle-outline" size={18} />
+                  <Text style={styles.primaryText}>Photograph completed work</Text>
+                  <Ionicons color="#fff" name="camera-outline" size={18} />
                 </>
               )}
             </TouchableOpacity>
+          ) : awaitingCustomerConfirmation ? (
+            <View style={styles.waitingButton}>
+              <Ionicons color="#b45309" name="time-outline" size={18} />
+              <Text style={styles.waitingText}>Waiting for customer confirmation</Text>
+            </View>
           ) : (
             <TouchableOpacity onPress={() => router.push(`/chat/${booking.id}`)} style={styles.primaryButton}>
               <Text style={styles.primaryText}>Message Customer</Text>
@@ -337,12 +362,90 @@ export default function HousekeeperJobDetailScreen() {
             </View>
           </View>
         </Modal>
+
+        <Modal animationType="slide" onRequestClose={() => setCompletionModalVisible(false)} transparent visible={completionModalVisible}>
+          <View style={styles.modalBackdrop}>
+            <View style={styles.completionCard}>
+              <Text style={styles.qrTitle}>Completion proof</Text>
+              <Text style={styles.qrSubtitle}>Take a clear photo of the work area. The customer must approve this photo before payment and review.</Text>
+              {completionPhotoUri ? (
+                <Image source={{ uri: completionPhotoUri }} style={styles.completionPreview} />
+              ) : (
+                <View style={styles.completionPlaceholder}>
+                  <Ionicons color="#ff8128" name="camera-outline" size={42} />
+                  <Text style={styles.completionPlaceholderText}>No photo taken</Text>
+                </View>
+              )}
+              <TouchableOpacity disabled={isUpdating} onPress={takeCompletionPhoto} style={styles.secondaryActionButton}>
+                <Ionicons color="#ff8128" name="camera-outline" size={18} />
+                <Text style={styles.secondaryActionText}>{completionPhotoUri ? 'Take another photo' : 'Open camera'}</Text>
+              </TouchableOpacity>
+              <View style={styles.completionActions}>
+                <TouchableOpacity disabled={isUpdating} onPress={() => setCompletionModalVisible(false)} style={styles.cancelCompletionButton}>
+                  <Text style={styles.cancelCompletionText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity disabled={isUpdating || !completionPhotoUri} onPress={completeJob} style={[styles.submitCompletionButton, !completionPhotoUri && styles.submitCompletionDisabled]}>
+                  {isUpdating ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitCompletionText}>Send</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  cancelCompletionButton: {
+    alignItems: 'center',
+    borderColor: '#d8dde3',
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  cancelCompletionText: {
+    color: '#64748b',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  completionActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
+  },
+  completionCard: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    maxWidth: 480,
+    padding: 20,
+    width: '100%',
+  },
+  completionPlaceholder: {
+    alignItems: 'center',
+    backgroundColor: '#fff7ed',
+    borderColor: '#fed7aa',
+    borderRadius: 8,
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    height: 210,
+    justifyContent: 'center',
+    marginTop: 16,
+  },
+  completionPlaceholderText: {
+    color: '#9a4a10',
+    fontSize: 13,
+    fontWeight: '800',
+    marginTop: 8,
+  },
+  completionPreview: {
+    borderRadius: 8,
+    height: 230,
+    marginTop: 16,
+    width: '100%',
+  },
   address: {
     color: '#0f172a',
     fontSize: 14,
@@ -658,6 +761,38 @@ const styles = StyleSheet.create({
     backgroundColor: '#f7f8fa',
     flex: 1,
   },
+  secondaryActionButton: {
+    alignItems: 'center',
+    borderColor: '#fed7aa',
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    marginTop: 12,
+    minHeight: 46,
+  },
+  secondaryActionText: {
+    color: '#ff8128',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  submitCompletionButton: {
+    alignItems: 'center',
+    backgroundColor: '#ff8128',
+    borderRadius: 12,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  submitCompletionDisabled: {
+    backgroundColor: '#fdba74',
+  },
+  submitCompletionText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '900',
+  },
   screen: {
     backgroundColor: '#f7f8fa',
     flex: 1,
@@ -709,6 +844,22 @@ const styles = StyleSheet.create({
   totalValue: {
     color: '#ff8128',
     fontSize: 28,
+    fontWeight: '900',
+  },
+  waitingButton: {
+    alignItems: 'center',
+    backgroundColor: '#fffbeb',
+    borderColor: '#fde68a',
+    borderRadius: 18,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    paddingVertical: 16,
+  },
+  waitingText: {
+    color: '#b45309',
+    fontSize: 14,
     fontWeight: '900',
   },
 });

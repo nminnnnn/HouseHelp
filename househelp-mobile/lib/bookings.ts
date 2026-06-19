@@ -24,6 +24,10 @@ export type Booking = {
   paymentStatus?: string;
   platformFee?: number | string;
   settlementStatus?: string;
+  completionProofUrl?: string;
+  completionNotes?: string;
+  completionRequestedAt?: string;
+  customerConfirmedAt?: string;
   createdAt?: string;
 };
 
@@ -80,10 +84,28 @@ export const bookingService = {
     return response.data;
   },
 
-  complete: async (bookingId: number, housekeeperId: number) => {
-    const response = await api.post<{ message: string; booking: Booking }>(`/bookings/${bookingId}/complete`, {
-      housekeeperId,
+  complete: async (bookingId: number, proofUri: string, completionNotes?: string) => {
+    const formData = new FormData();
+    const extension = proofUri.split('.').pop()?.toLowerCase() || 'jpg';
+    const mimeType = extension === 'png' ? 'image/png' : 'image/jpeg';
+
+    formData.append('completionProof', {
+      name: `completion-${bookingId}.${extension}`,
+      type: mimeType,
+      uri: proofUri,
+    } as any);
+    if (completionNotes?.trim()) formData.append('completionNotes', completionNotes.trim());
+
+    const response = await api.post<{ message: string; booking: Booking }>(`/bookings/${bookingId}/complete`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
     });
+    return response.data;
+  },
+
+  confirmCompletion: async (bookingId: number) => {
+    const response = await api.post<{ message: string; booking: Booking; paymentRequired: boolean }>(
+      `/bookings/${bookingId}/confirm-completion`,
+    );
     return response.data;
   },
 

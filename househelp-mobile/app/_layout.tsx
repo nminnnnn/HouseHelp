@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { RealtimeNotificationListener } from '../components/realtime-notification-listener';
 import { LanguageProvider } from '../lib/language';
 
 export default function RootLayout() {
@@ -12,6 +13,7 @@ export default function RootLayout() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <LanguageProvider>
+        <RealtimeNotificationListener />
         <Stack screenOptions={{ 
           headerShown: false,
           animation: 'none', 

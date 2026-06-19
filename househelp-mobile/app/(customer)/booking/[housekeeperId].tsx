@@ -21,6 +21,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { addressService, addressText } from '../../../lib/addresses';
 import { authService, type AuthUser } from '../../../lib/auth';
 import { bookingService } from '../../../lib/bookings';
+import { formatVietnamDate } from '../../../lib/date';
 import { housekeeperPreferenceService } from '../../../lib/housekeeper-preferences';
 import { housekeeperService, parseServices, type Housekeeper } from '../../../lib/housekeepers';
 import { profileService } from '../../../lib/profile';
@@ -131,7 +132,7 @@ export default function CreateBookingScreen() {
   const [notes, setNotes] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [selectedLocation, setSelectedLocation] = useState<SelectedLocation | null>(null);
-  const [service, setService] = useState('');
+  const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [time, setTime] = useState('08:00');
   const [user, setUser] = useState<AuthUser | null>(null);
   const { housekeeperId, recurring, service: selectedService } = useLocalSearchParams<{
@@ -178,7 +179,7 @@ export default function CreateBookingScreen() {
       setUser(storedUser);
       await loadSelectedAddress(storedUser);
       setHousekeeper(detail);
-      setService(firstService(detail.services, selectedService));
+      setSelectedServices([firstService(detail.services, selectedService)]);
       if (recurring === 'monthly') {
         setDuration('3');
       }
@@ -199,16 +200,25 @@ export default function CreateBookingScreen() {
     }, [loadSelectedAddress, user]),
   );
 
-  const basePrice = useMemo(() => {
+  const pricePerService = useMemo(() => {
     const price = parsePrice(housekeeper?.price);
     return price * parseDuration(duration);
   }, [duration, housekeeper?.price]);
+  const basePrice = pricePerService * selectedServices.length;
+  const additionalServicesAmount = pricePerService * Math.max(selectedServices.length - 1, 0);
   const totalPrice = basePrice + PICK_HOUSEKEEPER_FEE;
   const unitPrice = useMemo(() => parsePrice(housekeeper?.price), [housekeeper?.price]);
   const serviceOptions = useMemo(() => serviceList(housekeeper?.services), [housekeeper?.services]);
   const availableDates = useMemo(() => dateOptions(), []);
   const selectedDuration = parseDuration(duration);
   const selectedDurationIndex = Math.max(0, durationOptions.findIndex((item) => item === selectedDuration));
+  const toggleService = (item: string) => {
+    setSelectedServices((current) => (
+      current.includes(item)
+        ? current.filter((serviceItem) => serviceItem !== item)
+        : [...current, item]
+    ));
+  };
 // choose address 
   const reverseGeocode = useCallback(async (latitude: number, longitude: number) => {
     try {
@@ -335,7 +345,7 @@ export default function CreateBookingScreen() {
   };
 
   const validateCurrentStep = () => {
-    if (currentStep === 'Location' && !service.trim()) {
+    if (currentStep === 'Location' && selectedServices.length === 0) {
       Alert.alert('Chưa chọn dịch vụ', 'Vui lòng chọn dịch vụ cần đặt.');
       return false;
     }
@@ -399,7 +409,7 @@ export default function CreateBookingScreen() {
       return;
     }
 
-    if (!service.trim() || !date.trim() || !time.trim() || !location.trim()) {
+    if (selectedServices.length === 0 || !date.trim() || !time.trim() || !location.trim()) {
       Alert.alert('Thiếu thông tin', 'Vui lòng chọn dịch vụ, ngày, khung giờ và địa chỉ.');
       return;
     }
@@ -433,7 +443,9 @@ export default function CreateBookingScreen() {
         housekeeperName: housekeeper.fullName,
         location: location.trim(),
         notes: notes.trim() || undefined,
-        service: recurring === 'monthly' ? `${service.trim()} monthly` : service.trim(),
+        service: selectedServices
+          .map((item) => (recurring === 'monthly' ? `${item} monthly` : item))
+          .join(', '),
         paymentMethod,
         time: time.trim(),
         totalPrice,
@@ -496,22 +508,34 @@ export default function CreateBookingScreen() {
         <View style={styles.bookingSection}>
           <Text style={styles.sectionTitle}>Service</Text>
           <View style={styles.servicePicker}>
+            <View style={styles.serviceSelectionHeader}>
+              <Text style={styles.servicePickerTitle}>Select one or more services</Text>
+              <Text style={styles.serviceCount}>{selectedServices.length} selected</Text>
+            </View>
             <View style={styles.serviceOptions}>
-              {(serviceOptions.length > 0 ? serviceOptions : [service || 'House cleaning']).map((item) => {
-                const isSelected = item === service;
+              {(serviceOptions.length > 0 ? serviceOptions : ['House cleaning']).map((item) => {
+                const isSelected = selectedServices.includes(item);
 
                 return (
                   <TouchableOpacity
                     activeOpacity={0.82}
                     key={item}
-                    onPress={() => setService(item)}
+                    onPress={() => toggleService(item)}
                     style={[styles.serviceOption, isSelected && styles.serviceOptionActive]}
                   >
+                    <Ionicons
+                      color={isSelected ? '#fff' : '#ff8128'}
+                      name={isSelected ? 'checkmark-circle' : 'add-circle-outline'}
+                      size={16}
+                    />
                     <Text style={[styles.serviceOptionText, isSelected && styles.serviceOptionTextActive]}>{item}</Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
+            <Text style={styles.additionalServiceHint}>
+              Each service costs {pricePerService.toLocaleString('vi-VN')} VND for {selectedDuration} hours.
+            </Text>
           </View>
 
           <Text style={styles.sectionTitle}>Service Location</Text>
@@ -687,11 +711,11 @@ export default function CreateBookingScreen() {
           <Text style={styles.reviewTitle}>Review & Payment</Text>
           <View style={styles.reviewRow}>
             <Text style={styles.reviewLabel}>Service</Text>
-            <Text numberOfLines={2} style={styles.reviewValue}>{service || 'Not selected'}</Text>
+            <Text numberOfLines={4} style={styles.reviewValue}>{selectedServices.join(', ') || 'Not selected'}</Text>
           </View>
           <View style={styles.reviewRow}>
             <Text style={styles.reviewLabel}>Date & time</Text>
-            <Text style={styles.reviewValue}>{date} - {time}</Text>
+            <Text style={styles.reviewValue}>{formatVietnamDate(date)} - {time}</Text>
           </View>
           <View style={styles.reviewRow}>
             <Text style={styles.reviewLabel}>Duration</Text>
@@ -702,9 +726,15 @@ export default function CreateBookingScreen() {
             <Text style={styles.reviewValue}>{unitPrice.toLocaleString('vi-VN')} VND/hour</Text>
           </View>
           <View style={styles.reviewRow}>
-            <Text style={styles.reviewLabel}>Service amount</Text>
-            <Text style={styles.reviewValue}>{basePrice.toLocaleString('vi-VN')} VND</Text>
+            <Text style={styles.reviewLabel}>Primary service</Text>
+            <Text style={styles.reviewValue}>{pricePerService.toLocaleString('vi-VN')} VND</Text>
           </View>
+          {selectedServices.length > 1 ? (
+            <View style={styles.reviewRow}>
+              <Text style={styles.reviewLabel}>Additional services ({selectedServices.length - 1})</Text>
+              <Text style={styles.reviewValue}>{additionalServicesAmount.toLocaleString('vi-VN')} VND</Text>
+            </View>
+          ) : null}
           <View style={styles.reviewRow}>
             <Text style={styles.reviewLabel}>Pick housekeeper fee</Text>
             <Text style={styles.reviewValue}>{PICK_HOUSEKEEPER_FEE.toLocaleString('vi-VN')} VND</Text>
@@ -863,6 +893,13 @@ export default function CreateBookingScreen() {
 }
 
 const styles = StyleSheet.create({
+  additionalServiceHint: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 18,
+    marginTop: 12,
+  },
   bookingHeader: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -1533,10 +1570,13 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   serviceOption: {
+    alignItems: 'center',
     backgroundColor: '#fff7ed',
     borderColor: '#fed7aa',
     borderRadius: 999,
     borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
     paddingHorizontal: 13,
     paddingVertical: 10,
   },
@@ -1583,6 +1623,16 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     fontSize: 13,
     fontWeight: '800',
+  },
+  serviceCount: {
+    color: '#ff8128',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  serviceSelectionHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginBottom: 11,
   },
   screen: {

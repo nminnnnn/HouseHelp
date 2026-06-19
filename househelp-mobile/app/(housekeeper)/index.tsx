@@ -16,7 +16,14 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { authService, type AuthUser } from '../../lib/auth';
 import { bookingService, type Booking } from '../../lib/bookings';
-import { housekeeperService, type Housekeeper, type HousekeeperEarnings } from '../../lib/housekeepers';
+import { formatVietnamDate } from '../../lib/date';
+import {
+  housekeeperService,
+  type EarningsPaymentMethod,
+  type EarningsPeriod,
+  type Housekeeper,
+  type HousekeeperEarnings,
+} from '../../lib/housekeepers';
 import { useLanguage } from '../../lib/language';
 import type { AppLanguage } from '../../lib/storage';
 import { verificationService } from '../../lib/verification';
@@ -24,6 +31,50 @@ import { verificationService } from '../../lib/verification';
 type FilterKey = 'all' | 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'rejected';
 
 const filters: FilterKey[] = ['all', 'pending', 'confirmed', 'in_progress', 'completed', 'rejected'];
+
+const earningsPeriods: EarningsPeriod[] = ['day', 'month', 'year'];
+const earningsPaymentMethods: EarningsPaymentMethod[] = ['all', 'cash', 'momo', 'bank_transfer', 'credit_card', 'e_wallet'];
+
+const statisticsCopy = {
+  en: {
+    earningsLoadError: 'Could not load earnings statistics.',
+    grossPaid: 'Gross revenue',
+    netEarnings: 'Net earnings',
+    noStatistics: 'No successful payments match the selected filters.',
+    paidBookings: 'Paid bookings',
+    paymentMethod: 'Payment method',
+    paymentMethods: {
+      all: 'All methods',
+      bank_transfer: 'Bank transfer',
+      cash: 'Cash',
+      credit_card: 'Card',
+      e_wallet: 'E-wallet',
+      momo: 'MoMo',
+    },
+    period: 'Statistics period',
+    periods: { day: 'Today', month: 'This month', year: 'This year' },
+    platformFees: 'Platform fees',
+  },
+  vi: {
+    earningsLoadError: 'Kh\u00f4ng th\u1ec3 t\u1ea3i th\u1ed1ng k\u00ea thu nh\u1eadp.',
+    grossPaid: 'T\u1ed5ng doanh thu',
+    netEarnings: 'Thu nh\u1eadp th\u1ef1c nh\u1eadn',
+    noStatistics: 'Kh\u00f4ng c\u00f3 giao d\u1ecbch th\u00e0nh c\u00f4ng ph\u00f9 h\u1ee3p v\u1edbi b\u1ed9 l\u1ecdc.',
+    paidBookings: 'Booking \u0111\u00e3 thanh to\u00e1n',
+    paymentMethod: 'Ph\u01b0\u01a1ng th\u1ee9c thanh to\u00e1n',
+    paymentMethods: {
+      all: 'T\u1ea5t c\u1ea3',
+      bank_transfer: 'Chuy\u1ec3n kho\u1ea3n',
+      cash: 'Ti\u1ec1n m\u1eb7t',
+      credit_card: 'Th\u1ebb',
+      e_wallet: 'V\u00ed \u0111i\u1ec7n t\u1eed',
+      momo: 'MoMo',
+    },
+    period: 'Th\u1eddi gian th\u1ed1ng k\u00ea',
+    periods: { day: 'H\u00f4m nay', month: 'Th\u00e1ng n\u00e0y', year: 'N\u0103m nay' },
+    platformFees: 'Ph\u00ed n\u1ec1n t\u1ea3ng',
+  },
+} as const;
 
 const serviceOptions = [
   { en: 'Home cleaning', vi: 'D\u1ecdn d\u1eb9p nh\u00e0 c\u1eeda', value: 'D\u1ecdn d\u1eb9p nh\u00e0 c\u1eeda' },
@@ -178,23 +229,23 @@ function formatPrice(value?: number | string) {
 }
 
 function formatDate(booking: Booking, language: AppLanguage) {
-  return booking.startDate || booking.date || (language === 'vi' ? 'Chưa có ngày' : 'No date');
+  return formatVietnamDate(
+    booking.startDate || booking.date,
+    language === 'vi' ? 'Chưa có ngày' : 'No date',
+  );
 }
 
 function parseBookingStart(booking: Booking) {
-  if (booking.startDate) {
-    const parsed = new Date(booking.startDate);
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed;
-    }
-  }
-
-  if (!booking.date || !booking.time) {
+  const rawDate = booking.startDate || booking.date;
+  if (!rawDate) {
     return null;
   }
 
-  const rawTime = booking.time.split('-')[0].trim();
-  const dateTime = new Date(`${booking.date}T${rawTime}:00`);
+  const rawTime = (booking.time || '00:00').split('-')[0].trim();
+  const dateOnly = rawDate.match(/^(\d{4}-\d{2}-\d{2})/);
+  const dateTime = dateOnly
+    ? new Date(`${dateOnly[1]}T${rawTime}:00+07:00`)
+    : new Date(rawDate);
   if (!Number.isNaN(dateTime.getTime())) {
     return dateTime;
   }
@@ -255,7 +306,7 @@ function JobCard({
   language: AppLanguage;
 }) {
   const isPending = item.status === 'pending';
-  const canComplete = item.status === 'confirmed' || item.status === 'in_progress';
+  const canComplete = item.status === 'in_progress' && !item.completionRequestedAt;
 
   return (
     <View style={styles.card}>
@@ -308,6 +359,11 @@ export default function HousekeeperDashboard() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [earnings, setEarnings] = useState<HousekeeperEarnings | null>(null);
+  const [earningsPaymentMethod, setEarningsPaymentMethod] = useState<EarningsPaymentMethod>('all');
+  const [earningsPeriod, setEarningsPeriod] = useState<EarningsPeriod>('month');
+  const [earningsError, setEarningsError] = useState<string | null>(null);
+  const [earningsRefreshKey, setEarningsRefreshKey] = useState(0);
+  const [isLoadingEarnings, setIsLoadingEarnings] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isTogglingAvailability, setIsTogglingAvailability] = useState(false);
@@ -323,6 +379,7 @@ export default function HousekeeperDashboard() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const text = copy[language];
+  const statisticsText = statisticsCopy[language];
   const alertedBookingIdsRef = useRef(new Set<number>());
 
   const loadBookings = useCallback(async (refreshing = false) => {
@@ -342,17 +399,16 @@ export default function HousekeeperDashboard() {
       }
 
       setUser(storedUser);
-      const [data, housekeeperProfile, housekeeperEarnings, nextVerificationStatus] = await Promise.all([
+      const [data, housekeeperProfile, nextVerificationStatus] = await Promise.all([
         bookingService.getForUser(storedUser.id),
         housekeeperService.getProfileByUserId(storedUser.id),
-        housekeeperService.getEarnings(storedUser.id).catch(() => null),
         verificationService.getStatus(storedUser.id).catch(() => null),
       ]);
       setBookings(data);
       setProfile(housekeeperProfile);
       setSelectedServices(servicesFromProfile(housekeeperProfile.services));
-      setEarnings(housekeeperEarnings);
       setVerificationStatus(nextVerificationStatus);
+      if (refreshing) setEarningsRefreshKey((current) => current + 1);
     } catch (loadError: any) {
       setError(loadError.response?.data?.message || loadError.response?.data?.error || text.bookingLoadError);
     } finally {
@@ -364,6 +420,34 @@ export default function HousekeeperDashboard() {
   useEffect(() => {
     loadBookings();
   }, [loadBookings]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    let isActive = true;
+    setIsLoadingEarnings(true);
+    setEarningsError(null);
+    setEarnings(null);
+
+    housekeeperService.getEarnings(user.id, {
+      paymentMethod: earningsPaymentMethod,
+      period: earningsPeriod,
+    })
+      .then((data) => {
+        if (isActive) setEarnings(data);
+      })
+      .catch((loadError: any) => {
+        if (!isActive) return;
+        setEarningsError(loadError.response?.data?.message || loadError.response?.data?.error || statisticsText.earningsLoadError);
+      })
+      .finally(() => {
+        if (isActive) setIsLoadingEarnings(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [earningsPaymentMethod, earningsPeriod, earningsRefreshKey, statisticsText.earningsLoadError, user?.id]);
 
   const filteredBookings = useMemo(() => {
     const sortedBookings = [...bookings].sort((left, right) => bookingRecencyValue(right) - bookingRecencyValue(left));
@@ -508,27 +592,8 @@ export default function HousekeeperDashboard() {
     ]);
   };
 
-  const handleComplete = async (booking: Booking) => {
-    Alert.alert(text.completeTitle, text.completeMessage, [
-      { text: text.cancel, style: 'cancel' },
-      {
-        text: text.complete,
-        onPress: async () => {
-          try {
-            setUpdatingId(booking.id);
-            await bookingService.complete(booking.id, booking.housekeeperId);
-            await loadBookings(true);
-          } catch (completeError: any) {
-            Alert.alert(
-              text.cannotComplete,
-              completeError.response?.data?.message || completeError.response?.data?.error || text.retry,
-            );
-          } finally {
-            setUpdatingId(null);
-          }
-        },
-      },
-    ]);
+  const handleComplete = (booking: Booking) => {
+    router.push(`/(housekeeper)/job/${booking.id}`);
   };
 
   if (isLoading) {
@@ -680,7 +745,64 @@ export default function HousekeeperDashboard() {
                     <Text style={styles.earningsTitle}>{text.earningsDetail}</Text>
                     <Text style={styles.earningsBadge}>{text.platformPayout}</Text>
                   </View>
+                  <Text style={styles.statisticsFilterLabel}>{statisticsText.period}</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.statisticsFilterRow}
+                  >
+                    {earningsPeriods.map((period) => (
+                      <TouchableOpacity
+                        key={period}
+                        onPress={() => setEarningsPeriod(period)}
+                        style={[styles.statisticsFilterButton, earningsPeriod === period && styles.statisticsFilterButtonActive]}
+                      >
+                        <Text style={[styles.statisticsFilterText, earningsPeriod === period && styles.statisticsFilterTextActive]}>
+                          {statisticsText.periods[period]}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                  <Text style={styles.statisticsFilterLabel}>{statisticsText.paymentMethod}</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.statisticsFilterRow}
+                  >
+                    {earningsPaymentMethods.map((method) => (
+                      <TouchableOpacity
+                        key={method}
+                        onPress={() => setEarningsPaymentMethod(method)}
+                        style={[styles.statisticsFilterButton, earningsPaymentMethod === method && styles.statisticsFilterButtonActive]}
+                      >
+                        <Text style={[styles.statisticsFilterText, earningsPaymentMethod === method && styles.statisticsFilterTextActive]}>
+                          {statisticsText.paymentMethods[method]}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                  {earningsError ? <Text style={styles.statisticsError}>{earningsError}</Text> : null}
+                  {isLoadingEarnings ? <ActivityIndicator color="#ff8128" style={styles.statisticsLoader} /> : null}
+                  {!isLoadingEarnings && !earningsError && Number(earnings?.paidBookings || 0) === 0 ? (
+                    <Text style={styles.statisticsEmpty}>{statisticsText.noStatistics}</Text>
+                  ) : null}
                   <View style={styles.earningsGrid}>
+                    <View style={styles.earningsItem}>
+                      <Text style={styles.earningsValue}>{formatPrice(earnings?.grossPaid)}</Text>
+                      <Text style={styles.earningsLabel}>{statisticsText.grossPaid}</Text>
+                    </View>
+                    <View style={styles.earningsItem}>
+                      <Text style={styles.earningsValue}>{formatPrice(earnings?.netEarnings)}</Text>
+                      <Text style={styles.earningsLabel}>{statisticsText.netEarnings}</Text>
+                    </View>
+                    <View style={styles.earningsItem}>
+                      <Text style={styles.earningsValue}>{formatPrice(earnings?.platformFees)}</Text>
+                      <Text style={styles.earningsLabel}>{statisticsText.platformFees}</Text>
+                    </View>
+                    <View style={styles.earningsItem}>
+                      <Text style={styles.earningsValue}>{Number(earnings?.paidBookings || 0)}</Text>
+                      <Text style={styles.earningsLabel}>{statisticsText.paidBookings}</Text>
+                    </View>
                     <View style={styles.earningsItem}>
                       <Text style={styles.earningsValue}>{formatPrice(earnings?.pendingPayout)}</Text>
                       <Text style={styles.earningsLabel}>{text.momoHolding}</Text>
@@ -933,6 +1055,56 @@ const styles = StyleSheet.create({
     color: '#ff8128',
     fontSize: 15,
     fontWeight: '900',
+  },
+  statisticsError: {
+    color: '#b91c1c',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 10,
+  },
+  statisticsEmpty: {
+    backgroundColor: '#f9fafb',
+    borderRadius: 8,
+    color: '#6b7280',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 12,
+    padding: 10,
+    textAlign: 'center',
+  },
+  statisticsFilterButton: {
+    backgroundColor: '#fff',
+    borderColor: '#fed7aa',
+    borderRadius: 999,
+    borderWidth: 1,
+    minHeight: 36,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  statisticsFilterButtonActive: {
+    backgroundColor: '#ff8128',
+    borderColor: '#ff8128',
+  },
+  statisticsFilterLabel: {
+    color: '#374151',
+    fontSize: 12,
+    fontWeight: '900',
+    marginTop: 14,
+  },
+  statisticsFilterRow: {
+    gap: 8,
+    paddingTop: 8,
+  },
+  statisticsFilterText: {
+    color: '#4b5563',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  statisticsFilterTextActive: {
+    color: '#fff',
+  },
+  statisticsLoader: {
+    marginTop: 12,
   },
   errorBox: {
     backgroundColor: '#fef2f2',
