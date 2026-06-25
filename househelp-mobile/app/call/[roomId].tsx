@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as WebBrowser from 'expo-web-browser';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo } from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
 
 import { authService } from '../../lib/auth';
 import { useLanguage } from '../../lib/language';
@@ -13,6 +13,10 @@ function sanitizeRoom(value?: string) {
   return String(value || 'househelp-call')
     .replace(/[^a-zA-Z0-9-_]/g, '-')
     .slice(0, 80);
+}
+
+function encodeJitsiString(value: string) {
+  return encodeURIComponent(JSON.stringify(value));
 }
 
 const JITSI_BASE_URL = (process.env.EXPO_PUBLIC_JITSI_URL || 'https://meet.ffmuc.net').replace(/\/+$/, '');
@@ -59,25 +63,61 @@ export default function CallScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { language } = useLanguage();
+  const [displayName, setDisplayName] = useState('');
+  const [hasLoadedUser, setHasLoadedUser] = useState(false);
   const text = copy[language];
   const isAudio = type === 'audio';
   const url = useMemo(() => {
     const room = sanitizeRoom(roomId);
+    const jitsiDisplayName = encodeJitsiString(displayName || 'HouseHelp User');
     const params = [
       'config.prejoinPageEnabled=false',
+      'config.prejoinConfig.enabled=false',
+      'config.requireDisplayName=false',
       `config.startWithVideoMuted=${isAudio ? 'true' : 'false'}`,
       'config.startWithAudioMuted=false',
       'interfaceConfig.DISABLE_JOIN_LEAVE_NOTIFICATIONS=true',
+      `config.defaultLocalDisplayName=${jitsiDisplayName}`,
+      `userInfo.displayName=${jitsiDisplayName}`,
     ].join('&');
 
     return `${JITSI_BASE_URL}/${room}#${params}`;
-  }, [isAudio, roomId]);
+  }, [displayName, isAudio, roomId]);
+  const injectedJitsiProfile = useMemo(() => {
+    const safeDisplayName = JSON.stringify(displayName || 'HouseHelp User');
+
+    return `
+      (function() {
+        try {
+          localStorage.setItem('displayname', ${safeDisplayName});
+          localStorage.setItem('user.displayname', ${safeDisplayName});
+          localStorage.setItem('jitsi.settings', JSON.stringify({ displayName: ${safeDisplayName} }));
+        } catch (error) {}
+      })();
+      true;
+    `;
+  }, [displayName]);
 
   useEffect(() => {
-    WebBrowser.openBrowserAsync(url).catch(() => {
-      Alert.alert(text.jitsiError, text.jitsiErrorText);
-    });
-  }, [text.jitsiError, text.jitsiErrorText, url]);
+    let isMounted = true;
+
+    authService.checkAuthStatus()
+      .then((currentUser) => {
+        if (!isMounted) return;
+        setDisplayName(currentUser?.fullName || currentUser?.email || '');
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setDisplayName('');
+      })
+      .finally(() => {
+        if (isMounted) setHasLoadedUser(true);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -114,7 +154,6 @@ export default function CallScreen() {
         {
           text: 'OK',
           onPress: () => {
-            WebBrowser.dismissBrowser();
             router.back();
           },
         },
@@ -126,7 +165,6 @@ export default function CallScreen() {
         {
           text: 'OK',
           onPress: () => {
-            WebBrowser.dismissBrowser();
             router.back();
           },
         },
@@ -145,8 +183,6 @@ export default function CallScreen() {
   }, [bookingId, roomId, router, text.callFailed, text.callFailedText, text.callRejected, text.callRejectedText]);
 
   const endCall = () => {
-    WebBrowser.dismissBrowser();
-
     if (targetUserId) {
       getSocket().emit('call_ended', {
         bookingId,
@@ -171,15 +207,34 @@ export default function CallScreen() {
         </View>
       </View>
       <View style={styles.body}>
-        <View style={styles.statusIcon}>
-          <Ionicons color="#ff8128" name={isAudio ? 'call-outline' : 'videocam-outline'} size={36} />
-        </View>
-        <Text style={styles.bodyTitle}>{text.opening}</Text>
-        <Text style={styles.bodyText}>{text.body}</Text>
-        <TouchableOpacity activeOpacity={0.84} onPress={() => WebBrowser.openBrowserAsync(url)} style={styles.openButton}>
-          <Ionicons color="#111827" name="open-outline" size={18} />
-          <Text style={styles.openText}>{text.reopen}</Text>
-        </TouchableOpacity>
+        {hasLoadedUser ? (
+          <WebView
+            allowsInlineMediaPlayback
+            domStorageEnabled
+            injectedJavaScriptBeforeContentLoaded={injectedJitsiProfile}
+            javaScriptEnabled
+            mediaCapturePermissionGrantType="grant"
+            mediaPlaybackRequiresUserAction={false}
+            onError={() => Alert.alert(text.jitsiError, text.jitsiErrorText)}
+            originWhitelist={['*']}
+            renderLoading={() => (
+              <View style={styles.loading}>
+                <ActivityIndicator color="#ff8128" size="large" />
+                <Text style={styles.bodyTitle}>{text.opening}</Text>
+              </View>
+            )}
+            sharedCookiesEnabled
+            source={{ uri: url }}
+            startInLoadingState
+            style={styles.webView}
+            thirdPartyCookiesEnabled
+          />
+        ) : (
+          <View style={styles.loading}>
+            <ActivityIndicator color="#ff8128" size="large" />
+            <Text style={styles.bodyTitle}>{text.opening}</Text>
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -201,11 +256,8 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   body: {
-    alignItems: 'center',
     backgroundColor: '#f7f8fa',
     flex: 1,
-    justifyContent: 'center',
-    padding: 24,
   },
   bodyText: {
     color: '#6b7280',
@@ -236,30 +288,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
     flex: 1,
   },
-  openButton: {
+  loading: {
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderColor: '#e5e7eb',
-    borderRadius: 8,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 22,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  openText: {
-    color: '#111827',
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  statusIcon: {
-    alignItems: 'center',
-    backgroundColor: '#fff1e8',
-    borderRadius: 999,
-    height: 82,
+    flex: 1,
     justifyContent: 'center',
-    width: 82,
+    padding: 24,
   },
   subtitle: {
     color: '#d1d5db',
@@ -270,5 +303,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '900',
+  },
+  webView: {
+    backgroundColor: '#f7f8fa',
+    flex: 1,
   },
 });

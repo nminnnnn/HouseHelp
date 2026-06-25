@@ -309,7 +309,7 @@ export default function CustomerHome() {
                     {String(user?.address || text.noAddress)}
                   </Text>
                 </View>
-                <TouchableOpacity onPress={() => router.push('/(customer)/bookings')}>
+                <TouchableOpacity onPress={() => router.push('/(customer)/service/[service]')}>
                   <Text style={styles.bookAgain}>{text.bookAgain}</Text>
                 </TouchableOpacity>
               </View>
@@ -382,7 +382,7 @@ export default function CustomerHome() {
               <Text style={styles.bannerKicker}>SPECIAL OFFER</Text>
               <Text style={styles.bannerTitle}>{text.promoTitle}</Text>
             </View>
-            <TouchableOpacity onPress={() => router.push('/(customer)/bookings')} style={styles.bannerButton}>
+            <TouchableOpacity onPress={() => router.push('/(customer)/service/Service')} style={styles.bannerButton}>
               <Text style={styles.bannerButtonText}>{text.bookNow}</Text>
             </TouchableOpacity>
           </View>
