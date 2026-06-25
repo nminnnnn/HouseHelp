@@ -19,6 +19,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CustomerBottomNav } from '../../components/customer-bottom-nav';
+import api from '../../lib/api';
 import { authService } from '../../lib/auth';
 import { bookingService, type Booking } from '../../lib/bookings';
 import { formatVietnamDate } from '../../lib/date';
@@ -123,6 +124,28 @@ function formatPrice(value?: number | string) {
   return `${price.toLocaleString('vi-VN')} VND`;
 }
 
+function apiOrigin() {
+  const baseURL = String(api.defaults.baseURL || process.env.EXPO_PUBLIC_API_URL || '').replace(/\/api\/?$/, '');
+  return baseURL.replace(/\/$/, '');
+}
+
+function uploadImageUrl(value?: string) {
+  if (!value) return '';
+
+  const rawValue = String(value).trim().replace(/\\/g, '/');
+  const uploadsIndex = rawValue.indexOf('/uploads/');
+
+  if (uploadsIndex >= 0) {
+    return `${apiOrigin()}${rawValue.slice(uploadsIndex)}`;
+  }
+
+  if (rawValue.startsWith('uploads/')) {
+    return `${apiOrigin()}/${rawValue}`;
+  }
+
+  return rawValue;
+}
+
 function formatDate(booking: Booking, language: AppLanguage) {
   return formatVietnamDate(
     booking.startDate || booking.date,
@@ -179,11 +202,12 @@ function BookingCard({
   text: (typeof copy)[AppLanguage];
   language: AppLanguage;
 }) {
-  const isCompleted = item.status === 'completed';
+  const isReadyForPayment = item.status === 'completed' || (!!item.customerConfirmedAt && !!item.completionProofUrl);
   const isPaid = item.paymentStatus === 'success';
   const canCancel = item.status === 'pending';
   const canScanQr = item.status === 'confirmed';
-  const needsCompletionConfirmation = item.status === 'in_progress' && !!item.completionRequestedAt && !!item.completionProofUrl;
+  const needsCompletionConfirmation = item.status === 'in_progress' && !!item.completionRequestedAt && !!item.completionProofUrl && !item.customerConfirmedAt;
+  const completionProofImageUrl = uploadImageUrl(item.completionProofUrl);
 
   return (
     <View style={styles.card}>
@@ -201,7 +225,7 @@ function BookingCard({
             <Text style={styles.completionProofTitle}>{text.completionProof}</Text>
             <Text style={styles.completionPendingBadge}>{text.waitingForProof}</Text>
           </View>
-          <Image source={{ uri: item.completionProofUrl }} style={styles.completionProofImage} />
+          <Image source={{ uri: completionProofImageUrl }} style={styles.completionProofImage} />
           <TouchableOpacity disabled={isConfirmingCompletion} onPress={onConfirmCompletion} style={styles.confirmCompletionButton}>
             {isConfirmingCompletion ? <ActivityIndicator color="#fff" /> : (
               <>
@@ -230,7 +254,7 @@ function BookingCard({
               <Text style={styles.scanQrText}>{text.scanQr}</Text>
             </TouchableOpacity>
           ) : null}
-          {isCompleted ? (
+          {isReadyForPayment ? (
             <TouchableOpacity disabled={isPaid} onPress={onReviewPayment} style={[styles.payButton, isPaid && styles.paidButton]}>
               <Text style={[styles.payText, isPaid && styles.paidText]}>{isPaid ? text.paid : text.unpaid}</Text>
             </TouchableOpacity>
@@ -362,7 +386,18 @@ export default function CustomerBookingsScreen() {
         onPress: async () => {
           try {
             setConfirmingCompletionId(booking.id);
-            await bookingService.confirmCompletion(booking.id);
+            const result = await bookingService.confirmCompletion(booking.id);
+            const confirmedBooking = {
+              ...booking,
+              ...result.booking,
+              customerConfirmedAt: result.booking.customerConfirmedAt || new Date().toISOString(),
+              status: 'completed',
+            };
+            setBookings((current) => current.map((item) => (
+              item.id === booking.id ? confirmedBooking : item
+            )));
+            setActiveTab('history');
+            openPaymentReview(confirmedBooking);
             Alert.alert(text.completionConfirmedTitle, text.completionConfirmedMessage);
             await loadBookings(true);
           } catch (confirmError: any) {

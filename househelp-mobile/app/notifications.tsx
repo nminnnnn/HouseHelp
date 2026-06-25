@@ -11,6 +11,7 @@ import type { AppLanguage } from '../lib/storage';
 const copy = {
   en: {
     back: 'Back',
+    cancel: 'Cancel',
     delete: 'Delete',
     deleteError: 'Could not delete',
     deleteMessage: 'Are you sure you want to delete this notification?',
@@ -23,10 +24,10 @@ const copy = {
     retry: 'Please try again.',
     title: 'Notifications',
     updateError: 'Could not update',
-    cancel: 'Cancel',
   },
   vi: {
     back: 'Quay lại',
+    cancel: 'Hủy',
     delete: 'Xóa',
     deleteError: 'Không thể xóa',
     deleteMessage: 'Bạn có chắc muốn xóa thông báo này?',
@@ -39,9 +40,39 @@ const copy = {
     retry: 'Thử lại sau.',
     title: 'Thông báo',
     updateError: 'Không thể cập nhật',
-    cancel: 'Hủy',
   },
 } as const;
+
+const notificationTextReplacements: Record<string, string> = {
+  'Cong viec da duoc xac nhan': 'Công việc đã được xác nhận',
+  'Da xac nhan tien mat': 'Đã xác nhận tiền mặt',
+  'Khach hang da xac nhan anh hoan thanh. Booking da san sang de thanh toan va danh gia.':
+    'Khách hàng đã xác nhận ảnh hoàn thành. Booking đã sẵn sàng để thanh toán và đánh giá.',
+  'Platform da nhan tien MoMo': 'Nền tảng đã nhận tiền MoMo',
+};
+
+function tryRepairMojibake(value: string) {
+  if (!/[ÃÄÆÂ]|áº|á»/.test(value)) return value;
+
+  try {
+    const encoded = Array.from(value).map((char) => {
+      const code = char.charCodeAt(0);
+      if (code > 255) throw new Error('unsupported');
+      return `%${code.toString(16).padStart(2, '0')}`;
+    }).join('');
+    const decoded = decodeURIComponent(encoded);
+
+    return decoded.length > 0 ? decoded : value;
+  } catch {
+    return value;
+  }
+}
+
+function notificationText(value?: string) {
+  const rawValue = String(value || '');
+  const replaced = notificationTextReplacements[rawValue] || rawValue;
+  return tryRepairMojibake(replaced);
+}
 
 function formatTime(notification: AppNotification) {
   const value = notification.createdAt || notification.timestamp;
@@ -79,12 +110,12 @@ function NotificationCard({
     <TouchableOpacity activeOpacity={0.85} onPress={onOpen} style={[styles.card, unread && styles.unreadCard]}>
       <View style={styles.cardHeader}>
         <Text numberOfLines={1} style={styles.cardTitle}>
-          {item.title}
+          {notificationText(item.title)}
         </Text>
         {unread ? <Text style={styles.unreadBadge}>{text.newBadge}</Text> : null}
       </View>
 
-      <Text style={styles.message}>{item.message}</Text>
+      <Text style={styles.message}>{notificationText(item.message)}</Text>
       <View style={styles.metaRow}>
         <Text style={styles.type}>{item.type}</Text>
         <Text style={styles.time}>{formatTime(item)}</Text>
@@ -202,27 +233,27 @@ export default function NotificationsScreen() {
           <Text style={styles.subtitle}>{unreadCount} {text.newCount}</Text>
         </View>
 
-      {error ? (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      ) : null}
-
-      <FlatList
-        contentContainerStyle={[styles.list, { paddingBottom: Math.max(insets.bottom + 16, 24) }]}
-        data={notifications}
-        keyExtractor={(item) => String(item.id)}
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadNotifications(true)} tintColor="#ff8128" />}
-        renderItem={({ item }) => (
-          <NotificationCard item={item} onDelete={() => handleDelete(item)} onOpen={() => handleOpen(item)} text={text} />
-        )}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>{text.emptyTitle}</Text>
-            <Text style={styles.emptyText}>{text.emptyText}</Text>
+        {error ? (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{error}</Text>
           </View>
-        }
-      />
+        ) : null}
+
+        <FlatList
+          contentContainerStyle={[styles.list, { paddingBottom: Math.max(insets.bottom + 16, 24) }]}
+          data={notifications}
+          keyExtractor={(item) => String(item.id)}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadNotifications(true)} tintColor="#ff8128" />}
+          renderItem={({ item }) => (
+            <NotificationCard item={item} onDelete={() => handleDelete(item)} onOpen={() => handleOpen(item)} text={text} />
+          )}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>{text.emptyTitle}</Text>
+              <Text style={styles.emptyText}>{text.emptyText}</Text>
+            </View>
+          }
+        />
       </View>
     </SafeAreaView>
   );

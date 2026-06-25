@@ -8,6 +8,7 @@ import { authService, type AuthUser } from '../../../lib/auth';
 import { housekeeperPreferenceService } from '../../../lib/housekeeper-preferences';
 import { housekeeperService, parseServices, type Housekeeper } from '../../../lib/housekeepers';
 import { useLanguage } from '../../../lib/language';
+import { reviewService, type HousekeeperReview } from '../../../lib/reviews';
 import { serviceLabel } from '../../../lib/service-labels';
 import type { AppLanguage } from '../../../lib/storage';
 
@@ -66,6 +67,28 @@ function formatPriceType(value: string | undefined, language: AppLanguage) {
   return (labels[value || 'hourly'] || labels.hourly)[language];
 }
 
+function formatReviewDate(value?: string, language: AppLanguage = 'en') {
+  if (!value) return '';
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) return '';
+
+  return parsed.toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+}
+
+function ratingStars(value: number | string | undefined) {
+  const rating = Math.max(0, Math.min(5, Math.round(Number(value || 0))));
+  return '★'.repeat(rating) + '☆'.repeat(5 - rating);
+}
+
+function reviewInitials(name?: string) {
+  const parts = String(name || 'Customer').trim().split(/\s+/).filter(Boolean);
+  return (parts[parts.length - 1]?.slice(0, 1) || 'C').toUpperCase();
+}
+
 function avatarSource(path?: string) {
   if (!path || path.length <= 2) return null;
   if (path.startsWith('http')) return { uri: path };
@@ -101,6 +124,7 @@ const copy = {
     messageTitle: 'Message housekeeper',
     noLocation: 'No service area updated',
     noRadius: 'No service radius updated',
+    noReviews: 'No reviews yet.',
     noWorkingDays: 'No working days updated',
     noWorkingHours: 'No working hours updated',
     pendingVerify: 'Pending verification',
@@ -179,6 +203,7 @@ export default function HousekeeperDetailScreen() {
   const [isBlocked, setIsBlocked] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [reviews, setReviews] = useState<HousekeeperReview[]>([]);
   const [user, setUser] = useState<AuthUser | null>(null);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -196,12 +221,14 @@ export default function HousekeeperDetailScreen() {
     try {
       setIsLoading(true);
       setError(null);
-      const [storedUser, data] = await Promise.all([
+      const [storedUser, data, reviewData] = await Promise.all([
         authService.checkAuthStatus(),
         housekeeperService.getById(id),
+        reviewService.getForHousekeeper(id).catch(() => []),
       ]);
       setUser(storedUser);
       setHousekeeper(data);
+      setReviews(reviewData);
 
       if (storedUser) {
         const [favorite, blocked] = await Promise.all([
@@ -403,6 +430,37 @@ export default function HousekeeperDetailScreen() {
             <Text style={styles.statValue}>{housekeeper.responseTime ? `${housekeeper.responseTime}p` : '--'}</Text>
             <Text style={styles.statLabel}>{text.response}</Text>
           </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{text.reviews}</Text>
+          {reviews.length ? (
+            <View style={styles.reviewList}>
+              {reviews.slice(0, 6).map((review) => (
+                <View key={String(review.id)} style={styles.reviewCard}>
+                  <View style={styles.reviewHeader}>
+                    <View style={styles.reviewAvatar}>
+                      <Text style={styles.reviewAvatarText}>{reviewInitials(review.customerName)}</Text>
+                    </View>
+                    <View style={styles.reviewHeaderCopy}>
+                      <Text numberOfLines={1} style={styles.reviewCustomer}>
+                        {review.customerName || text.customer}
+                      </Text>
+                      <Text style={styles.reviewDate}>
+                        {formatReviewDate(review.createdAt || review.bookingDate, language)}
+                      </Text>
+                    </View>
+                    <Text style={styles.reviewStars}>{ratingStars(review.rating)}</Text>
+                  </View>
+                  {review.comment ? <Text style={styles.reviewComment}>{review.comment}</Text> : null}
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.emptyReviewText}>
+              {language === 'vi' ? 'Chưa có đánh giá nào.' : 'No reviews yet.'}
+            </Text>
+          )}
         </View>
 
         <View style={styles.section}>
@@ -611,6 +669,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
   },
+  emptyReviewText: {
+    color: '#6b7280',
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
   location: {
     color: '#6b7280',
     fontSize: 14,
@@ -692,6 +756,59 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     padding: 20,
+  },
+  reviewAvatar: {
+    alignItems: 'center',
+    backgroundColor: '#fff1e8',
+    borderRadius: 18,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  reviewAvatarText: {
+    color: '#ff8128',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  reviewCard: {
+    backgroundColor: '#f9fafb',
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 8,
+    padding: 12,
+  },
+  reviewComment: {
+    color: '#374151',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  reviewCustomer: {
+    color: '#111827',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  reviewDate: {
+    color: '#6b7280',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  reviewHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  reviewHeaderCopy: {
+    flex: 1,
+  },
+  reviewList: {
+    gap: 10,
+  },
+  reviewStars: {
+    color: '#ff8128',
+    fontSize: 14,
+    fontWeight: '900',
   },
   screen: {
     backgroundColor: '#f7f8fa',

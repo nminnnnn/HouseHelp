@@ -95,6 +95,29 @@ function parsePrice(value?: number | string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function parseCoordinateParam(value?: string | string[]) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseDurationParam(value?: string | string[]) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? String(Math.round(parsed)) : '';
+}
+
+function serviceSelection(services?: string, selectedService?: string | string[]) {
+  const options = serviceList(services);
+  const selectedItems = parseServices(selectedService);
+  const normalizedOptions = options.map((item) => ({ key: item.trim().toLowerCase(), value: item }));
+  const matchedItems = selectedItems
+    .map((item) => normalizedOptions.find((option) => option.key === item.trim().toLowerCase())?.value)
+    .filter((item): item is string => Boolean(item));
+
+  return matchedItems.length > 0 ? matchedItems : [firstService(services, selectedService)];
+}
+
 function isValidTimeFrame(value: string) {
   return value.trim().length >= 3;
 }
@@ -145,8 +168,24 @@ export default function CreateBookingScreen() {
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [time, setTime] = useState('08:00');
   const [user, setUser] = useState<AuthUser | null>(null);
-  const { housekeeperId, recurring, service: selectedService } = useLocalSearchParams<{
+  const {
+    duration: prefillDuration,
+    housekeeperId,
+    latitude: prefillLatitude,
+    location: prefillLocation,
+    longitude: prefillLongitude,
+    notes: prefillNotes,
+    paymentMethod: prefillPaymentMethod,
+    recurring,
+    service: selectedService,
+  } = useLocalSearchParams<{
+    duration?: string;
     housekeeperId: string;
+    latitude?: string;
+    location?: string;
+    longitude?: string;
+    notes?: string;
+    paymentMethod?: string;
     recurring?: string;
     service?: string;
   }>();
@@ -188,9 +227,36 @@ export default function CreateBookingScreen() {
       ]);
 
       setUser(storedUser);
-      await loadSelectedAddress(storedUser);
+      if (!prefillLocation?.trim()) {
+        await loadSelectedAddress(storedUser);
+      }
       setHousekeeper(detail);
-      setSelectedServices([firstService(detail.services, selectedService)]);
+      setSelectedServices(serviceSelection(detail.services, selectedService));
+      if (prefillLocation?.trim()) {
+        const latitude = parseCoordinateParam(prefillLatitude);
+        const longitude = parseCoordinateParam(prefillLongitude);
+        const nextLocation = prefillLocation.trim();
+
+        setLocation(nextLocation);
+        if (latitude !== null && longitude !== null) {
+          setSelectedLocation({ address: nextLocation, latitude, longitude });
+          setMapRegion((current) => ({
+            ...current,
+            latitude,
+            longitude,
+          }));
+        }
+      }
+      if (prefillNotes?.trim()) {
+        setNotes(prefillNotes.trim());
+      }
+      if (prefillPaymentMethod === 'cash' || prefillPaymentMethod === 'momo') {
+        setPaymentMethod(prefillPaymentMethod);
+      }
+      const nextDuration = parseDurationParam(prefillDuration);
+      if (nextDuration) {
+        setDuration(nextDuration);
+      }
       if (recurring === 'monthly') {
         setDuration('3');
       }
@@ -199,7 +265,19 @@ export default function CreateBookingScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [housekeeperId, language, loadSelectedAddress, recurring, selectedService]);
+  }, [
+    housekeeperId,
+    language,
+    loadSelectedAddress,
+    prefillDuration,
+    prefillLatitude,
+    prefillLocation,
+    prefillLongitude,
+    prefillNotes,
+    prefillPaymentMethod,
+    recurring,
+    selectedService,
+  ]);
 
   useEffect(() => {
     loadData();
@@ -207,8 +285,9 @@ export default function CreateBookingScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      if (prefillLocation?.trim()) return;
       loadSelectedAddress(user);
-    }, [loadSelectedAddress, user]),
+    }, [loadSelectedAddress, prefillLocation, user]),
   );
 
   const pricePerService = useMemo(() => {
