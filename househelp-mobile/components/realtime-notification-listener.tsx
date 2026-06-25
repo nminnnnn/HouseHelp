@@ -22,11 +22,21 @@ type RealtimeNotification = {
   data?: unknown;
 };
 
+type IncomingCallPayload = {
+  bookingId?: number | string;
+  callerId?: number | string;
+  callerName?: string;
+  callType?: 'audio' | 'video' | string;
+  roomName?: string;
+  timestamp?: string;
+};
+
 export function RealtimeNotificationListener() {
   const router = useRouter();
   const { language } = useLanguage();
   const currentUserRef = useRef<AuthUser | null>(null);
   const displayedNotificationIdsRef = useRef(new Set<string>());
+  const displayedCallIdsRef = useRef(new Set<string>());
 
   useEffect(() => {
     const socket = getSocket();
@@ -119,11 +129,65 @@ export function RealtimeNotificationListener() {
           text: language === 'vi' ? 'Xem booking' : 'View booking',
           onPress: () => router.push(`/(customer)/bookings?refresh=${Date.now()}`),
         },
+      ]); 
+    };
+
+    const handleIncomingCall = (call: IncomingCallPayload) => {
+      const user = currentUserRef.current;
+      if (!user || !call.roomName || !call.callerId) return;
+
+      const callKey = `${call.roomName}-${call.callerId}-${call.bookingId || 'direct'}`;
+      if (displayedCallIdsRef.current.has(callKey)) return;
+      displayedCallIdsRef.current.add(callKey);
+
+      const callerId = Number(call.callerId);
+      const callType = call.callType === 'audio' ? 'audio' : 'video';
+      const callerName = call.callerName || (language === 'vi' ? 'Người dùng' : 'A user');
+      const title = language === 'vi'
+        ? (callType === 'audio' ? 'Cuộc gọi âm thanh' : 'Cuộc gọi video')
+        : (callType === 'audio' ? 'Audio call' : 'Video call');
+      const message = language === 'vi'
+        ? `${callerName} đang gọi cho bạn.`
+        : `${callerName} is calling you.`;
+
+      Alert.alert(title, message, [
+        {
+          text: language === 'vi' ? 'Từ chối' : 'Reject',
+          style: 'cancel',
+          onPress: () => {
+            socket.emit('call_rejected', {
+              bookingId: call.bookingId,
+              roomName: call.roomName,
+              targetUserId: callerId,
+            });
+          },
+        },
+        {
+          text: language === 'vi' ? 'Nghe máy' : 'Accept',
+          onPress: () => {
+            socket.emit('call_accepted', {
+              bookingId: call.bookingId,
+              roomName: call.roomName,
+              targetUserId: callerId,
+            });
+            router.push({
+              pathname: '/call/[roomId]',
+              params: {
+                bookingId: call.bookingId ? String(call.bookingId) : 'direct',
+                roomId: call.roomName || 'househelp-call',
+                targetUserId: String(callerId),
+                title: callerName,
+                type: callType,
+              },
+            });
+          },
+        },
       ]);
     };
 
     socket.on('connect', joinCurrentUser);
     socket.on('notification', handleNotification);
+    socket.on('incoming_call', handleIncomingCall);
     syncAuthenticatedUser();
     const syncInterval = setInterval(syncAuthenticatedUser, 1000);
 
@@ -132,6 +196,7 @@ export function RealtimeNotificationListener() {
       clearInterval(syncInterval);
       socket.off('connect', joinCurrentUser);
       socket.off('notification', handleNotification);
+      socket.off('incoming_call', handleIncomingCall);
     };
   }, [language, router]);
 
